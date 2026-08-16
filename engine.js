@@ -1,3 +1,4 @@
+Engine · JS
 /* ============================================================
    PATO-ŻUŻEL :: SYMULATOR KARIERY POLSKIEGO ŻUŻLOWCA
    engine.js — rdzeń symulacji: utilsy, generowanie gry/zawodnika,
@@ -73,8 +74,12 @@ function newPlayer(name,clsId){
   loyalty:0, club:null, lk:null,
   contract:{type:'Amatorski', years:1, rate:R(150,350), bonus:0},
   banSeasons:0, injured:0, retired:false, retireReason:'',
+  // FORMA: dyspozycja z ostatniego sezonu (-12..+12). Ujemna = dołek.
+  // Czytają ją warunki zdarzeń losowych (cond: p.form<0).
+  form:0,
   shop:{bought:[],log:[],spent:0,equipGain:0,mechHired:false},
-  next:{zeroMatches:false, heatPP:0, betterOffers:false, noRenew:false, rowPen:false, noArg:false},
+  next:{zeroMatches:false, heatPP:0, betterOffers:false, noRenew:false, rowPen:false, noArg:false,
+        injuryPP:0, rateMul:1, noSponsor:false, lockTransfer:0, forceClub:null},
   career:{seasons:0,matches:0,heats:0,pts:0,bon:0,def:0,exc:0,earned:0,titles:0,best:'—',bestAvg:0}
  };
 }
@@ -131,14 +136,25 @@ function startSeason(){
  const p=G.p, club=getClub(p);
  const atm=R(0,100);
  G.S={
-  atm, heatPP:p.next.heatPP, injuryPP:0, noEarnings:false,
+  atm, heatPP:p.next.heatPP, injuryPP:p.next.injuryPP||0, noEarnings:false,
   teamPts:0, teamOvr:0, banMatches:0, equipFit:100,
   extraDefP:0, zeroMatches:p.next.zeroMatches, forcedEnd:false,
   walkower:false, fines:0, evLog:[], noRenew:p.next.noRenew,
-  rateMul:1, ovrBonus:0,
+  rateMul:p.next.rateMul||1, ovrBonus:0,
+  /* KONTEKST ZDARZENIA LOSOWEGO — w której kolejce wypada sytuacja z ekranu eventu.
+     1-14 = sezon zasadniczy, 15-16 = play-off / baraże. Warunki cond(p,c,S)
+     czytają S.round i S.matches, żeby "afera po meczu" nie trafiła się zimą. */
+  round: R(1, BAL.rounds+2),
+  matches: 0,
   prof0:p.prof, med0:p.med, ovr0:p.ovr, equip0:p.equip
  };
- p.next={zeroMatches:false,heatPP:0,betterOffers:p.next.betterOffers,noRenew:false,rowPen:p.next.rowPen,noArg:p.next.noArg};
+ G.S.matches = G.S.round-1;
+ /* Flagi przenoszone na OKIENKO TRANSFEROWE (konsumuje je makeOffers) zostają;
+    reszta jednorazowych efektów z poprzedniego sezonu się zeruje. */
+ p.next={zeroMatches:false, heatPP:0, betterOffers:p.next.betterOffers, noRenew:false,
+         rowPen:p.next.rowPen, noArg:p.next.noArg,
+         injuryPP:0, rateMul:1,
+         noSponsor:p.next.noSponsor, lockTransfer:p.next.lockTransfer||0, forceClub:p.next.forceClub||null};
  
  // Zaległości NIE biorą się z powietrza — powstają dopiero z niewypłaconej
  // części twojego wynagrodzenia, po zakończeniu sezonu (patrz resolveSeason).
@@ -148,17 +164,29 @@ function startSeason(){
 }
  
 let evHist=[];
-function evOk(e){ if(!e.cond) return true; try{return !!e.cond();}catch(_){return false;} }
+/* WARUNEK ZDARZENIA — cond(p, c, S):
+     p = Gracz (G.p), c = jego klub (albo null), S = stan sezonu (G.S).
+   Event bez `cond` jest dostępny zawsze. Warunek, który się wywali
+   (np. odwołanie do klubu, którego nie ma), traktujemy jak niespełniony. */
+function evOk(e,p,c,S){
+ if(!e.cond) return true;
+ try{ return !!e.cond(p,c,S); }catch(_){ return false; }
+}
 function rollEvent(){
- const fresh=e=>!evHist.includes(e.id);
- // zdarzenia warunkowe mają pierwszeństwo — to one komentują twoją realną sytuację
- const cond=EVENTS.filter(e=>e.cond&&evOk(e)&&fresh(e));
- const gen =EVENTS.filter(e=>!e.cond&&fresh(e));
+ const p=G.p, c=clubOf(p), S=G.S;
+ // 1) FILTR WARUNKÓW: zostają tylko sytuacje możliwe w twoim położeniu
+ const validEvents = EVENTS.filter(e => !e.cond || evOk(e,p,c,S));
+ if(!validEvents.length) return pick(EVENTS);
+ // 2) świeżość — nie powtarzamy tego samego zdarzenia w kółko
+ let pool = validEvents.filter(e=>!evHist.includes(e.id));
+ if(!pool.length){ evHist=[]; pool = validEvents; }
+ // 3) zdarzenia warunkowe mają pierwszeństwo — to one komentują twoją realną sytuację
+ const cnd = pool.filter(e=>e.cond), gen = pool.filter(e=>!e.cond);
  let e;
- if(cond.length && (chance(60)||!gen.length)) e=pick(cond);
+ if(cnd.length && (chance(60)||!gen.length)) e=pick(cnd);
  else if(gen.length) e=pick(gen);
- else { evHist=[]; const all=EVENTS.filter(evOk); e=pick(all.length?all:EVENTS); }
- evHist.push(e.id); if(evHist.length>20) evHist.shift();
+ else e=pick(pool);
+ evHist.push(e.id); if(evHist.length>25) evHist.shift();
  return e;
 }
 const evText = e => typeof e.x==='function' ? e.x() : e.x;
@@ -181,6 +209,14 @@ function riderLine(ctx){
  return {h,codes,mp,mb,d,w};
 }
 function getClub(p){return G.leagues[p.lk].clubs.find(c=>c.name===p.club);}
+/* BEZPIECZNY DOSTĘP DO KLUBU — zawodnik bez kontraktu ma po prostu null.
+   Używany przez warunki i efekty zdarzeń losowych (data.js), żeby event
+   o długach klubu nie wysypywał gry bezrobotnemu żużlowcowi. */
+function clubOf(p){
+ p = p || (typeof G!=='undefined' && G ? G.p : null);
+ if(!p || !p.club || !p.lk || !G || !G.leagues || !G.leagues[p.lk]) return null;
+ return G.leagues[p.lk].clubs.find(c=>c.name===p.club) || null;
+}
 function leagueAvgOvr(lk){const cs=G.leagues[lk].clubs;return cs.reduce((a,c)=>a+c.ovr,0)/cs.length;}
  
 function resolveSeason(){
@@ -195,7 +231,16 @@ function resolveSeason(){
  /* --- SPRZĘT / MECHANIK --- */
  const equipEff = equipEffOf(p, S.equipFit);
  const equipAdd = (equipEff/99 - 0.45)*16;                 // ok. -7 .. +9 pkt OVR
- let effOvr = effectiveOvr(p, S.equipFit, atmAdd);
+ /* S.ovrBonus — chwilowa forma z decyzji na ekranie zdarzenia (schabowy u żony,
+    jazda na zastrzykach). Działa TYLKO w tym sezonie i nie rusza p.ovr. */
+ let effOvr = effectiveOvr(p, S.equipFit, atmAdd + (S.ovrBonus||0));
+ if(S.ovrBonus) notes.push('Skutek decyzji z ekranu zdarzenia: '+(S.ovrBonus>0?'+':'')+S.ovrBonus+' OVR w meczach tego sezonu.');
+ /* S.teamOvr — decyzje, które ruszyły poziom całej drużyny (zrzeczenie się premii,
+    integracja przez nienawiść, wychowanie następcy). */
+ if(S.teamOvr){
+   club.ovr = cl(Math.round(club.ovr + S.teamOvr), 20, 99);
+   notes.push('Twoja decyzja odbiła się na drużynie: OVR klubu '+(S.teamOvr>0?'+':'')+S.teamOvr+' (teraz '+club.ovr+').');
+ }
  
  /* --- OBECNOŚĆ W SKŁADZIE ---
     Nie ma abstrakcyjnej "szansy na mecz": przed każdą kolejką walczysz
@@ -313,6 +358,9 @@ function resolveSeason(){
  
  /* --- ZAWODY INDYWIDUALNE --- */
  G.meForm = cl((avg-1.4)*9, -12, 12);
+ /* Forma zapisana na zawodniku — czytają ją warunki zdarzeń (cond: p.form<0),
+    dzięki czemu „kłótnia z fanem po passie słabych meczów” trafia tylko w dołku. */
+ p.form = Math.round(heats>0 ? G.meForm : -3);
  const ind = !blocked ? simIndividual(p, effOvr, defP, excP) : null;
  
  /* --- OCENA SEZONU ZE WSZYSTKICH ROZGRYWEK --- */
@@ -1763,6 +1811,36 @@ function makeOffers(){
  const lastAvg = G.history.length ? G.history[G.history.length-1].avg : 1.4;
  const rating = p.ovr + p.med*0.08 + (p.next.betterOffers?5:0) + (lastAvg-1.4)*7;
  
+ /* --- JEDNA FABRYKA OFERT (używana też przez skutki zdarzeń losowych) --- */
+ const mkOffer=(c,lk,gap)=>{
+   const pro = c.ovr>55 || p.ovr>45;
+   const rate = pro ? Math.round((600 + c.ovr*38 + c.budget/26000) * RF(0.85,1.2) * cl(1+gap*0.02,0.7,1.4))
+                    : R(150,400);
+   // BRAK OFERT SPONSORSKICH (decyzja „pierdolcie się, śmieszki”) = zero premii za podpis
+   const bon  = (pro && !p.next.noSponsor) ? Math.round(c.budget*RF(0.008,0.05)*cl(rating/70,0.3,1.6)) : 0;
+   return {club:c.name, lk, ovr:c.ovr, budget:c.budget, debt:c.debt,
+     type: pro?'Zawodowy':'Amatorski', years:R(1,3), rate, bonus:bon,
+     stay:c.name===p.club, ride:appearanceChance(p, c, 55, null)};
+ };
+ const findClub=name=>{ for(const k of LKEYS){ const f=G.leagues[k].clubs.find(x=>x.name===name || x.name.includes(name)); if(f) return {c:f,lk:k}; } return null; };
+ 
+ /* --- WYMUSZONY TRANSFER (świstek, wiatrówka, plan kolegi, Słowacja, diamenty) --- */
+ if(p.next.forceClub){
+   const want=p.next.forceClub; p.next.forceClub=null; p.next.noSponsor=false;
+   let hit=null;
+   if(want==='weak'){ const c=pick(G.leagues.KL.clubs.slice().sort((a,b)=>a.ovr-b.ovr).slice(0,3)); hit={c, lk:'KL'}; }
+   else hit=findClub(want);
+   if(hit){ const o=mkOffer(hit.c, hit.lk, rating-riderLevel(hit.c));
+            if(p.next.rateMul && p.next.rateMul!==1){ o.rate=Math.round(o.rate*p.next.rateMul); p.next.rateMul=1; }
+            return [o]; }
+ }
+ /* --- BLOKADA TRANSFEROWA (dziesięcioletnia umowa à la Krzysztof M.) --- */
+ if(p.next.lockTransfer>0 && p.club){
+   p.next.lockTransfer--; p.next.noSponsor=false;
+   const hit=findClub(p.club);
+   if(hit) return [mkOffer(hit.c, hit.lk, rating-riderLevel(hit.c))];
+ }
+ 
  // ILE OFERT MOŻESZ W OGÓLE DOSTAĆ
  let maxOffers;
  if(p.age<=21)      maxOffers = 4;                          // juniora chce każdy, regulamin
@@ -1799,17 +1877,9 @@ function makeOffers(){
  
  // najmocniejsze kluby, które faktycznie cię chcą
  cands.sort((a,b)=> b.c.ovr - a.c.ovr);
- return cands.slice(0,maxOffers).map(({c,lk,gap})=>{
-   const pro = c.ovr>55 || p.ovr>45;
-   const rate = pro ? Math.round((600 + c.ovr*38 + c.budget/26000) * RF(0.85,1.2) * cl(1+gap*0.02,0.7,1.4))
-                    : R(150,400);
-   const bon  = pro ? Math.round(c.budget*RF(0.008,0.05)*cl(rating/70,0.3,1.6)) : 0;
-   // szansa na jazdę w barwach TEJ drużyny
-   const ride = appearanceChance(p, c, 55, null);
-   return {club:c.name, lk, ovr:c.ovr, budget:c.budget, debt:c.debt,
-     type: pro?'Zawodowy':'Amatorski', years:R(1,3), rate, bonus:bon,
-     stay:c.name===p.club, ride};
- });
+ const out = cands.slice(0,maxOffers).map(({c,lk,gap})=>mkOffer(c,lk,gap));
+ p.next.noSponsor=false;      // blokada sponsorska obowiązywała na TO okienko
+ return out;
 }
 function signContract(o){
  const p=G.p;
@@ -1835,3 +1905,5 @@ function signContract(o){
  }
  G.screen='hub'; render();
 }
+
+

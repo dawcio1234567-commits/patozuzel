@@ -1,4 +1,3 @@
-Engine · JS
 /* ============================================================
    PATO-ŻUŻEL :: SYMULATOR KARIERY POLSKIEGO ŻUŻLOWCA
    engine.js — rdzeń symulacji: utilsy, generowanie gry/zawodnika,
@@ -1905,5 +1904,3 @@ function signContract(o){
  }
  G.screen='hub'; render();
 }
-
-

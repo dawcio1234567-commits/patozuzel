@@ -29,34 +29,34 @@ const CLASSES=[
 function C(name,ovr,budget){return{name,ovr,budget,debt:0,mood:R(30,80)};}
 const BASE_LEAGUES=()=>({
  EL:{name:'EKSTRALIGA', short:'PGE EL', clubs:[
-   C('BETARD SPARTA Wrocław',95,10000000),
-   C('PRES GRUPA DEWELOPERSKA Toruń',93,9500000),
-   C('FOGO UNIA Leszno',90,5000000),
-   C('BAYERSYSTEM GKM Grudziądz',88,3500000),
-   C('ORLEN OIL MOTOR Lublin',85,12000000),
-   C('GEZET STAL Gorzów',82,2500000),
-   C('STELMET FALUBAZ Zielona Góra',79,4000000),
-   C('KRONO-PLAST WŁÓKNIARZ Częstochowa',68,5000000)
+   C('WUTEES Wrocław',95,10000000),
+   C('Patodeweloperka Toruń',93,9500000),
+   C('ŁUNIA Leszno',90,5000000),
+   C('BAYERN GTŻ Grudziądz',88,3500000),
+   C('ROWER Lublin',85,12000000),
+   C('MOSIĄDZ Gorzów',82,2500000),
+   C('BALUBAZ Zielona Góra',79,4000000),
+   C('WŁÓK Częstochowa',68,5000000)
  ]},
  E2:{name:'2. EKSTRALIGA', short:'2. EL', clubs:[
-   C('ABRAMCZYK POLONIA Bydgoszcz',72,3000000),
-   C('ZDUNEK WYBRZEŻE Gdańsk',70,2600000),
-   C('EBUT.PL STAL Rzeszów',68,2400000),
-   C('TRANS MF LANDSHUT DEVILS',66,2000000),
-   C('ARGED MALESA OSTROVIA Ostrów',64,1800000),
-   C('CELLFAST WILKI Krosno',62,1600000),
-   C('ŻKS ROW Rybnik',60,1500000),
-   C('H. SKRZYDLEWSKA ORZEŁ Łódź',57,1200000)
+   C('BOLONIA Bydgoszcz',72,3000000),
+   C('NADMORZE Gdańsk',70,2600000),
+   C('MOSIĄDZ Rzeszów',68,2400000),
+   C('SCHEISSE Landshut',66,2000000),
+   C('OSTRO OSTRÓW',64,1800000),
+   C('KSM Krosno',62,1600000),
+   C('MRÓZ Rybnik',60,1500000),
+   C('CMENTARZ Łódź',57,1200000)
  ]},
  KL:{name:'KRAJOWA LIGA ŻUŻLOWA', short:'KLŻ', clubs:[
-   C('START Gniezno',52,900000),
-   C('KOLEJARZ Opole',50,850000),
-   C('UNIA Tarnów',48,800000),
-   C('LOKOMOTIV Daugavpils',46,750000),
-   C('OK BEDMET KOLEJARZ Rawicz',44,700000),
-   C('SPEEDWAY WANDA Kraków',42,600000),
-   C('POLONIA Piła',40,550000),
-   C('ŚLĄSK Świętochłowice',38,500000)
+   C('META Gniezno',52,900000),
+   C('MOTORNICZY Opole',50,850000),
+   C('ŁUNIA Tarnów',48,800000),
+   C('LOKOMOTYWA Daugavpils',46,750000),
+   C('MOTORNICZY Rawicz',44,700000),
+   C('BANDA Kraków',42,600000),
+   C('BOLONIA Piła',40,550000),
+   C('GERMANIA Świętochłowice',38,500000)
  ]}
 });
  

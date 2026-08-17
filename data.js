@@ -4,6 +4,31 @@
    kluby, sprzęt, zdarzenia losowe, progi upadłości, imiona/nazwiska)
    ============================================================ */
  
+/* ============================================================
+   METRYCZKA GRY + CHANGELOG
+   Wyświetlane na ekranie tytułowym (scCreate w index.html).
+   Najnowszy wpis na górze.
+   ============================================================ */
+const GAME_UPDATE='17.08.2026';
+const GAME_X='@polskizuzlowiec';
+const CHANGELOG=[
+ {v:'17.08.2026', t:'PATCH: NUMERY, WYNIKI, OFERTY I NIEOCZEKIWANE ZDARZENIA', l:[
+   'NAPRAWA: numery startowe były odwrócone. Zgodnie z regulaminem gospodarz jedzie z numerami 9–15, a gość z numerami 1–7. Do tej pory silnik robił dokładnie odwrotnie i w meczu u siebie dostawałeś numer gościa.',
+   'NAPRAWA: mecz potrafił skończyć się wynikiem, którego nie da się zdobyć na torze (np. 76:14 albo 16:74). Winna była rezerwa taktyczna: wjeżdżała do biegu pod ujemnym numerem wewnętrznym, a silnik czytał z tej liczby stronę meczu — każda liczba ujemna wychodziła mu jako gospodarz. Punkty rezerwy taktycznej gości lądowały więc na koncie gospodarzy. Stąd „zdobyłeś dwa punkty" przy wyniku, w którym twoja drużyna ich nie miała.',
+   'Wynik drużyny jest teraz na koniec meczu odtwarzany ze składów — żadne punkty nie mają jak trafić do nie tej rubryki.',
+   'NOWE: imię i nazwisko na ekranie startowym losuje się z puli. Przycisk LOSUJ przelosowuje propozycję.',
+   'PRZEBUDOWA: system ofert kontraktowych. Widzisz teraz swoją WARTOŚĆ RYNKOWA rozpisaną na składniki (OVR, średnia z sezonu, medialność, profesjonalizm, wiek, sprzęt), a przy każdej ofercie — zainteresowanie tego klubu z powodami i rozbiór stawki za punkt.',
+   'Stawki i premie za podpis liczone są z poziomu ligi, poziomu i zamożności klubu oraz twojej wartości, a nie z gołego rzutu kością. Klub z zaległościami negocjuje w dół i nie płaci za podpis.',
+   'Długość kontraktu zależy od wieku: młodego wiąże się na 2–3 lata, po trzydziestce dostajesz rok.',
+   'Młodzieżowiec nie zostaje już bez klubu tylko dlatego, że ma niski OVR — regulaminowa rubryka U21 realnie działa na jego korzyść.',
+   'NAPRAWA: efekty „lepsze oferty" i „minus za wpis o guru" zostawały włączone do końca kariery. Teraz obowiązują na jedno okienko transferowe, tak jak opisuje to samo zdarzenie.',
+   'NOWE: szansa na skład liczona jest osobno PRZED KAŻDĄ KOLEJKĄ, z realnej dyspozycji całej kadry — widać ją w kolumnie SZANSA w wynikach spotkań, razem ze średnią, minimum i maksimum sezonu.',
+   'NOWE: nieoczekiwane zdarzenia w trakcie sezonu — łącznie 5% szans na kolejkę, po 1% na typ: połowa składu kontuzjowana, wskakujesz do składu, nagły wzrost formy, nagły zjazd formy, nagle wypadasz ze składu.',
+   'NOWE: boks KONTROLA WYKONANIA przy zdarzeniu sezonowym — pokazuje, jak skutki twojego wyboru realnie weszły do sezonu (kary, walkower, zawieszenie, stawka, ryzyko urazu, szanse na skład) i co przechodzi na kolejny rok.',
+   'Przejrzano wszystkie 380 wariantów decyzji ze zdarzeń sezonowych i zimowych: każdy wykonuje się bez błędu i zwraca opis skutku.'
+ ]}
+];
+
 const BAL={
  leagueW : 0.55,   // udział średniej ligi w punkcie odniesienia (reszta: własny klub)
  belowPen: 2.60,   // mnożnik kary za pierwsze 10 pkt poniżej odniesienia
@@ -71,6 +96,32 @@ const INJ={
  catSeasons: 1             // ile PEŁNYCH kolejnych sezonów wypada z gry (p.longInjury)
 };
  
+/* ============================================================
+   NIEOCZEKIWANE ZDARZENIA W TRAKCIE SEZONU
+   ------------------------------------------------------------
+   Rzeczy, o których nie decyduje ani ekran zdarzenia, ani twoja forma
+   z poprzedniej kolejki. Losowane PRZED KAŻDĄ KOLEJKĄ, niezależnie od siebie:
+     halfSquad — pół kadry w szpitalu, trener nie ma z kogo układać składu
+     jumpIn    — wskakujesz do składu (ktoś zachorował, komuś zabrali licencję)
+     formUp    — nagły wzrost formy: silnik nagle chodzi, ty jedziesz jak nie ty
+     formDown  — nagły zjazd formy: to samo, tylko w drugą stronę
+     dropOut   — nagle wypadasz ze składu, choć nic złego nie zrobiłeś
+   Każdy typ ma osobno maksymalnie 1% szans na kolejkę, łącznie 5% (cap total).
+   Chcesz to nastroić? Zmieniasz liczby tutaj, silnika nie ruszasz.
+   ============================================================ */
+const SURPRISE={
+ halfSquad : 1,     // % na kolejkę
+ jumpIn    : 1,
+ formUp    : 1,
+ formDown  : 1,
+ dropOut   : 1,
+ total     : 5,     // twardy sufit sumy powyższych (silnik skaluje, gdy ktoś przesadzi)
+ formUpMin : 6, formUpMax : 11,     // ile punktów dyspozycji dokłada/zabiera skok formy
+ formDownMin: 6, formDownMax: 11,
+ jumpBias  : 40,    // ile „punktów wartości" dokłada trenerowi decyzja o wstawieniu cię
+ halfShare : 0.5    // jaka część kadry wypada przy zbiorowej kraksie/grypie
+};
+
 /* ============================================================
    EKONOMIA GRACZA — ŻEBY LICZYĆ KAŻDY GROSZ
    Wcześniej pieniądze tylko wpływały. Teraz istnieje druga strona
@@ -244,6 +295,65 @@ const fxFit = d => { G.S.equipFit = cl(G.S.equipFit-d,0,100); return 'Dopasowani
 const fxRate= m => { G.S.rateMul *= m; return 'Stawka za punkt w tym sezonie '+(m>=1?'+':'')+Math.round((m-1)*100)+'%'; };
 const fxRateN=m => { G.p.next.rateMul = m; return 'Stawka za punkt w kolejnym sezonie '+(m>=1?'+':'')+Math.round((m-1)*100)+'%'; };
 const fxEnd = why => { G.p.retired=true; G.p.retireReason=why; G.S.forcedEnd=true; return 'KONIEC KARIERY: '+why; };
+
+/* --- fxS: GENERYCZNY SETTER POLA STANU SEZONU ---
+   Część zdarzeń w data.js była pisana skrótem `fxS('banMatches', 14)`, ale
+   samego helpera nikt nigdy nie napisał. Efekt: przy wyborze takiej opcji
+   `o.f()` leciało ReferenceError, a `chooseEv()` (index.html) NIE miało
+   try/catch — gra zatrzymywała się na ekranie zdarzenia i nie dało się
+   przejść dalej. Teraz helper istnieje, dokłada wartość do G.S i zwraca
+   czytelną linijkę do raportu. */
+const FXS_LABEL = {
+ banMatches : n => 'Pauza: '+n+(n===1?' spotkanie':(n%10>=2&&n%10<=4&&(n%100<10||n%100>=20))?' spotkania':' spotkań'),
+ heatPP     : d => sgn(d)+' p.p. szans na biegi',
+ injuryPP   : d => sgn(d)+' p.p. ryzyka urazu',
+ teamOvr    : d => sgn(d)+' OVR drużyny',
+ ovrBonus   : d => sgn(d)+' OVR w meczach tego sezonu',
+ fines      : k => 'Kara '+zl(k),
+ extraDefP  : d => sgn(d)+' p.p. szansy na defekt'
+};
+const fxS = (key, val) => {
+ if(!G.S) return String(key)+': '+val;
+ const cur = G.S[key];
+ if(typeof cur === 'number' || cur === undefined) G.S[key] = (cur||0) + val;
+ else G.S[key] = val;
+ return FXS_LABEL[key] ? FXS_LABEL[key](val) : (String(key)+' '+sgn(val));
+};
+
+/* --- fxApply: JEDNA BRAMA DLA WSZYSTKICH SKUTKÓW ZDARZENIA ---
+   Skąd brało się „[object Object]" w rubryce EFEKTY:
+   większość zdarzeń zwraca z `f()` tablicę STRINGÓW (helpery fx* same
+   zwracają gotowy tekst), ale kilkadziesiąt opcji napisano w drugim,
+   nigdy nieobsłużonym formacie — deskryptorze { t:'opis', f:(p)=>... }.
+   UI robiło na takim wpisie esc(obiekt) → „[object Object]", a funkcja
+   `f` z deskryptora NIGDY się nie wykonywała, więc opcja nie miała żadnych
+   skutków poza tekstem-śmieciem.
+   fxApply() spłaszcza cokolwiek zwróci zdarzenie, odpala odroczone `f(p)`
+   i oddaje czystą listę linijek do wyświetlenia. */
+function fxApply(out){
+ const txt=[];
+ const walk = item => {
+   if(item==null || item===false) return;
+   if(Array.isArray(item)){ item.forEach(walk); return; }
+   if(typeof item==='string'){ if(item.trim()) txt.push(item.trim()); return; }
+   if(typeof item==='number'){ txt.push(String(item)); return; }
+   if(typeof item==='function'){                       // efekt podany samą funkcją
+     try{ walk(item(G.p)); }catch(e){ txt.push('(efekt nie doszedł do skutku: '+e.message+')'); }
+     return;
+   }
+   if(typeof item==='object'){
+     if(typeof item.f==='function'){
+       try{ item.f(G.p); }catch(e){ txt.push('(efekt nie doszedł do skutku: '+e.message+')'); }
+     }
+     const t = item.t!=null ? item.t : item.txt!=null ? item.txt : item.text!=null ? item.text : item.l;
+     if(t!=null && String(t).trim()) txt.push(String(t).trim());
+     return;
+   }
+   txt.push(String(item));
+ };
+ walk(out);
+ return txt;
+}
 
 /* --- WALKOWER — MECZ, KTÓRY SIĘ NIE ODBYŁ ---
    Wcześniej `G.S.walkower=true` powodowało wyłącznie to, że Gracz nie jechał
@@ -1149,6 +1259,208 @@ const EVENTS=[
   {l:'Akceptuję.', f:()=>{G.p.next.forceClub='weak';G.p.next.rateMul=1.4;
      return ['Transfer do losowego klubu z najniższej ligi — za to z wysoką stawką za punkt.', fxP(-5)];}},
   {l:'Odrzucam.',  f:()=>[fxL(3)]}
+ ]},
+{id:'alfred', t:'TAJEMNICZA PRZEJAŻDŻKA',
+ x:'Alfred z Leszna proponuje Ci przejażdżkę samochodem, aby omówić sprawy sprzętowe.',
+ o:[
+  {l:'Zgadzam się.', f:()=>{ 
+     if(chance(25)) return [fxO(5)+' (Sprzedał Ci tajniki żużla)'];
+     return [fxEnd('Wypadek podczas wycieczki z Alfredem. Koniec kariery.')];
+  }},
+  {l:'Pojadę awionetką z Tomaszem, będzie szybciej.', f:()=>[fxI(40)]}
+ ]},
+{id:'maksym_wlewka', t:'WIECZOREK POETYCKI',
+ x:'Maksym zaprasza Cię na małą wlewkę i wieczorek poetycki.',
+ o:[
+  {l:'Idę na to.', f:()=>[fxO(2), fxM(-20)]},
+  {l:'Nie idę, bo dostanę depresji.', f:()=>[fxP(10)]}
+ ]},
+{id:'ojciec_afera', t:'KONFLIKT Z OJCEM',
+ x:'Twój ojciec był przy Tobie przez całą karierę. Stwierdzasz, że czas odciąć pępowinę. Kłócicie się w parku maszyn.',
+ o:[
+  {l:'Nie przepraszasz ojca.', f:()=>[fxM(30), pick([fxO(5), fxO(-5)])]},
+  {l:'Przepraszasz.', f:()=>[fxP(10), fxM(-5), fxO(1), fxH(10)]}
+ ]},
+{id:'wojna_kraj', t:'KONFLIKT ZBROJNY',
+ x:'Twój kraj rozpoczyna wojnę z innym państwem.',
+ o:[
+  {l:'Udaję, że jestem przeciwko.', f:()=>[fxS('banMatches', 14), {t:'+250 000 zł z zagranicznego kontraktu', f:(p)=>p.budget+=250000}]},
+  {l:'Jaka wojna? Kto to widział.', f:()=>[fxEnd('Zawieszenie i deportacja. Koniec kariery w Polsce.')]}
+ ]},
+{id:'karetka_lodz', t:'BŁYSKAWICZNA KARETKA W ŁODZI',
+ x:'Podczas meczu w Łodzi ulegasz wypadkowi. Prezes klubu łapie Cię za ramię i mówi, że szybko załatwi karetkę.',
+ o:[
+  {l:'Zgadzasz się.', f:()=>{ 
+     if(chance(80)) return [fxI(-20)];
+     return [fxEnd('Karetka okazała się karawanem. Dostałeś „piąteczkę pavuloniku”. Koniec kariery.')];
+  }},
+  {l:'Odmawiasz i czekasz na NFZ.', f:()=>[fxI(20)]}
+ ]},
+{id:'brat_dziewczyna', t:'RODZINNY KONFLIKT',
+ x:'Spotykasz fajną dziewczynę na stadionie. Twój brat pyta, czy może ją odprowadzić do domu.',
+ o:[
+  {l:'Dajesz mu wolną rękę.', f:()=>[fxI(50)+' (Agresja na torze rośnie)']},
+  {l:'Nie dajesz.', f:()=>[fxM(-20)]}
+ ]},
+{id:'maz_dziwna', t:'WIZYTA W BUDCE KOMENTATORSKIEJ',
+ x:'Tomasz zaprasza Cię jako gościa do budki komentatorskiej w trakcie meczu.',
+ o:[
+  {l:'Zgadzam się (i z jakiegoś powodu lepię się dziwną mazią).', f:()=>[fxM(10)]},
+  {l:'Wolę go nie słuchać.', f:()=>[fxP(10)]}
+ ]},
+{id:'minister_sportu', t:'WIZYTA MINISTRA SPORTU',
+ x:'Ważne spotkanie. Na stadionie ma się pojawić Minister Sportu, a sędziować będzie znany z surowości arbiter.',
+ o:[
+  {l:'Zróbmy kartoflisko na torze.', f:()=>{ 
+     if(chance(70)) return [fxT(3), fxO(1)];
+     // p.club to NAZWA klubu (string), nie obiekt — stary zapis `p.club.c.budget`
+     // nigdy nic nie robił. Klub wyciągamy przez clubOf().
+     return [fxWalk('lose', 0), fxS('banMatches', R(0,3)),
+             {t:'Kara od GKSŻ: -300 000 zł dla klubu', f:(p)=>{const c=clubOf(p); if(c) c.budget-=300000;}}];
+  }},
+  {l:'Jedziemy uczciwie.', f:()=>[fxT(-1), fxH(-10)]}
+ ]},
+{id:'swinia_szalik', t:'NIELEGALNA OPRAWA',
+ x:'Grupa kibiców prosi Cię o pomoc w przemyceniu Twoim busem specyficznej oprawy na mecz derbowy.',
+ o:[
+  {l:'Pomagam im.', f:()=>{ 
+     if(chance(10)) return [fxT(3), fxS('banMatches', 3)];
+     return [fxT(3)+' (Świnia w szaliku rywali biega po torze)'];
+  }},
+  {l:'Odmawiam.', f:()=>[fxP(10)]}
+ ]},
+{id:'prezes_quad', t:'ŚWIRUJĄCY PREZES',
+ x:'Jedziesz mecz finałowy o awans. Twój prezes po pierwszym wygranym spotkaniu zaczyna świrować na quadzie pod taśmą.',
+ cond:(p,s)=>s.round>=14,
+ o:[
+  {l:'Patrzysz z zażenowaniem.', f:()=>[fxP(-5), fxM(15)]}
+ ]},
+{id:'tlumacz_mechanik', t:'WYWIAD Z TŁUMACZEM',
+ x:'Brytyjska telewizja prosi o wywiad, ale Ty nie znasz angielskiego. Obok stoi Twój mechanik z zawodówki.',
+ o:[
+  {l:'Odpowiadasz sam.', f:()=>[fxM(-20), fxP(10)]},
+  {l:'Podstawiasz mechanika („Dobra, powiedz mu, że kurwa ciężko było”).', f:()=>[fxM(30), fxP(-15)]}
+ ]},
+{id:'udawany_upadek', t:'LEŻĘ DALEJ!',
+ x:'Upadasz w 14. biegu na ostatniej pozycji, ale widzisz, że przegrywacie 1:5. Postanawiasz leżeć dalej, wymuszając powtórkę.',
+ o:[
+  {l:'Leżę!', f:()=>{ 
+     if(chance(75)) return [fxEnd('Zdemaskowali Cię. Zostałeś wykluczony, kibice spalili Ci busa. Po latach zostałeś bezdomnym i dostałeś raka skóry.')];
+     return [fxT(2)+' (Kolega wygrał powtórkę)'];
+  }},
+  {l:'Wstaję i zjeżdżam z toru.', f:()=>[fxP(10)]}
+ ]},
+{id:'komisariat_ostrowski', t:'OSTROWSKI KOMISARIAT',
+ x:'Zostałeś zatrzymany przez lokalną policję pod wpływem stresu pomeczowego.',
+ o:[
+  {l:'W chuja zrobił Andrzej wariat.', f:()=>[fxP(-20), fxM(20)]},
+  {l:'Uciekam w alkohol.', f:()=>[fxEnd('Potrącasz kobietę i odsiadujesz wyrok wyższy niż za morderstwo.')]}
+ ]},
+{id:'zbiorka_junior', t:'ZBIÓRKA NA LECZENIE',
+ x:'Junior z KLŻ wypierdolił w bandę na próbie toru. W internecie ruszyła zbiórka na jego leczenie.',
+ o:[
+  {l:'Jesteśmy żużlową rodziną, dorzucam się.', f:()=>{return [{t:'-100 zł z konta', f:(p)=>p.budget-=100}];}},
+  {l:'Co to za ogór, nie daję nic.', f:()=>[fxM(-5)]},
+  {l:'Obiecuję publicznie, że dam, ale nie przelewam.', f:()=>{ 
+     if(chance(50)) return [fxM(-30), fxP(-20)+' (Wybuchła afera)'];
+     return [fxM(10)];
+  }}
+ ]},
+{id:'zbiorka_mistrz', t:'REHABILITACJA MISTRZA',
+ x:'Kilkukrotny mistrz świata doznał wielokończynowego złamania. Potrzebuje drogiej rehabilitacji w Szwajcarii.',
+ o:[
+  {l:'Oddaję mu zarobki z turnieju.', f:()=>[fxP(10)]},
+  {l:'#MistrzJestJeden. Udostępniam post, ale kasy nie daję.', f:()=>[fxM(10)]}
+ ]},
+{id:'kradziony_silnik', t:'CZYJ TO SILNIK?',
+ x:'Przypadkiem w Twoim boksie mechanicy znajdują ukradziony silnik juniora z Twojego klubu.',
+ o:[
+  {l:'Nic o tym nie wiedziałem.', f:()=>[fxP(10)]},
+  {l:'Zajebałem jak Dawid w Argentynie.', f:()=>[fxM(10), fxO(-2)]}
+ ]},
+{id:'rozkrecony_silnik', t:'TAJEMNICA TUNERA',
+ x:'Z ciekawości rozkręciłeś silnik od topowego tunera, nie mając jego zgody.',
+ o:[
+  {l:'Teraz wiem, jak to działa.', f:()=>[fxE(-30), fxP(-15)+' (Tuner zablokował Ci dostęp do swoich jednostek na zawsze)']}
+ ]},
+{id:'pociag_gwizdek', t:'POCIĄG ZBIEG',
+ x:'Prowadzisz w biegu, ale za płotem stadionu przejeżdża pociąg, który gwiżdże. Z zaskoczenia puszczasz gaz i upadasz.',
+ o:[
+  {l:'Mówisz, że spadł Ci łańcuszek.', f:()=>[fxP(-5), fxO(-5)]},
+  {l:'Mówisz prawdę w wywiadzie.', f:()=>[fxP(-20), fxM(10)]}
+ ]},
+{id:'zemsta_brata', t:'ZEMSTA BRATA',
+ x:'Masz upadek w pierwszym łuku z winy zawodnika rywali. Twój krewki brat wybiega z parku maszyn w stronę sprawcy.',
+ o:[
+  {l:'Krzyczysz, żeby go zostawił.', f:()=>[fxP(10)]},
+  {l:'Pozwalasz mu kopnąć leżącego przeciwnika.', f:()=>[fxS('banMatches', 5), fxM(30), fxP(-20)]}
+ ]},
+{id:'impreza_rybnik', t:'IMPREZA Z RAFAŁEM',
+ x:'Kolega Rafał po imprezie w Rybniku pyta, czy go podwieziesz do domu, czy ma wracać sam.',
+ o:[
+  {l:'Pojadę, kogo niby potrącę o 2 w nocy?', f:()=>[fxM(20), fxP(-10)]},
+  {l:'Niech jedzie sam. Da radę.', f:()=>[fxP(20)]}
+ ]},
+{id:'impreza_spanie', t:'WIECZÓR PRZED MECZEM',
+ x:'Jesteś na mocnej imprezie u ziomka, a następnego dnia rano jedziesz bardzo ważne spotkanie.',
+ o:[
+  {l:'Otwierasz drzwi od auta i wypadzasz na ulicę (wozisz Ryana Sullivana).', f:()=>[fxP(-10), fxO(15), {t:'Pogorszone relacje z prezesem'}]},
+  {l:'Idziesz spać na tylnej kanapie.', f:()=>[fxO(-10), fxP(-5)]}
+ ]},
+{id:'janusz_pytanie', t:'WYWIAD O JANUSZU',
+ x:'Lokalny dziennikarz podtyka Ci mikrofon i pyta wprost: „Kim dla Pana jest Janusz Kołodziej?”.',
+ o:[
+  {l:'Stara k***a.', f:()=>[fxM(10), fxP(-20)]},
+  {l:'Złodziej.', f:()=>[fxP(10), fxM(-5)]}
+ ]},
+{id:'kaczorek_ai', t:'OFERTA OD KACZORKA',
+ x:'Przychodzi do Ciebie menedżer Piotr K. Mówi, że da Ci łapówkę, jeśli zrobisz parę zer, żeby dopasować Twoje wyniki do algorytmu AI.',
+ o:[
+  {l:'Zgadzam się.', f:()=>{return [{t:'+10 000 zł, Pomalowany sufit, OVR -5', f:(p)=>{p.budget+=10000;}}, fxO(-5)];}},
+  {l:'Wzywasz Nighta i robisz wykład o szkodliwości AI.', f:()=>[fxM(-10), fxP(20)]}
+ ]},
+{id:'wesela_powrot', t:'TRZODA NA WESELU',
+ x:'Prezes i trener Twojego byłego klubu robią potężną trzodę na Twoim weselu i namawiają Cię do powrotu.',
+ o:[
+  {l:'Uśmiechasz się z nimi do zdjęcia.', f:()=>[fxP(-5), fxM(15)]},
+  {l:'Wypraszasz ich z wesela z ochroną.', f:()=>[fxP(5), fxM(-10)]}
+ ]},
+{id:'wizyta_zaklad', t:'WIZYTA ZAKŁAD KARNY',
+ x:'Podczas wizyty u kolegi Rafała w lokalnym więzieniu w Rawiczu widzisz parę znajomych twarzy z zarządu.',
+ o:[
+  {l:'Podchodzisz się przywitać.', f:()=>{return [{t:'W przyszłym okienku dostaniesz tylko słabe oferty', f:(p)=>{p.next.forceClub = 'weak';}}];}},
+  {l:'Nie spoufalam się z kryminalistami.', f:()=>[fxP(10), fxI(20)]}
+ ]},
+{id:'wlasciwy_komentarz', t:'KABINA KOMENTATORSKA',
+ x:'Siedzisz w kabinie. Mecz trwa, musisz coś powiedzieć do mikrofonu.',
+ o:[
+  {l:'„Ozon jest bliżej ziemi”.', f:()=>[fxM(10)]},
+  {l:'Krzyczysz: „HAHAHA SPIDŁEEEEJ!”.', f:()=>[fxM(20), fxP(-10)]},
+  {l:'Mówisz losowe rzeczy, bo nie znasz budowy motocykla.', f:()=>[fxP(-15)]}
+ ]},
+{id:'kask_zapinanie', t:'NOWY KASK OD SPONSORA',
+ x:'Przed meczem dostajesz nowy, niesprawdzony kask prosto z Temu.',
+ o:[
+  {l:'Sprawdzam zapięcie.', f:()=>[fxP(2)]},
+  {l:'Pierdolę to, zakładam jak leci.', f:()=>{ 
+     if(chance(50)) return [fxEnd('Zapięcie puściło w trakcie biegu. Uraz głowy, koniec kariery.')];
+     return [fxM(5)];
+  }}
+ ]},
+{id:'birkmose_szlug', t:'DYMEK W PARKU MASZYN',
+ x:'Marcus Birkemose częstuje Cię dziwnie pachnącym szlugiem tuż po 15. biegu.',
+ o:[
+  {l:'Biorę.', f:()=>{ 
+     if(chance(60)) return [fxS('banMatches', 14), fxP(-30)+' (Wpadka na teście dopingowym)'];
+     return [fxM(20), fxO(-2)];
+  }},
+  {l:'Odmawiam.', f:()=>[fxP(10)]}
+ ]},
+{id:'zpiecie_kibic_leszno', t:'KIBIC Z LESZNA',
+ x:'Wdajesz się w pyskówkę pod płotem z nabuzowanym kibicem z Leszna (styl Tai W.).',
+ o:[
+  {l:'Przyjmujesz walkę.', f:()=>[fxM(15), fxI(20), fxS('banMatches', 2)]},
+  {l:'Wycofujesz się i odchodzisz.', f:()=>[fxP(10)]}
  ]}
 ];
 
@@ -1257,6 +1569,300 @@ const WINTER_EVENTS=[
      else l.push('Wniosek odrzucony. Zostało rat: '+G.p.alimony+'.');
      return l;}},
   {l:'Płacę i nie komentuję.', f:()=>[fxP(4), 'Rat do zapłaty: '+(G.p.alimony||0)+'.']}
+ ]},
+ 
+ {id:'matka_boska_klub', t:'OBJAWIENIE SPONSORA',
+ x:'Prezes wielkiej firmy po wybudowaniu figury Matki Boskiej doznaje wizji, że Ty musisz poprowadzić jego nowy klub żużlowy.',
+ o:[
+  {l:'Tak jak Pan Jezus powiedział – wchodzę w to.', f:()=>{ 
+     return [fxH(50), fxM(10), pick([fxO(5), fxO(-5)]), {t:'Wymuszony transfer + Kasa', f:(p)=>{p.next.forceClub='any'; p.budget+=pick([100000, -100000]);}}];
+  }},
+  {l:'Prędzej zaufam wąsatemu gościowi na quadzie.', f:()=>[fxP(10)]}
+ ]},
+{id:'insta_15latka', t:'WIADOMOŚĆ NA INSTAGRAMIE',
+ x:'Pisze do Ciebie 15-latka na Instagramie.',
+ o:[
+  {l:'„Zapraszam na herbatkę.”', f:()=>[fxP(10), fxM(10)]},
+  {l:'„Pokaż pupę w stringach.”', f:()=>{ 
+     if(chance(10)) return [{t:'Afera obyczajowa, wylatujesz z klubu.', f:(p)=>{p.next.forceClub='weak';}}, fxM(-20)];
+     if(chance(10)) return [fxO(2), fxM(-20)];
+     return [fxM(-20)];
+  }}
+ ]},
+{id:'zima_emilcin', t:'WIGILIA W EMILCINIE',
+ x:'Z nudów jedziesz w Wigilię do Emilcina.',
+ o:[
+  {l:'Dotykasz pomnika kosmitów.', f:()=>[fxO(10)+' (Dostałeś energię z kosmosu)']},
+  {l:'Żałujesz wyjazdu, nie wierzysz w UFO.', f:()=>[fxM(-10), fxI(15)]}
+ ]},
+{id:'szafa_influencer', t:'SKŁADANIE SZAFY',
+ x:'Najebany żużlowy influencer dzwoni do Ciebie w grudniu i zaprasza na wspólne składanie szafy z IKEI.',
+ o:[
+  {l:'Zgadzam się.', f:()=>[fxO(2), fxI(30)]},
+  {l:'Pierdolę, dzwonię na psy.', f:()=>[fxM(-10), fxP(10)]}
+ ]},
+{id:'romans_prezeska', t:'PROPOZYCJA PREZESKI',
+ x:'Prezeska klubu dzwoni przed okienkiem. Chce, żebyś ją wyruchał na oczach jej męża.',
+ o:[
+  // stawka za punkt siedzi w kontrakcie zawodnika (p.contract.rate), a nie w klubie
+  {l:'Zgadzam się.', f:()=>{return [{t:'Podwyżka +2 000 zł za punkt.', f:(p)=>{p.contract.rate+=2000;}}];}},
+  {l:'Rozwiązuję kontrakt z obrzydzenia.', f:()=>{return [{t:'Uciekasz do innej ligi.', f:(p)=>{p.next.forceClub='weak';}}];}}
+ ]},
+{id:'corka_prezesa', t:'ROMANS Z CÓRKĄ',
+ x:'Wdajesz się w grudniowy romans z córką prezesa.',
+ o:[
+  {l:'Oświadczasz się jej.', f:()=>{return [{t:'Kontrakt przedłużony o 5 lat!', f:(p)=>{p.contract.years+=5;}}];}},
+  {l:'Mówisz prezesowi, że jej nie znasz.', f:()=>{return [{t:'Wkurzony prezes niszczy Ci reputację. Masz oferty tylko z KLŻ.', f:(p)=>{p.next.forceClub='weak';}}];}}
+ ]},
+{id:'zamrzniete_jezioro', t:'MROŹNY TRENING',
+ x:'Mróz -20 stopni. Wpadasz na genialny pomysł trenowania na kolcach po zamarzniętym jeziorze.',
+ o:[
+  {l:'Wyjeżdżam na lód.', f:()=>{ 
+     if(chance(50)) return [fxEnd('Lód pęka. Utonąłeś wraz z motocyklem.')];
+     return [fxO(5)];
+  }},
+  {l:'Spokojnie, idę na saunę.', f:()=>[fxP(10)]}
+ ]},
+{id:'chris_harris', t:'TRENING Z BOMBEREM',
+ x:'Chris Harris dzwoni w lutym i zaprasza Cię na wspólny trening na szkółkowym owalu w Anglii.',
+ o:[
+  {l:'Jadę trenować.', f:()=>[fxM(30), fxP(-10)]},
+  {l:'Zostaję w domu.', f:()=>[fxM(-40)]}
+ ]},
+{id:'dietetyk_wawrzyniak', t:'DIETA OD DAWIDA',
+ x:'Dawid Wawrzyniak proponuje, że od zimy zostanie Twoim osobistym dietetykiem.',
+ o:[
+  {l:'No raczej, wchodzę w to.', f:()=>[fxO(-5)+' (Prędkość spada, waga rośnie)']},
+  {l:'Nie potrzebuję dietetyka.', f:()=>[fxP(-20)]}
+ ]},
+ {id:'gala_lodowa_drabik', t:'GALA LODOWA W CZĘSTOCHOWIE',
+ x:'Sławomir Drabik dzwoni i zaprasza na tradycyjną Galę Lodową. Tor jest z lodu, masz jechać na starych oponach z wkrętami do drewna.',
+ o:[
+  {l:'Wbijam wkręty i jadę w futrze!', f:()=>{ 
+     if(chance(20)) return [fxEnd('Wkręt wyleciał koledze z opony i trafił Cię w tętnicę. Tragedia na lodzie, koniec kariery.')]; 
+     if(chance(40)) return [fxI(30)+' (Rozorana łydka)'];
+     return [fxM(30), fxO(3)];
+  }},
+  {l:'Za zimno, siedzę w domu z grzańcem.', f:()=>[fxP(10)]}
+ ]},
+{id:'bal_tygodnika', t:'BAL TYGODNIKA ŻUŻLOWEGO',
+ x:'Zostałeś zaproszony na Bal Tygodnika Żużlowego. Wszyscy są już po kilku głębszych, a prezes lokalnych rywali głośno obraża Cię przy barze.',
+ o:[
+  {l:'Rzucasz w niego kieliszkiem z wódką.', f:()=>{return [fxM(30), fxP(-30), {t:'Kara od centrali: -20 000 zł', f:(p)=>p.budget-=20000}];}},
+  {l:'Ignorujesz i idziesz tańczyć z żoną redaktora.', f:()=>[fxP(15), fxM(10)]}
+ ]},
+{id:'tuner_zdrada', t:'DRAMAT U TUNERA',
+ x:'Jedziesz w lutym odebrać silniki od topowego tunera. Przez okno widzisz, jak pakuje Twoje najlepsze głowice do busa zawodnika z Grand Prix.',
+ o:[
+  {l:'Robisz awanturę na pół warsztatu.', f:()=>[fxP(-15), fxE(-30)+' (Zemsta tunera: wcisnął Ci szrot)']},
+  {l:'Kupujesz mu dobrą whisky i błagasz o cokolwiek.', f:()=>[fxP(10), fxE(15)]}
+ ]},
+{id:'freak_fight', t:'OFERTA Z FAME MMA',
+ x:'Marcin Najman i federacja freak-fightowa proponują Ci walkę w klatce z sędzią, który rok temu wyrzucił Cię w 14. biegu.',
+ o:[
+  {l:'Biorę to! Zemsta i pieniądze!', f:()=>{return [fxM(50), fxP(-30), fxI(40), {t:'Wypłata z PPV: +150 000 zł', f:(p)=>p.budget+=150000}];}},
+  {l:'Jestem żużlowcem, nie patusem.', f:()=>[fxP(20), fxM(-10)]}
+ ]},
+{id:'kalendarz_miesny', t:'KALENDARZ SPONSORA',
+ x:'Główny sponsor (zakłady mięsne) wymaga, abyś zimą zapozował nago z pętą kiełbasy śląskiej do klubowego kalendarza.',
+ o:[
+  {l:'Pozuję, w końcu płacą.', f:()=>{return [fxM(-30), {t:'Premia za wstyd: +15 000 zł', f:(p)=>p.budget+=15000}];}},
+  {l:'Odmawiam stanowczo.', f:()=>{return [fxP(10), {t:'Utrata dotacji sponsora: -50 000 zł w kasie klubu', f:(p)=>{const c=clubOf(p); if(c) c.budget-=50000;}}];}}
+ ]},
+{id:'skoki_zakopane', t:'INTEGRACJA POD KROKWIĄ',
+ x:'Prezes zabiera drużynę na integrację do Zakopanego na skoki narciarskie. O 3 w nocy ktoś proponuje zjazd na miednicy z zeskoku.',
+ o:[
+  {l:'Zjeżdżam, co może pójść nie tak?', f:()=>{
+     if(chance(40)) return [fxLongInj('Uderzenie w bandę przy 80 km/h. Połamane obie nogi.')]; 
+     return [fxH(25), fxO(2)+' (Hart duetu)'];
+  }},
+  {l:'Pilnuję kolegów, żeby się nie pozabijali.', f:()=>[fxP(15), fxH(-10)]}
+ ]},
+{id:'mechanik_spawa', t:'ZDRADA MECHANIKA',
+ x:'W styczniu Twój główny mechanik dzwoni, że odchodzi z teamu, bo znalazł lepszą pracę przy spawaniu tłumików w Niemczech.',
+ o:[
+  {l:'Dajesz mu podwyżkę pod stołem.', f:()=>{return [{t:'-30 000 zł z Twojej kieszeni', f:(p)=>p.budget-=30000}, fxE(15)];}},
+  {l:'Niech spierdala, sam sobie ustawię zapłon.', f:()=>[fxE(-30), fxP(-10)]}
+ ]},
+{id:'wybory_ulotki', t:'KAMPANIA WYBORCZA PREZESA',
+ x:'Prezes startuje w lokalnych wyborach na radnego i zmusza drużynę do rozdawania ulotek pod kościołem o 7 rano w niedzielę.',
+ o:[
+  {l:'Rozdaję z uśmiechem.', f:()=>{return [fxM(-10), {t:'Dobre relacje (Premia +10k)', f:(p)=>p.budget+=10000}];}},
+  {l:'Wyrzucam ulotki do śmietnika.', f:()=>[fxP(5), fxM(5), fxH(-15)]}
+ ]},
+{id:'garaz_odpalenie', t:'ZIMOWY GŁÓD METANOLU',
+ x:'Nie możesz wytrzymać do wiosny. W lutym odpalasz motocykl w garażu podziemnym w swoim bloku.',
+ o:[
+  {l:'Gaz do dechy, niech sąsiedzi czują rycynę!', f:()=>{return [fxP(-20), fxM(15), {t:'Mandat i pozew: -5 000 zł', f:(p)=>p.budget-=5000}];}},
+  {l:'Rozsądek wygrywa, gaszę.', f:()=>[fxP(10)]}
+ ]},
+{id:'szaman_klub', t:'ENERGO-TERAPEUTA W KLUBIE',
+ x:'Klub zatrudnia bioenergoterapeutę. Każe Ci zimą pić wodę ładowaną przez telewizor i nosić miedziane wkładki w butach.',
+ o:[
+  {l:'Piję, jeśli ma pomóc na starty.', f:()=>{
+     if(chance(30)) return [fxO(5)+' (To placebo, ale działa)']; 
+     return [fxP(-15), fxO(-5)+' (Zatrucie pokarmowe przed sezonem)'];
+  }},
+  {l:'Wyśmiewam szamana na forum publicznym.', f:()=>[fxP(10), fxH(-10)]}
+ ]},
+{id:'tatuaz_herb', t:'PIJANY TATUAŻ',
+ x:'Po noworocznej imprezie robisz sobie wielki tatuaż z herbem obecnego klubu na całych plecach.',
+ o:[
+  {l:'Dumnie pokazuję na Instagramie.', f:()=>{return [{t:'Blokada transferu! (Zostajesz w klubie na ten rok)', f:(p)=>p.next.forceClub='current'}, fxM(30)];}},
+  {l:'Usuwam laserowo w bolesnej tajemnicy.', f:()=>{return [{t:'-15 000 zł za zabiegi laserowe', f:(p)=>p.budget-=15000}, fxI(15)];}}
+ ]},
+{id:'esport_speedway', t:'TURNIEJ E-SPORTOWY',
+ x:'Zima się dłuży, więc bierzesz udział w oficjalnym turnieju e-sportowym w Speedway Challenge.',
+ o:[
+  {l:'Gram na poważnie, skupienie na 100%.', f:()=>[fxM(15), fxP(5)]},
+  {l:'Wkurzam się na lagi i rozbijam klawiaturę na streamie.', f:()=>[fxM(25), fxP(-20)]}
+ ]},
+{id:'ksm_zmiana', t:'AFERA Z KSM',
+ x:'W połowie lutego GKSŻ niespodziewanie wprowadza KSM (Kalkulowana Średnia Meczowa). Twój współczynnik absolutnie nie pasuje do wizji drużyny.',
+ o:[
+  {l:'Piszę pismo z błaganiem o status zastępstwa.', f:()=>[fxM(-10), fxP(-10)]},
+  {l:'Jebie mnie to, idę do innej ligi.', f:()=>{return [{t:'Wymuszony transfer na słabszy klub', f:(p)=>p.next.forceClub='weak'}, fxP(10)];}}
+ ]},
+{id:'sylwester_petarda', t:'SYLWESTER Z MOŹDZIERZEM',
+ x:'O północy kolega daje Ci do odpalenia ogromną, chińską petardę bez żadnego atestu.',
+ o:[
+  {l:'Odpalam, raz się żyje!', f:()=>{
+     if(chance(30)) return [fxEnd('Petarda wybuchła w dłoni. Uraz amputacyjny. Koniec kariery.')]; 
+     return [fxM(5), fxO(2)];
+  }},
+  {l:'Nie ruszam tego gówna, chronię ręce.', f:()=>[fxP(15), fxI(-10)]}
+ ]},
+{id:'morsowanie', t:'ZIMOWE MORSOWANIE',
+ x:'Prezes umawia drużynę na modne morsowanie w lokalnym jeziorze, żeby zbudować charakter.',
+ o:[
+  {l:'Wchodzę do przerębla z uśmiechem.', f:()=>[fxH(15), fxO(2)]},
+  {l:'Zostaję na brzegu w kurtce.', f:()=>[fxH(-15), fxP(-5)]}
+ ]},
+{id:'silnik_puzle', t:'ZABAWA W TUNERA',
+ x:'Z nudów rozkręciłeś swój najlepszy silnik wyścigowy na dywanie w salonie, ale zapomniałeś, jak złożyć rozrząd.',
+ o:[
+  {l:'Składam na czuja. Metoda prób i błędów.', f:()=>{
+     if(chance(50)) return [fxE(-40)+' (Silnik wybuchł na pierwszej próbie toru)']; 
+     return [fxE(15)+' (Odkryłeś nową krzywą mocy)'];
+  }},
+  {l:'Wiozę części w kartonie po butach do mechanika.', f:()=>[fxP(-10), fxE(5)]}
+ ]},
+{id:'reality_show', t:'OFERTA Z TELEWIZJI',
+ x:'Dostajesz propozycję z telewizji. Chcą Cię w nowym sezonie "Rolnik szuka żony", bo masz kawałek pola pod miastem.',
+ o:[
+  {l:'Biorę udział, darmowa promocja.', f:()=>[fxM(60), fxP(-30)]},
+  {l:'Odmawiam robienia z siebie pośmiewiska.', f:()=>[fxP(20)]}
+ ]},
+{id:'auto_sponsora', t:'ROZBITE AUTO SPONSORA',
+ x:'Na ośnieżonej drodze wpadasz w poślizg i kasujesz wypożyczone luksusowe auto od klubowego sponsora.',
+ o:[
+  {l:'Dzwonię na policję i się przyznaję.', f:()=>{return [fxP(10), {t:'-50 000 zł za szkodę', f:(p)=>p.budget-=50000}];}},
+  {l:'Uciekam z miejsca zdarzenia.', f:()=>{
+     if(chance(70)) return [fxEnd('Nagranie z monitoringu trafiło do sieci. Skandal, więzienie, koniec kariery.')]; 
+     return [fxM(10)+' (Cudem Ci upiekło)'];
+  }}
+ ]},
+{id:'oboz_survival', t:'SURVIVAL W BIESZCZADACH',
+ x:'Prezes organizuje zimowy obóz survivalowy w Bieszczadach. Zero telefonów, spanie w szałasie i jedzenie kory.',
+ o:[
+  {l:'Przechodzę to i wracam twardszy.', f:()=>[fxO(5), fxH(20), fxI(10)]},
+  {l:'Uciekam w nocy do pensjonatu z ciepłą wodą.', f:()=>[fxP(-15), fxH(-20)]}
+ ]},
+{id:'swiecenie_motocykli', t:'ŚWIĘCENIE SPRZĘTU',
+ x:'W marcu prezes zaprasza lokalnego proboszcza na święcenie motocykli. Ksiądz polewa je obficie wodą święconą prosto po gaźnikach.',
+ o:[
+  {l:'Pozwalasz mu lać.', f:()=>[fxE(-20)+' (Woda zalała gaźnik)', fxP(5)]},
+  {l:'Zasłaniasz motocykl własnym ciałem.', f:()=>[fxM(15), fxE(10)]}
+ ]},
+{id:'plebiscyt', t:'LOKALNY PLEBISCYT',
+ x:'Na gali "Sportowiec Roku" przegrywasz statuetkę z ping-pongistą z trzeciej ligi. Masz już promile we krwi.',
+ o:[
+  {l:'Wchodzisz na scenę i robisz dym przed kamerami.', f:()=>[fxM(40), fxP(-30)]},
+  {l:'Klaszczesz grzecznie i idziesz topić smutki w wódce.', f:()=>[fxP(5), fxO(-2)]}
+ ]},
+{id:'kradziez_busa', t:'UKRADZIONY BUS W WOŁOMINIE',
+ x:'W lutym dowiadujesz się, że Twój klubowy bus z częściami odnalazł się na dziupli w Wołominie.',
+ o:[
+  {l:'Płacę złodziejom okup pod stołem.', f:()=>{return [{t:'-40 000 zł, ale sprzęt wraca', f:(p)=>p.budget-=40000}, fxE(15)];}},
+  {l:'Liczę na sprawność polskiej policji.', f:()=>[fxE(-40)+' (Policja zabezpieczyła sprzęt jako dowód do 2030 roku)']}]
+ },
+{id:'reklama_lokalna', t:'LOKALNA REKLAMA W TV',
+ x:'Znajomy prosi o nagranie (w kevlarze!) taniej reklamy lokalnego salonu glazury i terakoty.',
+ o:[
+  {l:'Nagrywam z uśmiechem, kasa to kasa.', f:()=>{return [fxM(-10), {t:'+8 000 zł wpadło', f:(p)=>p.budget+=8000}];}},
+  {l:'Odmawiam wstydu.', f:()=>[fxP(10)]}
+ ]},
+{id:'cross_zima', t:'TRENING NA ZAMARZNIĘTYM CROSSIE',
+ x:'Koledzy wyciągają Cię na zamarznięty tor motocrossowy. Opony ślizgają się jak na szkle.',
+ o:[
+  {l:'Idę pełnym gazem, muszę czuć prędkość!', f:()=>{
+     if(chance(35)) return [fxLongInj('Koszmarny upadek na zlodowaciałej ziemi. Złamana miednica.')]; 
+     return [fxO(8)+' (Niesamowite czucie motocykla)'];
+  }},
+  {l:'Odpuszczam, to igranie ze śmiercią.', f:()=>[fxP(15)]}
+ ]},
+{id:'dieta_weganska', t:'ZIMOWA ZMIANA DIETY',
+ x:'Po obejrzeniu dokumentu na Netflixie zimą przechodzisz na restrykcyjny weganizm.',
+ o:[
+  {l:'Zostaję przy jedzeniu trawy.', f:()=>[fxO(-8)+' (Brak siły do utrzymania motocykla)', fxM(20)]},
+  {l:'Łamię się i wcinam schabowego.', f:()=>[fxO(4), fxP(-5)]}
+ ]},
+{id:'spor_kibice_zima', t:'SPOTKANIE Z KIBOLAMI',
+ x:'Na przedsezonowej prezentacji gniazdowy wytyka Ci słabą formę z zeszłego roku i każe oddać kevlar.',
+ o:[
+  {l:'Pyskujesz z mikrofonem w ręku.', f:()=>[fxM(35), fxP(-20), fxH(-25)]},
+  {l:'Bierzesz na klatę i obiecujesz poprawę.', f:()=>[fxP(15), fxH(15)]}
+ ]},
+{id:'praca_budowa', t:'DORABIANIE NA BUDOWIE',
+ x:'Budżet na zimę się nie spina. Idziesz robić na budowie u wujka, żeby opłacić mechaników.',
+ o:[
+  {l:'Zasuwam z workami cementu.', f:()=>{return [fxO(5)+' (Fizol, kondycja rośnie)', {t:'+12 000 zł zarobku', f:(p)=>p.budget+=12000}, fxM(-15)];}},
+  {l:'Wstydzę się, wolę wziąć chwilówkę.', f:()=>{return [{t:'Pętla długów: -25 000 zł na start sezonu', f:(p)=>p.budget-=25000}, fxP(-15)];}}
+ ]},
+{id:'zmiana_numeru', t:'KŁÓTNIA O NUMER STARTOWY',
+ x:'Nowy zimowy hit transferowy Twojego klubu dzwoni i żąda oddania Twojego szczęśliwego numeru startowego.',
+ o:[
+  {l:'Oddajesz bez walki, dla dobra atmosfery.', f:()=>[fxP(10), fxH(-10), fxO(-2)]},
+  {l:'Stawiasz się i robisz kwas w mediach.', f:()=>[fxP(-15), fxH(20), fxM(25)]}
+ ]},
+{id:'narty_z_woda', t:'KULIG ZA BUSEM',
+ x:'Grudzień, spadło dużo śniegu. Mechanicy przywiązali starą maskę od Żuka do haka w klubowym busie i robią kulig po polnej drodze.',
+ o:[
+  {l:'Wsiadam na maskę, gazu!', f:()=>{
+     if(chance(25)) return [fxLongInj('Bus szarpnął, wyleciałeś w drzewo. Złamany kręgosłup, cały sezon z głowy.')]; 
+     return [fxH(30), fxO(3)];
+  }},
+  {l:'Nagrywam ich tylko na telefon.', f:()=>[fxM(10), fxP(10)]}
+ ]},
+{id:'sponsor_wigilia', t:'WIGILIA ZE SPONSOREM',
+ x:'Firmowa wigilia u potężnego sponsora klubu. Po kilku głębszych prezes firmy każe Ci śpiewać kolędy na karaoke.',
+ o:[
+  {l:'Śpiewam fałszując, ale z sercem.', f:()=>{return [fxP(-10), {t:'Prezes dorzuca +20 000 zł do budżetu', f:(p)=>p.budget+=20000}];}},
+  {l:'Odmawiam stanowczo.', f:()=>[fxP(15), fxM(-10)]}
+ ]},
+{id:'testy_na_lodzie', t:'TESTY NA ZAMARZNIĘTYM JEZIORZE',
+ x:'Tuner dzwoni, że wymyślił nową krzywkę rozrządu i musisz ją przetestować w lutym na zamarzniętym jeziorze.',
+ o:[
+  {l:'Ryzykuję utonięcie i jadę testować.', f:()=>{
+     if(chance(20)) return [fxEnd('Lód zarwał się pod motocyklem. Utonąłeś.')]; 
+     return [fxE(25)+' (Niesamowita przewaga sprzętowa)'];
+  }},
+  {l:'Czekam na roztopienie śniegu.', f:()=>[fxP(10), fxE(-10)]}
+ ]},
+{id:'zablokowany_paszport', t:'ZAGUBIONY PASZPORT',
+ x:'Przed wylotem na zgrupowanie do Hiszpanii orientujesz się, że pies pogryzł Twój dowód i paszport.',
+ o:[
+  {l:'Próbuję przekupić straż graniczną.', f:()=>[fxEnd('Aresztowanie za próbę korupcji. Koniec kariery w hańbie.')]},
+  {l:'Zostaję w Polsce i biegam po lesie.', f:()=>[fxP(15), fxO(-4)]}
+ ]},
+{id:'trening_z_psem', t:'TRENING Z PITBULLEM',
+ x:'Dla poprawy refleksu zimą postanawiasz biegać po lesie, uciekając przed agresywnym psem kolegi.',
+ o:[
+  {l:'Biegnij Forrest, biegnij!', f:()=>{
+     if(chance(40)) return [fxI(50)+' (Pies Cię dopadł i pogryzł łydkę)']; 
+     return [fxO(8)+' (Kondycja jak u maratończyka)'];
+  }},
+  {l:'Zapisuję się normalnie na siłownię.', f:()=>[fxP(10), fxO(2)]}
  ]}
 ];
  
@@ -1335,3 +1941,918 @@ const NAZW=['Nowak','Wiśniewski','Wójcik','Kamiński','Zieliński','Szymański
  'Zawadzki','Sadowski','Chmielewski','Włodarczyk','Borkowski','Czarnecki','Sawicki','Sokołowski','Urbański',
  'Kubiak','Maciejewski','Szczepański','Kucharski','Wilk','Kalinowski','Mazurek','Wysocki','Adamski',
  'Kaźmierczak','Sobczak','Czerwiński','Konieczny','Kaczmarek','Głowacki','Bednarek','Ziółkowski'];
+
+/* ============================================================
+   PULA IMION I NAZWISK DLA PROPOZYCJI NA EKRANIE TWORZENIA POSTACI
+   ------------------------------------------------------------
+   Wcześniej pole „IMIĘ I NAZWISKO" miało na sztywno wpisane jedno nazwisko,
+   więc każda kariera zaczynała się od tej samej osoby. Teraz przy każdym
+   wejściu na ekran (i po kliknięciu „LOSUJ") pole dostaje losowe zestawienie
+   z poniższych pul. Podobieństwo do jakichkolwiek osób jest przypadkowe.
+   ============================================================ */
+const SUG_IMIE=['Łukasz','Dawid','Arkadiusz','Tomasz','Patryk','Mateusz','Mateusz','Bartosz','Patryk',
+ 'Maksymilian','Remigiusz','Oskar','Paweł','Karol','Bartosz','Marco','Kamil','Rafał','Łukasz','Mike',
+ 'Dawid','Maciej','Łukasz','Patryk','Kamil','Krzysztof','Denis','Karol','Mateusz','Iwan','Marcin','Rafał',
+ 'Marcin','Kamil','Damian','Łukasz','Damian','Marcin','Radosław','Sajmon','Piotr','Bartosz','Łukasz',
+ 'Rafał','Łukasz','Mikołaj','Paweł','Piotr','Damian','Adrian','Kamil','Grzegorz','Mateusz','Szymon',
+ 'Dawid','Konrad','Artur','Paweł','Patryk','Michał','Arkadiusz','Artur','Mikołaj','Marcin','Bartosz',
+ 'Kamil','Arkadiusz','Tomasz','Wojciech','Mateusz','Dawid','Tomasz','Patryk','Adrian','Paweł','Damian',
+ 'Bartosz','Jakub','Kamil','Michał','Marek','Adrian','Marcin','Marcin','Jarosław','Przemysław','Mateusz',
+ 'Tomasz','Patryk','Damian','Patryk','Eryk','Michał','Kacper','Jarosław','Mateusz','Przemysław','Paweł','Oskar'];
+const SUG_NAZW=['Lesiak','Matura','Madej','Walasek','Karczmarz','Kwiatkowski','Piernikowski','Pietrykowski',
+ 'Rumiński','Ristok','Perzyński','Lis','Urbański','Jóźwik','Bietracki','Gaschka','Prokop','Malczewski',
+ 'Bojarski','Trzensiok','Dąbek','Kubasik','Michałek','Beśko','Matyjas','Wittstock','Niedzielski','Szychowski',
+ 'Łukaszewski','Pleszakow','Bubel','Konopka','Wawrzyniak','Matuszak','Michalski','Wieliński','Albrecht',
+ 'Riedel','Małuch','Paczewski','Rybak','Łapacz','Witoszek','Fleger','Piecha','Drożdżowski','Busz','Czerwiński',
+ 'Synowiec','Wojewoda','Fleger','Bassara','Wieczorek','Błocian','Domagała','Matuszewski','Winiarski','Parys',
+ 'Wolniewiński','Kordas','Pawlak','Cyło','Trępała','Kraft','Kibała','Merena','Potoniec','Szmaj','Beyger',
+ 'Gołost','Krywald','Mroczkowski','Przywieczerski','Sikora','Śliwiński','Wolender','Dąbrowski','Hassa',
+ 'Łukaszewski','Nowacki','Piosicki','Lutowicz','Bułanowski','Kościelski','Turowski','Krzywosz','Liszka',
+ 'Rząsa','Orwat','Rydlewski','Stalkowski','Sitarek','Budzyń','Nowiński','Grzegorczyk','Paliwoda','Burzyński',
+ 'Portas','Staniszewski','Nocuń'];
+/* Wołane z UI (ekran tworzenia postaci). `pick` mieszka w engine.js, który
+   ładuje się po data.js — dlatego to funkcja, a nie wyliczona stała. */
+function suggestName(){ return pick(SUG_IMIE)+' '+pick(SUG_NAZW); }
+/* ============================================================
+   CO MÓWIĄ PO SEZONIE — PULE TEKSTÓW
+   ------------------------------------------------------------
+   Wcześniej każdy warunek miał DOKŁADNIE JEDNĄ linijkę wpisaną na sztywno
+   w seasonTalk() (engine.js). Efekt: gracz, który przez pięć sezonów siedział
+   pod kreską, pięć razy z rzędu czytał to samo zdanie komornika o busie.
+   Teraz każdy warunek ma własną pulę (min. 30 tekstów), a silnik losuje
+   z pamięcią — patrz talkPick() — więc te same zdania nie wracają w kółko.
+
+   PODSTAWIENIA (opcjonalne, zależnie od warunku):
+     {n}    — liczba (defekty, wykluczenia)
+     {rok}  — rok sezonu
+     {kasa} — kwota już sformatowana przez zl()
+     {avg}  — średnia biegopunktowa
+     {klub} — nazwa klubu
+   ============================================================ */
+const TALK = {
+
+/* ---------- SEZON W OGÓLE NIEROZEGRANY (0 meczów) ---------- */
+none: { who:'SZATNIA', lines:[
+ '„A on to w ogóle jeszcze jeździ? Myślałem, że skończył."',
+ '„Jego kevlar wisi w szatni od marca. Nikt go nie ruszał, bo nikt nie wiedział, czy to eksponat."',
+ '„Pytali o niego w PZM. Odpisaliśmy, że sprawdzimy i się odezwiemy. Nie odezwaliśmy się."',
+ '„Cały sezon i ani jednego startu. To już nawet nie jest kariera, to abonament."',
+ '„Widziałem go raz, w bufecie. Kupił parówkę i poszedł. To był jego najlepszy występ w tym roku."',
+ '„Mamy w składzie takiego jednego, co nie jeździ. Prezes mówi, że to strategia."',
+ '„Zapytałem trenera, czemu go nie stawia. Powiedział: «a jest?»."',
+ '„W programie meczowym drukowali go z rozpędu. Do sierpnia. Potem drukarnia sama zrezygnowała."',
+ '„Zero startów. Zero. Nawet kontuzjowani mają lepsze statystyki, bo przynajmniej mają diagnozę."',
+ '„Trener mówi, że go szanuje. Za co konkretnie, nie doprecyzował."',
+ '„Chłopaki zrobili zakłady, w której kolejce wyjedzie. Wszyscy przegrali."',
+ '„Jego szafka to jedyne miejsce w tym klubie, gdzie panuje spokój."',
+ '„Kibice zrobili transparent «GDZIE ON JEST». Powiesili go i po miesiącu zdjęli, bo nikt nie odpowiedział."',
+ '„Na zdjęciu drużynowym stoi w drugim rzędzie. To jego jedyny udokumentowany udział w tym sezonie."',
+ '„Sezon przesiedział na krzesełku przy bandzie. Zna teraz każdego kibica z pierwszego rzędu po imieniu."',
+ '„Mówią, że trenuje. Nikt nie mówi gdzie."',
+ '„Regulaminowo jest zawodnikiem. Praktycznie jest gościem z przepustką."',
+ '„Miał wyjechać w barażach. Baraże się odbyły. On nie."',
+ '„Zapłacili mu za sezon, w którym nie zdobył ani jednego punktu. To jest najbardziej udana negocjacja w historii tego klubu."',
+ '„W parku maszyn stał jego motocykl. Cały sezon. Z założoną plandeką."',
+ '„Ktoś zapytał, czy on jeszcze ma licencję. Zapadła cisza."',
+ '„To był rok bez jednego wyjazdu na tor. Za to bez jednego defektu — bilans dodatni."',
+ '„Miałem go w typerze. Straciłem dużo pieniędzy i trochę wiary w ludzi."',
+ '„Trener tłumaczył, że buduje go pod przyszły sezon. Buduje. Od trzech miesięcy. Bez narzędzi."',
+ '„Zawodnik-widmo. Jest w składzie na papierze i tylko tam."',
+ '„Nawet Ostafiński go nie wyśmiał. Trzeba by najpierw zauważyć."',
+ '„Na koniec sezonu dostał dyplom za zaangażowanie. Chłopaki się śmiali do Wigilii."',
+ '„Ma najczystszy kevlar w lidze. Bo czysty."',
+ '„Podobno przyjeżdżał na każdy mecz. Podobno."',
+ '„Jak się nie jeździ, to się nie przegrywa. Tak sobie chyba to poukładał."',
+ '„Cały rok w rezerwie. Nawet nie taktycznej. Po prostu w rezerwie."',
+ '„Jeden z chłopaków zapytał, jak ma na nazwisko. To był jego kolega z pary sprzed dwóch lat."'
+]},
+
+/* ---------- ŚREDNIA PONIŻEJ 0,50 ---------- */
+awful: { who:'KIBIC Z SEKTORA B', lines:[
+ '„Pojechałeś jak pizda. Mój wujek na kosiarce robi lepsze czasy."',
+ '„Za te pieniądze to ja bym chociaż udawał, że się staram."',
+ '„Widziałem szybsze rzeczy na parkingu przed stadionem. Były zaparkowane."',
+ '„Człowieku, ty tam wjeżdżasz czy zwiedzasz?"',
+ '„Pierwszy łuk, drugi łuk, i już cię nie ma. Za każdym razem. To już nie pech, to metoda."',
+ '„Kupiłem karnet. Chcę zwrot. Nie za mecz — za rok."',
+ '„Moja babcia szybciej wnosi węgiel na drugie piętro."',
+ '„Jak on wyjeżdża, to nawet spiker traci entuzjazm w połowie zdania."',
+ '„Płacę za żużel, a oglądam rekonstrukcję historyczną."',
+ '„Zawodnik, przy którym taśma startowa czuje się niedoceniona."',
+ '„Widziałem, jak go wyprzedził chłopak, który miał defekt dwa biegi wcześniej. Na tym samym silniku."',
+ '„Ta średnia to nie średnia. To pomyłka pisarska, która trwa cały sezon."',
+ '„Panie, pan tam jedzie na czterech kołach czy pan pcha?"',
+ '„Powiem tak: on się nie ściga. On uczestniczy."',
+ '„Mam do niego szacunek. Trzeba mieć charakter, żeby wyjechać po raz piąty i znowu być ostatnim."',
+ '„Ostatni w biegu to jeszcze nie wstyd. Ostatni w każdym biegu — to już profil zawodowy."',
+ '„Jak on hamuje przed łukiem, to ja hamuję przed zakupem następnego biletu."',
+ '„Byłem na wszystkich meczach. Nie wiem po co, ale byłem."',
+ '„W tym sezonie zdobywał punkty rzadziej niż ja podwyżkę."',
+ '„Kolego, ta maszyna ma 80 koni. Nie wiem, gdzie ty je trzymasz."',
+ '„Startuje z taśmy jak z sofy."',
+ '„Zrobiłem sobie z jego przejazdów wygaszacz ekranu. Uspokaja."',
+ '„Nawet jego mechanik przestał podnosić głowę, jak on jedzie."',
+ '„Widzowie z sektora B mają dla niego oklaski. Ironiczne, ale zawsze."',
+ '„W tym roku zdobył mniej punktów, niż ja mam lat. A mam czterdzieści dwa."',
+ '„Jeździ tak, jakby ktoś mu obiecał premię za nieuszkodzenie motocykla."',
+ '„Jest bezpieczny na torze. Bezpieczny dla wszystkich innych."',
+ '„Nazywają go «drugi łuk», bo tam się kończy."',
+ '„Statystycznie rzecz biorąc, nie zaszkodził nikomu. Ani rywalom, ani drużynie, ani sobie."',
+ '„Gdyby żużel był o dojechaniu do mety, byłby średniakiem. Ale nie jest."',
+ '„Widziałem lepsze przejazdy na treningu żaków."',
+ '„Panie, pan się nie martw. Zawsze może być gorzej. Chociaż nie wiem jak."'
+]},
+
+/* ---------- ŚREDNIA 0,50 - 0,89 ---------- */
+bad: { who:'KIBIC Z SEKTORA B', lines:[
+ '„Kolego, ja płacę za bilet, a nie za oglądanie, jak wywozisz się na własnym cieniu."',
+ '„Jeden punkcik, dwa punkciki. Zbierasz to jak butelki."',
+ '„Nie jest tragicznie. Jest po prostu bez sensu."',
+ '„Ty masz ten motocykl na abonament czy na własność? Bo jedziesz jak wypożyczonym."',
+ '„Trzecie miejsce w biegu to twoje naturalne środowisko."',
+ '„Wiesz, co jest najgorsze? Że ty naprawdę próbujesz."',
+ '„Mam wrażenie, że jak wyjeżdżasz, to rywale zwalniają z uprzejmości."',
+ '„Punkt tu, punkt tam. Statystyka mówi, że byłeś. Nic więcej nie mówi."',
+ '„Sezon jak zupa z proszku: technicznie to jedzenie."',
+ '„Nie wygwiżdżę cię, bo szkoda mi płuc."',
+ '„Ty to masz taki talent, że go trzeba szukać z latarką."',
+ '„Nadrabiasz sercem. Serce to jednak nie jest część silnika."',
+ '„Na starcie wyglądasz groźnie. Potem następuje pierwszy łuk."',
+ '„Jak dojeżdżasz trzeci, to cały stadion mówi «no i dobrze». To nie jest komplement."',
+ '„Za każdym razem myślę, że teraz to już pojedzie. Za każdym razem się mylę."',
+ '„Kupiłem szalik z twoim nazwiskiem. Noszę go pod kurtką."',
+ '„Ty nie jesteś słaby. Ty jesteś dokładnie tak dobry, żeby nikt cię nie zwolnił."',
+ '„W tym sezonie byłeś jak przystanek autobusowy: potrzebny, ale nikt się nie cieszy."',
+ '„Twoja średnia wygląda jak temperatura w listopadzie."',
+ '„Chłopie, jedziesz ostrożnie jak z jajkami w plecaku."',
+ '„Bywało lepiej. Bywało też gorzej. Głównie jednak bywało tak samo."',
+ '„Doceniam, że dojeżdżasz do mety. Serio, ktoś to musi robić."',
+ '„Twoje przejazdy mają w sobie taki spokój, że mnie usypiają."',
+ '„Sąsiad pyta, czy warto przyjść. Mówię mu, że pogoda ma być ładna."',
+ '„Jesteś zawodnikiem, którego nazwisko się zna, ale nie pamięta się skąd."',
+ '„Zapytali mnie w pracy, jak wypadłeś. Powiedziałem «no jeździł». Zamknęli temat."',
+ '„Jeszcze rok takich występów i będziesz miał w klubie status mebla."',
+ '„Nie chodzi o to, że jesteś wolny. Chodzi o to, że oni są szybsi."',
+ '„Punkty zdobywasz jak ludzie chodzą do dentysty: rzadko i z bólem."',
+ '„Widać było poprawę. W drugiej połowie sezonu przegrywałeś mniejszą różnicą."',
+ '„Jesteś jak deszcz na majówce: przewidywalny i lekko rozczarowujący."',
+ '„Chłopaki z sektora nazwali cię «Punkcik». Nie obrażaj się, mogło być gorzej."'
+]},
+
+/* ---------- ŚREDNIA 0,90 - 1,39 ---------- */
+meh: { who:'TRENER', lines:[
+ '„Jest średnio. Ani nie boli, ani nie cieszy. Jak zupa w barze mlecznym."',
+ '„Robi swoje. Tyle że «swoje» to niewiele."',
+ '„Nie mam mu nic do zarzucenia i nie mam go za co pochwalić. Dziwna sytuacja."',
+ '„Wpisuję go do składu, bo ktoś musi tam pojechać."',
+ '„To zawodnik, który nigdy nie przegra ci meczu. Wygrać też nie."',
+ '„Pytają mnie, czy jestem zadowolony. Jestem obojętny. To gorzej."',
+ '„Dostajesz od niego dokładnie tyle, ile płacisz. Ani grosza więcej."',
+ '„Solidny wypełniacz składu. Brzmi źle, a to komplement."',
+ '„Jak patrzę na jego kartę, to widzę same dwójki i jedynki. Jakby ktoś rysował płot."',
+ '„W poniedziałek analiza, we wtorek trening, w piątek to samo co zawsze."',
+ '„Zawodnik bez wad. Bez zalet też, ale to już drugorzędne."',
+ '„Nie muszę na niego krzyczeć. Nie mam też po co go chwalić."',
+ '„W tej lidze to jest poziom «da się z tym żyć»."',
+ '„Ustawiam go na czwórce i wiem, co dostanę. To ma swoją wartość."',
+ '„Nie jest problemem. Nie jest też rozwiązaniem."',
+ '„Rozmawiałem z nim o formie. Powiedział, że czuje, że idzie w dobrym kierunku. Idzie. Powoli."',
+ '„Średnia jak średnia. Gorzej, że stoi w miejscu od trzech lat."',
+ '„Chciałbym powiedzieć, że drzemie w nim potencjał. Drzemie. Głęboko."',
+ '„Punkty zdobywa jak człowiek, który zna trasę do sklepu i nie planuje jej zmieniać."',
+ '„Jak mam wybrać między nim a juniorem, to zaczynam się poważnie zastanawiać. To źle."',
+ '„Nie chodzi o brak talentu. Chodzi o brak wściekłości."',
+ '„Zawsze dojedzie. Zawsze trzeci. To jest jakaś forma niezawodności."',
+ '„Rok bez wpadki i bez fajerwerku. Księgowa zadowolona, kibice mniej."',
+ '„Przeciętność w sporcie to nie grzech. To po prostu sufit."',
+ '„Jedzie poprawnie. «Poprawnie» to słowo, którego trener używa, kiedy nie chce skłamać."',
+ '„Nie wyrzucę go ze składu, ale też nie będę o niego walczył w okienku."',
+ '„Ma równą formę. Równo płaską."',
+ '„Trzy punkty w meczu, cztery w następnym. Jak rachunek za prąd."',
+ '„Zawodnik do zadań średnich. Wykonuje je średnio."',
+ '„Nie zrobił nic złego. Powtarzam to sobie za każdym razem, jak patrzę na tabelę."',
+ '„Jest jak zapasowe koło: dobrze, że jest, szkoda że trzeba go używać."',
+ '„Zapytałem, czy chce więcej. Powiedział, że chce. Nadal czekam."'
+]},
+
+/* ---------- ŚREDNIA 1,40 - 1,79 ---------- */
+solid: { who:'TRENER', lines:[
+ '„Solidnie. Bez fajerwerków, ale w tabelce się zgadza."',
+ '„Na takim zawodniku buduje się drużynę. Nie kończy, ale buduje."',
+ '„Wiem, co dostanę, i to jest w tej lidze warte fortunę."',
+ '„Nie muszę go pilnować. Zrobił swoje i pojechał do domu."',
+ '„To już nie jest wypełniacz. To zawodnik."',
+ '„W trudnym wyjeździe wyciągnął nam punkty, o które nikt nie prosił."',
+ '„Ma dobrą głowę na starcie. Tego się nie nauczy."',
+ '„Jak potrzebuję pewnych dwóch punktów, wiem, do kogo iść."',
+ '„Nie zachwyca. Ale nie zawodzi, a to rzadsze."',
+ '„Zrobił porządny rok. Bez awantur, bez wymówek, bez telefonów o trzeciej w nocy."',
+ '„Jest w tym miejscu kariery, w którym mógłby zacząć wygrywać biegi. Niech spróbuje."',
+ '„Trzymam go w pierwszej piątce i śpię spokojnie."',
+ '„Zaczyna czytać tor. To widać, i to jest ważniejsze niż średnia."',
+ '„Sezon dojrzały. Bez błysku, ale dojrzały."',
+ '„Rywale zaczęli go pilnować na starcie. To jest awans."',
+ '„Kiedyś tracił punkty na głupotach. W tym roku prawie nie."',
+ '„Może wygrać z każdym i przegrać z każdym, ale częściej wygrywa."',
+ '„Chciałbym mieć w składzie trzech takich. Mam jednego i to i tak dobrze."',
+ '„Nie jest gwiazdą i nie udaje, że jest. Cenię to bardziej, niż powinienem."',
+ '„W kluczowych meczach nie schował się. To dużo mówi."',
+ '„Jego forma nie skacze. Trener kocha coś takiego bardziej niż talent."',
+ '„Poprawił start. Reszta przyszła sama."',
+ '„Zaczął jeździć jak zawodnik, który wie, po co przyjechał."',
+ '„Kibice go nie noszą na rękach, ale w szatni ma szacunek. Wolę tę kolejność."',
+ '„Zrobił dokładnie to, co obiecywał w lipcu. To się nie zdarza."',
+ '„W tej klasie rozgrywkowej to jest solidny średniak z górnej półki. Bez ironii."',
+ '„Nie musiałem go w tym roku ani razu zdjąć w rezerwie taktycznej. Ani razu."',
+ '„Jedzie mądrze. Nie zawsze szybko, ale zawsze mądrze."',
+ '„Jak coś się sypało, to nie po jego stronie."',
+ '„Prezes pytał, kogo zatrzymać. Wskazałem jego, zanim skończył pytanie."',
+ '„Dorósł do pierwszej piątki i zaczyna to rozumieć."',
+ '„Sezon, po którym nie mam żadnej rozmowy dyscyplinującej w kalendarzu. Doceniam."'
+]},
+
+/* ---------- ŚREDNIA 1,80 - 2,19 ---------- */
+good: { who:'TRENER', lines:[
+ '„No i o to chodziło. Wreszcie ktoś jedzie do tego pierwszego łuku, a nie obok."',
+ '„Wygrywa biegi, których nie miał prawa wygrać. Lubię takie problemy."',
+ '„Rywale przestali go traktować jak przystawkę."',
+ '„Zaczął zabierać punkty liderom. To zmienia rozmowy w gabinecie prezesa."',
+ '„Jak on wyjeżdża, to ja przestaję patrzeć w notes i patrzę na tor."',
+ '„To jest zawodnik, wokół którego można ułożyć skład."',
+ '„Ma teraz coś, czego nie miał: pewność, że mu się należy."',
+ '„Trzy razy w tym sezonie wyciągnął nas z dołka. Trzy razy."',
+ '„Startuje agresywnie i nie przeprasza. Wreszcie."',
+ '„Dzwonią po niego z innych klubów. To najlepsza recenzja, jaką znam."',
+ '„W wyjazdowych meczach jest równie dobry jak u siebie. To rzadkość."',
+ '„Wygrywa pojedynki, nie tylko biegi. Różnica jest ogromna."',
+ '„Zrobił skok, na który czekałem dwa lata."',
+ '„Jest w formie, w której powinien myśleć o turniejach indywidualnych. I myśli."',
+ '„Nie musiałem go w tym roku niczego uczyć. Sam się dowiedział."',
+ '„Jak on jest w składzie, to my mamy plan. Jak go nie ma, to mamy problem."',
+ '„Zaczął wygrywać starty z pierwszego pola i z czwartego. To już wybór stylu, nie przypadek."',
+ '„Nie odpuszcza nawet przy trzecim miejscu. Zbiera punkty jak zawodowiec."',
+ '„Kibice wstają, kiedy on wyjeżdża. Sam sprawdziłem, nie zmyślam."',
+ '„W tym roku był najlepszym zawodnikiem tej drużyny i nikt nawet nie próbuje dyskutować."',
+ '„Jest głodny. To najważniejsze zdanie w tej rozmowie."',
+ '„Zaczął dyktować tempo. Kiedyś się dopasowywał."',
+ '„Prezes chce mu podnieść stawkę. Powiedziałem, żeby zrobił to szybko."',
+ '„Robi rzeczy, o których w lipcu mówiliśmy, że jeszcze nie teraz."',
+ '„Ma najlepszy pierwszy łuk w drużynie i drugi najlepszy w lidze."',
+ '„Jak potrzebuję trójki, to jej nie proszę. Ja ją zakładam."',
+ '„Wyprzedza na zewnątrz. W tej lidze to prawie prowokacja."',
+ '„Odkąd zmienił styl jazdy, nikt nie chce z nim jechać w parze przeciwko."',
+ '„Ten sezon go ustawił. Reszta zależy już tylko od głowy."',
+ '„Nie pamiętam meczu, w którym byłbym z niego niezadowolony."',
+ '„W szatni po meczu jest cicho, bo wszyscy patrzą na jego kartę."',
+ '„Awansował do kategorii «zawodnik, którego się pilnuje»."'
+]},
+
+/* ---------- ŚREDNIA 2,20 I WYŻEJ ---------- */
+great: { who:'EKSPERT TV', lines:[
+ '„To już nie jest zawodnik ligowy. To jest problem dla reszty stawki."',
+ '„Oglądamy kogoś, kto przerósł tę klasę rozgrywkową o dwa poziomy."',
+ '„Nie pytam, czy wygra bieg. Pytam, o ile."',
+ '„Jego przejazdy powinny być pokazywane w szkółkach jako materiał szkoleniowy."',
+ '„W tej lidze on się już tylko rozgrzewa."',
+ '„Nie ma tu z kim jeździć i to nie jest jego wina."',
+ '„Statystyka mówi jedno, oczy drugie, a obie rzeczy mówią to samo: klasa."',
+ '„Jak on wychodzi z taśmy, to reszta jedzie o drugie miejsce."',
+ '„Widzieliśmy dziś przejazd, o którym będzie się mówić do końca sezonu. Trzeci taki w tym miesiącu."',
+ '„Rywale go nie pilnują. Rywale mu ustępują."',
+ '„To jest jazda, za którą kupuje się bilety."',
+ '„Nie ma słabych meczów. Ma mecze dobre i bardzo dobre."',
+ '„Powiem coś niepopularnego: on w tym klubie marnuje czas."',
+ '„W każdym biegu ma jedną decyzję do podjęcia i za każdym razem podejmuje właściwą."',
+ '„To już poziom kadry. Bez dyskusji."',
+ '„Jego pierwszy łuk to jest osobna dyscyplina sportu."',
+ '„Rozmawiałem z rywalami. Mówią jedno: jak on wyjdzie ze startu, to koniec tematu."',
+ '„Zdobywa punkty tak spokojnie, że to aż niegrzeczne wobec reszty."',
+ '„Nie widziałem, żeby ktoś tak czytał tor od czasów, o których nie wypada mi mówić na antenie."',
+ '„Prowadzi bieg, jakby miał plan na trzy okrążenia do przodu."',
+ '„Nie jest najszybszy. Jest najmądrzejszy, a to na dłuższą metę groźniejsze."',
+ '„Gdyby jeździł w mocniejszej lidze, mówilibyśmy o nim inaczej. Ale tak samo dobrze."',
+ '„Jego obecność w składzie warta jest cztery punkty meczowe. Sama obecność."',
+ '„To nie jest dobra forma. To jest inny poziom."',
+ '„Zawodnik kompletny: start, tor, głowa, sprzęt. Rzadko wszystko naraz."',
+ '„Kiedy on przegrywa bieg, redakcja robi z tego newsa."',
+ '„Nie ma w tej stawce nikogo, kto mógłby go pilnować przez cały mecz."',
+ '„Jedzie tak, że komentowanie robi się nudne. To najwyższa pochwała, jaką znam."',
+ '„Ten sezon powinien się skończyć telefonem od selekcjonera. Jak się nie skończy, to źle o nas świadczy."',
+ '„Przewaga, którą buduje na starcie, jest niesportowa. W dobrym sensie."',
+ '„Widziałem go z bliska w parku maszyn. On się nawet nie spocił."',
+ '„Zamykamy transmisję i wszyscy wiemy, kto był najlepszy. Znowu."'
+]},
+
+/* ---------- OSTAFIŃSKI: MEDIALNOŚĆ MOCNO W DÓŁ ---------- */
+ostaSilent: { who:'OSTAFIŃSKI', lines:[
+ '„W tym sezonie nie napisałem o nim ani słowa. Nie było o czym. I to jest najsmutniejsze zdanie w tym tekście."',
+ '„Sprawdziłem w archiwum: ostatni raz wymieniłem go w zdaniu podrzędnym. W marcu."',
+ '„Zniknął z radaru tak skutecznie, że aż podejrzewam profesjonalizm."',
+ '„Dostałem pytanie od czytelnika, co u niego. Nie znałem odpowiedzi. Nie szukałem."',
+ '„Jego nazwisko przestało generować kliknięcia. W tym zawodzie to jest wyrok."',
+ '„Kiedyś dzwonił do redakcji z pretensjami. Teraz nie dzwoni. Tęsknię, ale nie bardzo."',
+ '„W notatniku mam pustą stronę z jego nazwiskiem u góry. Tak zostało."',
+ '„Media go nie skreśliły. Media po prostu przestały zauważać. To gorsza forma."',
+ '„Napisałem o nim akapit. Redaktor wyciął. Nie protestowałem."',
+ '„Cały rok bez jednej wypowiedzi, jednej afery, jednego głupstwa. Podejrzanie dorosłe zachowanie."',
+ '„Jest zawodnikiem, o którym pisze się tylko wtedy, gdy trzeba wypełnić tabelkę."',
+ '„Zapytałem kolegę z innej gazety, czy ma na niego coś. Zapytał, o kogo chodzi."',
+ '„Zaczynam podejrzewać, że on tego chciał. Jeżeli tak, to gratuluję strategii."',
+ '„Statystycznie był. Medialnie go nie było."',
+ '„Nie ma się o co czepiać, więc nie ma o czym pisać. Taki jest ten zawód."',
+ '„Przygotowałem sylwetkę. Leży w szufladzie od maja. Chyba tam zostanie."',
+ '„Portale piszą o nim raz w roku, przy okazji okienka transferowego. I to w zbiorczej notce."',
+ '„Zawodnik, którego zdjęcie w archiwum jest sprzed czterech lat. Nikt nie robił nowego."',
+ '„Nie było skandalu, nie było wywiadu, nie było niczego. Rok pustej rubryki."',
+ '„W tym biznesie milczenie też jest oświadczeniem. Jego było bardzo długie."',
+ '„Zrobiłem ranking najbardziej niewidocznych zawodników sezonu. Nie chciało mi się go tam wpisywać."',
+ '„Jego konto w mediach społecznościowych ma tyle życia, co park maszyn w styczniu."',
+ '„Kiedyś był tematem. Teraz jest przypisem."',
+ '„Redakcja przestała mnie pytać o niego. To był ostatni etap."',
+ '„Nawet hejterzy sobie odpuścili. To najgorszy znak."',
+ '„Mam listę zawodników do obdzwonienia po sezonie. Skreśliłem go bez wyrzutów sumienia."',
+ '„Rok temu pisałem, że musi coś ze sobą zrobić. Zrobił: zniknął."',
+ '„Nie pamiętam brzmienia jego głosu, a przeprowadzałem z nim wywiad."',
+ '„Zapytałem w klubie o cytat. Dali mi cytat prezesa."',
+ '„Znikanie też jest karierą. Krótszą."',
+ '„W podsumowaniu roku wymieniłem czterdzieści nazwisk. Jego nie."',
+ '„Napisałbym, że rozczarował, ale rozczarowanie wymaga wcześniejszych oczekiwań."'
+]},
+
+/* ---------- OSTAFIŃSKI: MEDIALNOŚĆ MOCNO W GÓRĘ ---------- */
+ostaLoud: { who:'OSTAFIŃSKI', lines:[
+ '„Rozpisywałem się o nim tak, że redakcja kazała mi zrobić przerwę. Nie zrobiłem."',
+ '„W tym sezonie napisałem o nim więcej niż o całej reszcie ligi razem wziętej."',
+ '„Każdy jego mecz kończył się u mnie tekstem. Każdy."',
+ '„Jest najlepszym, co się przydarzyło mojej rubryce od lat."',
+ '„Dostaję maile, żebym przestał o nim pisać. To znaczy, że piszę dobrze."',
+ '„Zrobił mi rok. Nie wiem, czy sobie."',
+ '„Nazwisko, które podnosi klikalność o połowę. W tej branży to jest waluta."',
+ '„Zacząłem sezon obojętny, kończę z folderem zdjęć podpisanym jego nazwiskiem."',
+ '„Trzy okładki. Trzy. W lidze, w której okładka to rzadkość jak wypłata na czas."',
+ '„Redaktor naczelny zna go z imienia. Nie zna z imienia większości radnych."',
+ '„Nie musiałem szukać tematów. Tematy jeździły za mnie."',
+ '„Wywiad z nim to pół godziny nagrania i cztery gotowe teksty."',
+ '„Zrobiliśmy o nim podcast. Odsłuchy przebiły relację z finału."',
+ '„Kiedy on coś powie, to następnego dnia mówi o tym cała liga."',
+ '„Napisałem tekst krytyczny. Skomentowało go osiem tysięcy osób. Wszyscy go bronili."',
+ '„Jego nazwisko w tytule to jest gwarancja, że tekst przeczytają."',
+ '„Byłem na trzech jego meczach z rzędu. Zwrot kosztów podróży opłacił się redakcji."',
+ '„W tym sezonie stał się postacią. To coś zupełnie innego niż bycie zawodnikiem."',
+ '„Zaczęli go rozpoznawać ludzie, którzy nie oglądają żużla."',
+ '„Dwa razy dzwonili do mnie z telewizji śniadaniowej. Pytali o niego."',
+ '„Nie wiem, czy jest najlepszy. Wiem, że jest najgłośniejszy, a to inna liga."',
+ '„Napisałem o nim tak dużo, że zaczynam brzmieć jak jego rzecznik. Muszę uważać."',
+ '„Fani zrobili o nim mem. Mem żyje własnym życiem od czerwca."',
+ '„Przestałem tłumaczyć, kim jest. Już nie trzeba."',
+ '„Poszedłem do kiosku. Trzy tytuły, trzy jego zdjęcia."',
+ '„W tym roku był newsem nawet wtedy, gdy nic nie robił."',
+ '„Skończył sezon z rozpoznawalnością, o jakiej marzą ludzie z zupełnie innych dyscyplin."',
+ '„Zbudował markę. Teraz musi ją tylko przeżyć."',
+ '„Redakcja założyła osobny tag. Osobny tag, na jednego zawodnika."',
+ '„Dostał zaproszenie do programu, w którym normalnie siedzą politycy."',
+ '„Jego cytaty żyją dłużej niż jego przejazdy. To komplement i ostrzeżenie."',
+ '„Sezon medialnie wybitny. Zobaczymy, co z tego zostanie w kwietniu."'
+]},
+
+/* ---------- OSTAFIŃSKI: WYSOKA MEDIALNOŚĆ (>70) ---------- */
+ostaStar: { who:'OSTAFIŃSKI', lines:[
+ '„Znowu on. Czy ktoś w tej lidze robi coś poza nim? Pytam poważnie."',
+ '„Otwieram serwis, a tam jego twarz. Zamykam, otwieram inny — to samo."',
+ '„Jest wszędzie. Zaczynam podejrzewać, że ma agenta lepszego niż zawodnik."',
+ '„Reklamuje bank, chipsy i szpachlę. Żużel przy okazji."',
+ '„Nie da się napisać podsumowania kolejki bez wymienienia go dwa razy."',
+ '„To już nie jest zawodnik, to jest marka z licencją torową."',
+ '„Ludzie znają jego nazwisko, nie znając jego średniej. Tak działa medialność."',
+ '„Ma więcej obserwujących niż niejeden klub z Ekstraligi."',
+ '„W każdej rozmowie o żużlu pada jego nazwisko w pierwszych trzech minutach."',
+ '„Podpisuje kaski, plakaty i rachunki. Głównie plakaty."',
+ '„Zrobił sobie z rozpoznawalności drugi etat. I dobrze płatny."',
+ '„Nie musi wygrywać, żeby być na czołówce. To jest przywilej i pułapka."',
+ '„W parku maszyn są zawodnicy lepsi od niego. Nikt o nich nie pisze."',
+ '„Kamera go szuka nawet wtedy, gdy jedzie ktoś inny."',
+ '„Jego wizerunek pracuje na niego mocniej niż silnik."',
+ '„Sponsorzy stoją w kolejce. To rzadszy widok niż wypłata w terminie."',
+ '„Jest twarzą tej ligi, chociaż liga nigdy się na to nie zgodziła."',
+ '„Dziennikarze nie muszą go szukać. On już tam jest."',
+ '„Ma stały felieton w cudzych felietonach."',
+ '„Zapytałem dzieciaków przed stadionem, kogo znają. Padło jedno nazwisko."',
+ '„Popularność ma to do siebie, że nie pyta o średnią. On to wykorzystał wzorowo."',
+ '„W tej lidze jest gwiazdą. To brzmi ironicznie, ale mówię serio."',
+ '„Przy nim inni zawodnicy wyglądają jak personel techniczny."',
+ '„Widziałem jego podobiznę na koszulce w mieście, w którym nie ma toru."',
+ '„Zrobiono z niego symbol. Symbol czego, nikt nie doprecyzował."',
+ '„Jego nazwisko sprzedaje bilety. Reszta drużyny jeździ za darmo."',
+ '„Trzy wywiady w tygodniu i ani jeden ciekawy. Ale wszystkie przeczytane."',
+ '„Media go stworzyły i media go rozliczą. Na razie jesteśmy w fazie tworzenia."',
+ '„Prezes wozi go na spotkania z radnymi. Jako argument."',
+ '„W ankiecie na najpopularniejszego żużlowca wygrał, nie startując w niej."',
+ '„Jest sławny w sposób, który przestał mieć związek z wynikami."',
+ '„Można go nie lubić. Nie da się go pominąć."'
+]},
+
+/* ---------- OSTAFIŃSKI: NISKA MEDIALNOŚĆ (<20) ---------- */
+ostaNobody: { who:'OSTAFIŃSKI', lines:[
+ '„Zapytałem o niego w parku maszyn. Nikt nie skojarzył nazwiska."',
+ '„Ma rozpoznawalność opony. Też jest okrągła i też nikt o niej nie mówi."',
+ '„Wpisałem jego nazwisko w wyszukiwarkę. Wyszły trzy wyniki i dwa dotyczyły kogoś innego."',
+ '„Jest anonimowy w stopniu, który w sporcie zawodowym wymaga wysiłku."',
+ '„Kibice przed stadionem nie wiedzieli, że jeździ w tej drużynie. W tej drużynie."',
+ '„Nie ma zdjęcia w bazie. Redakcja użyła fotografii tyłem."',
+ '„Sponsorzy nie dzwonią. Sponsorzy nie wiedzą."',
+ '„Jego konto społecznościowe ma mniej obserwujących niż osiedlowa grupa wymiany rzeczy."',
+ '„Zawodnik z gatunku tych, których nazwisko czyta spiker i sam się waha."',
+ '„Poprosiłem o komentarz. Spytał, czy to na pewno do niego."',
+ '„Nie umie się sprzedać, a w tej lidze to prawie tak ważne jak start."',
+ '„Nikt go nie hejtuje. Nikt go nie chwali. Nikogo nie ma."',
+ '„Robiłem sondę wśród kibiców. Zero wskazań. Nawet przypadkowych."',
+ '„Ma tyle uwagi mediów, co przetarg na koszenie trawy przy torze."',
+ '„Klub nie wrzuca jego zdjęć, bo nie generują reakcji. Powiedzieli mi to wprost."',
+ '„Jeździ jak zawodowiec, funkcjonuje jak amator. Chodzi o wizerunek, nie o jazdę."',
+ '„Zapytałem, czy ma menedżera. Zaśmiał się. To była odpowiedź."',
+ '„Można obejrzeć cały mecz i nie zauważyć, że tam był."',
+ '„Reklamowałby cokolwiek, gdyby ktokolwiek zaproponował."',
+ '„W programie meczowym ma dwa zdania biografii. Jedno jest błędne."',
+ '„Nie istnieje w internecie. W dwa tysiące dwudziestych to osiągnięcie."',
+ '„Rozmawiałem z jego prezesem. Nie pamiętał, ile ma lat."',
+ '„Ma nazwisko, które wypada z głowy w drodze z trybuny na parking."',
+ '„Nikt nie zrobił o nim mema. To dziś jedyna miara sławy."',
+ '„Zawodnik, którego kevlar sponsoruje wyłącznie klub. Bo nikt inny nie chciał."',
+ '„Media go nie krzywdzą. Media go nie zauważają, a to inny rodzaj krzywdy."',
+ '„Jego nazwisko pomylono w komunikacie PZM. Nikt nie zgłosił sprostowania."',
+ '„Anonimowość ma jeden plus: nikt nie pisze o tobie źle."',
+ '„Poprosiłem o wywiad. Zgodził się od razu. Za szybko, żeby to było zdrowe."',
+ '„Jest jednym z tych, o których dowiadujesz się dopiero z komunikatu o zakończeniu kariery."',
+ '„W tym roku nie pojawił się w żadnym zestawieniu. W żadnym."',
+ '„Gdyby jutro przestał jeździć, informacja poszłaby w rubryce «pozostałe»."'
+]},
+
+/* ---------- DUŻO DEFEKTÓW ({n}) ---------- */
+defMany: { who:'MECHANIK', lines:[
+ '„{n} defektów. Ja już nie wiem, czy to silnik, czy klątwa."',
+ '„{n} razy stanąłeś na torze. Tyle razy w życiu nie stałem nawet w kolejce."',
+ '„Rozebrałem ten silnik {n} razy. Znam go lepiej niż własne mieszkanie."',
+ '„Przy {n} defektach to już nie jest awaria. To jest stały element programu."',
+ '„{n} defektów w jeden sezon. Zacznij się modlić albo zmień tunera."',
+ '„Wożę teraz dwa zapasowe silniki. Przy tobie to nie przezorność, to konieczność."',
+ '„{n} razy pchałeś motocykl. Kondycja ci wzrosła, punkty nie."',
+ '„Powiem tak: sprzęt cię nie lubi. Odwzajemnia się {n} razy."',
+ '„Za te {n} defektów kupiłbym używane auto. Niezłe używane auto."',
+ '„Nie wiem, co ty robisz z tym gazem, ale {n} razy to się skończyło ciszą."',
+ '„Mam już odruch: jak wyjeżdżasz, to biorę wózek. {n} razy się przydał."',
+ '„{n} defektów. Sędzia mnie zna po imieniu, a to nie jest komplement."',
+ '„Wymieniłem ci w tym roku wszystko poza numerem startowym. Nadal {n} defektów."',
+ '„Ten silnik ma więcej godzin w warsztacie niż na torze. Bilans: {n}."',
+ '„Chłopie, {n} razy. Ludzie chodzą do wróżki przy mniejszych problemach."',
+ '„Przy {n} defektach zaczynam wierzyć, że ktoś ci sypie cukier do baku."',
+ '„Zapisuję każdą awarię w zeszycie. Zeszyt się skończył w sierpniu."',
+ '„{n} defektów to nie pech. To diagnoza."',
+ '„Kupiłeś sprzęt, czy ktoś ci go oddał w prezencie za karę?"',
+ '„Tyle razy stawałeś, że kibice zaczęli klaskać ironicznie. {n} razy."',
+ '„Serwis kosztował tyle, co dwa sezony jazdy. Efekt: {n} defektów."',
+ '„Mam w busie części na trzy motocykle. Wystarczyło na {n} awarii, czyli prawie."',
+ '„{n} defektów. Jeżeli to sprzęt, to zmień. Jeżeli to ty, to porozmawiajmy."',
+ '„W tym roku najczęściej powtarzane zdanie w naszym parku maszyn: «znowu?». {n} razy."',
+ '„Zaczynam podejrzewać paliwo, tuner podejrzewa mnie, a ty podejrzewasz cały świat."',
+ '„Silnik po {n} defektach nadaje się do gabloty. Jako przestroga."',
+ '„Nie ma takiej ilości oleju, która by to naprawiła. {n} razy sprawdzone."',
+ '„Ustawiam ci sprzęt jak dla mistrza. Kończy się jak dla pechowca. {n} razy."',
+ '„{n} razy usłyszałem tę ciszę na prostej. Śni mi się."',
+ '„Gdyby za defekty dawali punkty, byłbyś mistrzem Polski. Masz ich {n}."',
+ '„Powiedziałem prezesowi, że potrzebujemy nowego silnika. Pokazał mi {n} faktur."',
+ '„Po {n} defektach ja już nie naprawiam. Ja odprawiam."'
+]},
+
+/* ---------- ZERO DEFEKTÓW W PEŁNYM SEZONIE ---------- */
+defZero: { who:'MECHANIK', lines:[
+ '„Zero defektów. Zapamiętaj ten sezon, bo drugi taki nie będzie."',
+ '„Ani razu nie stanąłeś. Ani razu. Muszę to zapisać, bo mi nie uwierzą."',
+ '„Silnik chodził cały rok jak zegarek. Boję się go teraz dotykać."',
+ '„Zero awarii. Zaczynam podejrzewać, że ktoś nam podmienił sprzęt na lepszy."',
+ '„Przez cały sezon ani jednego telefonu w środku nocy. Odzwyczaiłem się."',
+ '„Nie wiem, co robisz inaczej, ale rób tak dalej."',
+ '„Sezon bez defektu w tej lidze to jest cud techniczny."',
+ '„Wożę zapasowy silnik od marca. Nadal jest zafoliowany."',
+ '„Zero. Pierwszy raz w mojej karierze mam taką kolumnę w zeszycie."',
+ '„Traktujesz ten sprzęt jak człowiek, który za niego płaci. I to widać."',
+ '„W parku maszyn pytali, u kogo się serwisujesz. Powiedziałem, że u siebie w głowie."',
+ '„Ani jednego postoju. Kibice nawet nie wiedzą, jak wygląda nasz wózek."',
+ '„Cały rok bez awarii. Idź kupić los na loterii, ale dzisiaj."',
+ '„Nie forsujesz silnika na rozgrzewce. To dlatego. Powiedz to innym."',
+ '„Zero defektów i pełen sezon. Ktoś tu wreszcie słucha mechanika."',
+ '„Miałem najspokojniejszy rok od dwudziestu lat. Dziękuję."',
+ '„Sprzęt odwdzięczył się za każdą złotówkę, którą w niego włożyłeś."',
+ '„Zero. Piękna liczba. Zwłaszcza w tej rubryce."',
+ '„Zapytali mnie, czy się nudzę. Odpowiedziałem, że tak. To był komplement."',
+ '„Tuner nie widział cię od maja. Pytał, czy jeszcze jeździsz."',
+ '„Ani jednej awarii. Statystycznie należą ci się teraz trzy w przyszłym roku."',
+ '„To nie przypadek. To przeglądy robione na czas."',
+ '„Silnik po tym sezonie jest w lepszym stanie niż mój kręgosłup."',
+ '„Nie musiałem w tym roku niczego ratować taśmą klejącą. Historyczny wynik."',
+ '„Zero defektów. Powiedziałbym, że masz szczęście, ale znam cię za dobrze."',
+ '„Cały sezon i żadnej ciszy na prostej. Uszy odpoczęły."',
+ '„Chłopaki z innych klubów pytają o ustawienia. Nic im nie mówię."',
+ '„Ten sezon zamknąłem z pełnym kompletem sprawnych silników. To się nie zdarza."',
+ '„Nie stanąłeś ani razu, a to znaczy, że nie musiałeś nadrabiać głupotą."',
+ '„Zero awarii. Postaw mi kawę, zasłużyłem tak samo jak ty."',
+ '„W tym sezonie sprzęt był twoim sojusznikiem, a nie wymówką."',
+ '„Bezawaryjny rok. W tej lidze to jest tytuł."'
+]},
+
+/* ---------- DUŻO WYKLUCZEŃ ({n}) ---------- */
+excMany: { who:'SĘDZIA LIS', lines:[
+ '„Znam pana kevlar lepiej niż własne dzieci. {n} razy pan u mnie był."',
+ '„{n} wykluczeń. Zaczynam pana rozpoznawać po sposobie, w jaki pan podjeżdża do taśmy."',
+ '„Panie kolego, {n} razy w jednym sezonie. Regulamin czytał pan czy przeglądał?"',
+ '„Mam w notatniku pana nazwisko {n} razy. To rekord tego sezonu."',
+ '„{n} razy czerwona lampa. Za każdym razem to samo zdziwienie na pana twarzy."',
+ '„Nie mam do pana nic osobistego. Mam do pana {n} zapisów w protokole."',
+ '„Dotyka pan taśmy jak człowiek, który jej nie widzi. {n} razy."',
+ '„{n} wykluczeń. Proszę potraktować to jako informację zwrotną."',
+ '„Widzimy się częściej niż ja z rodziną. {n} razy w tym sezonie."',
+ '„Pan jedzie z taką pewnością siebie, jakby ten pierwszy łuk był pana własnością. {n} razy się okazało, że nie jest."',
+ '„{n} razy. Przy takim tempie skończy pan sezon w moim gabinecie."',
+ '„Proszę mi wierzyć, ja też wolałbym pana nie wykluczać. Ale pan naprawdę się stara."',
+ '„Pana pojedynki są widowiskowe. Regulaminowo są {n} razy nieudane."',
+ '„{n} wykluczeń to nie jest walka. To jest bilans."',
+ '„Nauczył się pan startować szybciej niż taśma. Gratuluję refleksu, {n} razy."',
+ '„Wykluczyłem pana {n} razy i za każdym razem pan pytał «za co». To już rytuał."',
+ '„Panie, ja mam swój zeszyt i pan ma w nim własną stronę. {n} wpisów."',
+ '„Powtórka wideo nie pomogła. Ani razu. A oglądaliśmy ją {n} razy."',
+ '„{n} razy poza sezonem to byłoby dużo. W sezonie to jest niepokojące."',
+ '„Rozmawialiśmy o tym w maju. Potem jeszcze {n} minus jeden razy."',
+ '„Podnosi pan poprzeczkę. Innym zawodnikom, bo oni muszą się pana wystrzegać. {n} razy."',
+ '„Regulamin ma jeden paragraf, który zna pan doskonale. Odczuł go pan {n} razy."',
+ '„{n} wykluczeń, a mimo to podaje mi pan rękę po meczu. Doceniam."',
+ '„Nie jest pan brutalny. Jest pan po prostu {n} razy nieprecyzyjny."',
+ '„Trzy sekundy na starcie i pan potrzebuje z nich jednej dodatkowej. {n} razy."',
+ '„Kolega z komisji założył się o pana wykluczenie. Wygrał {n} razy."',
+ '„Panie, jak pan wjeżdża w taśmę, to ja już nawet nie sięgam po lornetkę."',
+ '„{n} razy. W papierach to wygląda gorzej niż na torze, a na torze też wyglądało źle."',
+ '„Ma pan talent do znajdowania się w niewłaściwym miejscu. {n} udokumentowanych przypadków."',
+ '„Wykluczenie {n} razy w sezonie oznacza, że problem nie jest po stronie sędziego."',
+ '„Panu się śpieszy. Regulaminowi nie. Wynik: {n} do zera dla regulaminu."',
+ '„Zbliża się pan do rekordu, którego nikt nie chce mieć. Na razie {n}."'
+]},
+
+/* ---------- DUŻO BONUSÓW ---------- */
+bonMany: { who:'KOLEGA Z PARY', lines:[
+ '„Chłopie, ty tych bonusów masz tyle, że powinieneś mi płacić abonament."',
+ '„Jedziesz za mnie tak, że zaczynam się czuć jak pasażer."',
+ '„Za każdym razem, jak patrzę w lusterko, ty tam jesteś. To krzepiące i trochę straszne."',
+ '„Nasza para działa. Głównie dzięki tobie, ale nie będę tego powtarzał."',
+ '„Zablokowałeś mi w tym roku tylu rywali, że powinienem ci postawić obiad."',
+ '„Ty nie jedziesz na siebie, ty jedziesz na drużynę. W tej lidze to prawie dziwactwo."',
+ '„Nie ma lepszego uczucia niż wiedzieć, że ktoś pilnuje ci pleców. Dziękuję."',
+ '„Bonusy to jest jazda dla kolegi. Ty ją opanowałeś do perfekcji."',
+ '„Trener nas rozdzielił na jeden mecz. Nigdy więcej tego nie zrobił."',
+ '„Wyprowadzasz mnie na prowadzenie i sam zostajesz drugi. Kto tak dzisiaj robi?"',
+ '„W szatni mówią, że jesteśmy zgraną parą. Nie mówią, że to głównie twoja robota."',
+ '„Zbierasz bonusy jak inni zbierają mandaty."',
+ '„Jak jedziemy razem, to rywale wiedzą, że będzie ciasno. To twoja zasługa."',
+ '„Postawiłeś na drużynę zamiast na własną kartę. Ludzie tego nie doceniają. Ja doceniam."',
+ '„Kiedyś oddam ci te punkty. Nie w tym sezonie, ale oddam."',
+ '„Twoja jazda w parze to jest osobna umiejętność. Rzadka."',
+ '„Prezes patrzy na punkty. Ja patrzę na to, kto mnie przepuścił do przodu."',
+ '„Za każdy bonus należy ci się piwo. Jestem winien tyle, że muszę wziąć kredyt."',
+ '„Nie jesteś egoistą. W tej dyscyplinie to jest wada i zaleta naraz."',
+ '„Jedziemy jak jeden zawodnik na dwóch motocyklach."',
+ '„Wiem, że mogłeś mnie wyprzedzić. Nie zrobiłeś tego. Zapamiętam."',
+ '„Twoje bonusy uratowały nam dwa mecze. Sprawdziłem."',
+ '„Trener mówi, że jesteś zawodnikiem drużynowym. Mówi to tak, jakby to było oczywiste. Nie jest."',
+ '„Rywale nienawidzą z nami jeździć. To najlepsza rekomendacja."',
+ '„Zamykasz tor tak, że nawet ja mam czasem problem, żeby wyjechać."',
+ '„W tabeli bonusów jesteś wyżej niż w tabeli punktów. To o czymś świadczy."',
+ '„Kiedy widzę twój numer obok mojego, wiem, że będzie dobrze."',
+ '„Nasza para to najlepsza rzecz, jaka się zdarzyła tej drużynie w tym roku."',
+ '„Ludzie liczą punkty. Zawodnicy liczą bonusy. Ty jesteś zawodnikiem."',
+ '„Robisz miejsce, którego nie ma. Nie wiem jak, ale robisz."',
+ '„Sezon w twoim towarzystwie to komfort, do którego nie chcę się przyzwyczaić, bo potem będzie boleć."',
+ '„Dzięki tobie mam najlepszy sezon w karierze. Powiedziałem to i nie cofnę."'
+]},
+
+/* ---------- ZERO BONUSÓW ---------- */
+bonZero: { who:'KOLEGA Z PARY', lines:[
+ '„Ani jednego bonusa. Ty jedziesz w tej drużynie czy obok niej?"',
+ '„Za każdym razem, jak się oglądam, ciebie już nie ma. Albo jesteś przede mną i mnie mijasz."',
+ '„Wiesz, że jedziemy w parze? Pytam, bo nie jestem pewien, czy ty wiesz."',
+ '„Zero bonusów. Statystycznie to znaczy, że jeździsz sam."',
+ '„Raz mogłeś mnie przepuścić. Raz. Cały sezon."',
+ '„Nie mam pretensji. Mam obserwację."',
+ '„Trener pyta, czemu nam nie wychodzi w parze. Nie odpowiadam, bo jestem grzeczny."',
+ '„Jak wyprzedzasz rywala, to super. Jak wyprzedzasz mnie, to gorzej."',
+ '„Bonus to nie jałmużna. To robota w drużynie."',
+ '„Cały sezon i ani razu nie zablokowałeś nikogo dla mnie. Ani razu."',
+ '„Jedziesz na siebie. Rozumiem to, ale w tabeli jest napisane «drużynowe»."',
+ '„Zero bonusów w sezonie to jest komunikat. Odczytałem go."',
+ '„Nie musisz mnie lubić. Wystarczyłoby, żebyś zauważył mój numer."',
+ '„Widziałem, jak zamykasz tor. Mnie."',
+ '„Chłopie, my mamy te same barwy. Kolor kevlaru to nie przypadek."',
+ '„W parze jesteś tak samotny, jak w bufecie po meczu."',
+ '„Jeden bonus by wystarczył, żebym o tym nie mówił. Nie było ani jednego."',
+ '„Punkty masz swoje. Drużyna ma swoje. Te zbiory się nie przecinają."',
+ '„Mówiłem ci przed sezonem: jedziemy razem. Chyba usłyszałeś tylko «jedziemy»."',
+ '„Nie jesteś złym zawodnikiem. Jesteś złym partnerem w parze."',
+ '„W szatni nikt tego nie powie głośno, więc powiem ja: zero bonusów."',
+ '„Za każdym razem robisz miejsce rywalowi zamiast mnie. To już wygląda na system."',
+ '„Trener przestał nas stawiać razem. Wiesz dlaczego."',
+ '„Bonusy to jest ta część żużla, która odróżnia drużynę od turnieju indywidualnego."',
+ '„Rywale się cieszą, jak nas widzą razem. Wiesz, co to znaczy?"',
+ '„Zero. W tabeli, w protokole i w mojej pamięci."',
+ '„Mogę zrozumieć jeden mecz. Cały sezon to już charakter."',
+ '„Nie proszę o przysługę. Proszę o jazdę drużynową."',
+ '„Ludzie mówią, że jesteś indywidualistą. Ładne słowo na to, co robisz."',
+ '„Może w przyszłym roku. Ale w przyszłym roku pewnie już nie będziemy w parze."',
+ '„Jedziesz swoje i tyle. Szkoda, bo we dwóch bylibyśmy nie do przejechania."',
+ '„Zero bonusów. Prezes tego nie zauważy. Ja zauważyłem."'
+]},
+
+/* ---------- MISTRZOSTWO ---------- */
+champion: { who:'PREZES', lines:[
+ '„Mistrzostwo! Premie wypłacimy... no, wypłacimy. Kiedyś."',
+ '„Złoto! Zawsze mówiłem, że mam do tego rękę. Do zarządzania, nie do jazdy."',
+ '„Mistrzowie Polski. Zamawiam banery. Płacę w przyszłym kwartale."',
+ '„Wygraliśmy! Teraz proszę o rozsądek przy negocjacjach kontraktów."',
+ '„Tytuł nasz. Miasto już dzwoni, że współfinansowało sukces. Współfinansowało trawnik."',
+ '„Mistrzostwo. Nie ukrywam, że to była moja wizja od pierwszego dnia. Od dziewiątego, ale to szczegół."',
+ '„Chłopcy, jesteście wielcy. Faktury też, ale o tym potem."',
+ '„Złoty medal! Zaczynamy planować obronę tytułu, czyli sprzedaż dwóch najlepszych zawodników."',
+ '„Wygraliśmy ligę i przegraliśmy z księgowością. Bilans na plus."',
+ '„Mistrzostwo Polski. Chyba muszę kupić nowy garnitur na galę."',
+ '„Wiedziałem. Zawsze wiedziałem. Mam nawet notatkę z lutego, mogę pokazać."',
+ '„Tytuł! Dziękuję zawodnikom, sztabowi i temu jednemu sponsorowi, który zapłacił."',
+ '„Jesteśmy mistrzami. Proszę nie pytać, za co."',
+ '„Puchar stoi u mnie w gabinecie. Jest cięższy niż nasze zobowiązania. Chyba."',
+ '„Mistrzostwo! Kibice mogą świętować, ja idę policzyć premie i zblednąć."',
+ '„To był plan trzyletni zrealizowany w rok. Głównie dlatego, że plan był na rok."',
+ '„Zdobyliśmy tytuł. Teraz wszyscy chcą podwyżki. Przewidywalne."',
+ '„Złoto dla naszego miasta. Miasto dowie się o tym z gazety."',
+ '„Wygraliśmy. Nie pytajcie o budżet na przyszły sezon."',
+ '„Mistrzowie! Zorganizujemy fetę na rynku. Skromną. Bardzo skromną."',
+ '„Ten tytuł to zasługa całego klubu. I tego jednego zawodnika, ale nie będę wskazywał palcem."',
+ '„Jesteśmy najlepsi w Polsce. W swojej klasie rozgrywkowej, ale to brzmi gorzej."',
+ '„Mistrzostwo. Odbieram telefony od ludzi, którzy nie odbierali moich przez trzy lata."',
+ '„Puchar jest nasz. Wypożyczalnia limuzyn już dzwoniła z ofertą."',
+ '„Wygrana liga to jest coś, czego nikt nam nie odbierze. Sponsor tytularny może, ale nie odbierze."',
+ '„Chłopaki, zapracowaliście na to. Ja też, choć inaczej."',
+ '„Złoto! Ogłaszam, że budujemy nową trybunę. Ogłaszam to co roku."',
+ '„Tytuł mistrzowski. Zaczynam wierzyć w to, co mówię na konferencjach."',
+ '„Wygraliśmy ligę i to jest fakt niepodważalny. W przeciwieństwie do naszych sprawozdań."',
+ '„Mistrzostwo Polski dla nas. Dla mnie osobiście: spokojna zima."',
+ '„Zrobiliśmy to. Teraz muszę tylko znaleźć pieniądze, żeby zrobić to jeszcze raz."',
+ '„Tytuł nasz. Proszę mi już nie przypominać, co mówiłem w kwietniu."'
+]},
+
+/* ---------- SPADEK (8. MIEJSCE) ---------- */
+relegated: { who:'PREZES', lines:[
+ '„Spadliśmy, ale to był rok budowania. Budowaliśmy. Dół tabeli."',
+ '„Spadek to nowe otwarcie. Otwieramy się na niższą klasę rozgrywkową."',
+ '„Nie mówimy «spadek». Mówimy «reset projektu sportowego»."',
+ '„To był rok trudny, ale wyciągamy wnioski. Wnioski złożymy do PZM."',
+ '„Spadliśmy. Odpowiedzialność biorę na siebie i przekazuję ją trenerowi."',
+ '„Wracamy silniejsi. Za rok, dwa. Może trzy."',
+ '„Klasa niżej to niższe koszty. Patrzę na to optymistycznie, bo muszę."',
+ '„Rok przejściowy. Przeszliśmy do niższej ligi, więc nazwa się zgadza."',
+ '„Spadek jest konsekwencją decyzji, które podejmowali inni. Ja jedynie je zatwierdzałem."',
+ '„Kibice mają prawo być zawiedzeni. Ja mam prawo do urlopu."',
+ '„Nie udało się. Dziękuję zawodnikom, którzy zostali do końca. Obu."',
+ '„Budowaliśmy zespół na lata. Zbudowaliśmy na jeden sezon i to nie ten."',
+ '„Spadamy, ale zostaje infrastruktura. Zostaje tor i długi."',
+ '„W niższej lidze będziemy faworytem. Tak się mówi po każdym spadku."',
+ '„To nie jest koniec. To jest przecinek. Bardzo długi przecinek."',
+ '„Zawiedliśmy kibiców. Głównie tych, którzy kupili karnety w marcu."',
+ '„Popełniliśmy błędy transferowe. Wszystkie z rzędu."',
+ '„Spadek boli. Najbardziej boli, że wszyscy się go spodziewali od maja."',
+ '„Analiza sezonu potrwa kilka tygodni. Wyniku analizy nie ogłosimy."',
+ '„Zabrakło punktów, pieniędzy i szczęścia. W tej kolejności, choć może odwrotnej."',
+ '„Zapewniam, że klub przetrwa. Zapewniam też, że w kwietniu mówiłem coś innego."',
+ '„Spadliśmy z ligi, ale nie z mapy. Jeszcze nie."',
+ '„Rozstajemy się z trenerem za porozumieniem stron. Strony się nie porozumiały."',
+ '„Sezon do zapomnienia. Pracujemy nad tym, żeby zapomnieć jak najszybciej."',
+ '„Nie było łatwo i nie będzie. To był mój najszczerszy komunikat od lat."',
+ '„Odbudowa. Ulubione słowo tego klubu. Używamy go od sześciu lat."',
+ '„W niższej lidze wrócimy do korzeni. Korzenie są tanie."',
+ '„Spadek to jest lekcja. Lekcja kosztowała nas sponsora tytularnego."',
+ '„Dziękuję kibicom, którzy przyjeżdżali na wyjazdy. Wszystkim dwudziestu."',
+ '„Nie szukam winnych. Znalazłem ich już w sierpniu."',
+ '„Przegraliśmy walkę o utrzymanie w ostatniej kolejce. I w przedostatniej. I w tych wcześniejszych."',
+ '„Będziemy walczyć o powrót. To zdanie mam już wydrukowane, oszczędzam na drukarce."'
+]},
+
+/* ---------- BUNT PŁACOWY / STRAJK ---------- */
+strike: { who:'DZIENNIKARZ', lines:[
+ '„Zawodnik nie wyjechał na tor, bo klub nie płaci. Klasyka gatunku, wydanie {rok}."',
+ '„Odmowa startu z powodu zaległości. W {rok} to już nie jest sensacja, to rubryka stała."',
+ '„Rozmawiałem z nim po meczu, na który nie wyjechał. Był spokojniejszy niż prezes."',
+ '„Bunt płacowy w {rok}. Klub wydał oświadczenie o «różnicy zdań co do harmonogramu»."',
+ '„Nie pojechał, bo mu nie zapłacili. Nagłówek pisze się sam."',
+ '„Kibice gwizdali na zawodnika, który upomniał się o swoje pieniądze. Piękny kraj."',
+ '„Klub twierdzi, że przelewy są w drodze. Droga trwa siódmy miesiąc."',
+ '„Zawodnik zrobił to, co powinien zrobić związek zawodowy. Gdyby istniał."',
+ '„Odmówił jazdy. Prezes nazwał to «brakiem lojalności». Faktury nazwał inaczej."',
+ '„To nie strajk. To jest przypomnienie o istnieniu umowy."',
+ '„W {rok} zawodnicy nadal muszą wybierać między jazdą a wypłatą. Postęp."',
+ '„Zapytałem prezesa o zaległości. Odesłał mnie do księgowej. Księgowa jest na zwolnieniu."',
+ '„Nie wyjechał na tor i nagle wszyscy przypomnieli sobie o jego kontrakcie."',
+ '„Zawodnik-dłużnik klubu, a nie odwrotnie. To zdanie powinno kogoś zawstydzić."',
+ '„Sprawa trafi do trybunału PZM. Trybunał rozpatrzy ją po sezonie. Po którym, nie doprecyzowano."',
+ '„Klub w komunikacie użył słowa «nieporozumienie». Kwota nieporozumienia jest sześciocyfrowa."',
+ '„Nie pojechał i miał rację. Napisałem to i dostałem telefon z klubu."',
+ '„Kolejna kolejka, kolejny zawodnik bez pieniędzy. Rok {rok}, liga zawodowa."',
+ '„Prezes mówi, że «wszyscy są w tej samej sytuacji». To akurat prawda i to jest najgorsze."',
+ '„Bunt jednego zawodnika. Reszta milczy, bo ma kredyty."',
+ '„Klub zapowiada wyciągnięcie konsekwencji. Wobec zawodnika, oczywiście."',
+ '„Zaległości rosną, a rozmowa toczy się o «postawie». Zawsze o postawie."',
+ '„Zawodnik pokazał charakter. W tej lidze charakter kosztuje jedną kolejkę pauzy."',
+ '„To nie jest kaprys. To jest niezapłacona faktura z odsetkami."',
+ '„Sezon {rok} zapamiętamy nie z powodu wyników, tylko z powodu przelewów, których nie było."',
+ '„Zapytałem kibiców, po czyjej są stronie. Odpowiedzi nie nadają się do druku."',
+ '„Klub proponuje rozłożenie zaległości na raty. Raty na raty."',
+ '„Odmowa startu w proteście. Za pięć lat będzie to standardowa procedura, dziś jest skandalem."',
+ '„W komunikacie klubu nie padło słowo «pieniądze». Ani razu."',
+ '„Zawodnik wybrał godność. Tabela wybrała minus dwa punkty."',
+ '„Rozmawiałem z jego mechanikiem. On też nie dostał."',
+ '„Jeżeli w {rok} trzeba strajkować o wypłatę, to nie mówmy już o sporcie zawodowym."'
+]},
+
+/* ---------- WYSOKIE KARY ({kasa}) ---------- */
+fines: { who:'KSIĘGOWA KLUBU', lines:[
+ '„Kar na {kasa}. Panie, pan więcej płaci, niż zarabia."',
+ '„{kasa} kar w jednym sezonie. Mam osobną teczkę. Gruba."',
+ '„Wpisuję pana kary w oddzielną rubrykę, bo psuły mi zestawienie. {kasa}."',
+ '„Panie kolego, {kasa}. Za te pieniądze kupiłby pan silnik. Nawet dwa."',
+ '„Regulamin dyscyplinarny zna pan pewnie na pamięć. {kasa} lekcji."',
+ '„{kasa}. To jest kwota, przy której zaczynam się o pana martwić. Zawodowo."',
+ '„Kary: {kasa}. Wynagrodzenie: mniej. Nie jestem doradcą finansowym, ale coś tu nie gra."',
+ '„Pan płaci temu klubowi, a nie odwrotnie. {kasa} dowodu."',
+ '„Zrobiłam wykres pana kar. Rośnie ładnie, jak na wykresie ma być."',
+ '„{kasa}. Proszę mi wierzyć, przeliczyłam trzy razy, bo sama nie wierzyłam."',
+ '„Za {kasa} można by opłacić juniorowi cały sezon. Z busem."',
+ '„Panie, pana kary finansują nam kadrę juniorską. Dziękujemy, ale proszę przestać."',
+ '„W tym sezonie był pan naszym najbardziej regularnym źródłem wpływów. {kasa}."',
+ '„{kasa} kar. Prezes żartował, że powinniśmy dać panu premię za obrót."',
+ '„Kolejny mandat, kolejny przelew. Razem {kasa}."',
+ '„Mam pana nazwisko w systemie wpisane jako pozycję kosztową. To nie żart."',
+ '„{kasa}. Panie, przy takim tempie skończy pan sezon z ujemnym wynagrodzeniem."',
+ '„Kary regulaminowe: {kasa}. Kary od życia: nieksięgowane."',
+ '„Odejmowałam to panu z każdej wypłaty. {kasa} razem."',
+ '„Proszę spojrzeć na to inaczej: gdyby nie kary, byłby pan całkiem dobrze zarabiającym człowiekiem."',
+ '„{kasa}. Zaczęłam prowadzić dla pana osobny arkusz."',
+ '„Panie, ja nie oceniam. Ja tylko podliczam. Wyszło {kasa}."',
+ '„Za {kasa} można wyremontować szatnię. Całą."',
+ '„Kary w wysokości {kasa}. Prezes powiedział, że to nasz najlepszy interes w tym roku."',
+ '„Widziałam pana podpis na tylu protokołach, że rozpoznam go wszędzie."',
+ '„{kasa}. Panie, może warto po prostu przestać?"',
+ '„Nie ma pan długu wobec klubu. Ma pan abonament."',
+ '„Pana kary przekroczyły budżet na paliwo dla całej drużyny. {kasa}."',
+ '„{kasa} w rubryce «pozostałe». Musiałam ją rozszerzyć."',
+ '„Rozmawiałam z panem o tym w czerwcu. Od tamtej pory doszło jeszcze sporo."',
+ '„Panie, {kasa} to jest kwota, przy której człowiek powinien zrobić rachunek sumienia."',
+ '„Zamykam księgi. Pana pozycja jest najbardziej kolorowa. {kasa}."'
+]},
+
+/* ---------- UJEMNY BUDŻET ---------- */
+broke: { who:'KOMORNIK', lines:[
+ '„Dzień dobry. Ładny ten bus."',
+ '„Dzień dobry. Przyszedłem w sprawie, o której pan wie."',
+ '„Spisujemy tylko to, co widać. Reszta zostaje, na razie."',
+ '„Nie musi pan otwierać garażu. Sąsiad już otworzył."',
+ '„Motocykl żużlowy. Wartość rynkowa: dyskusyjna. Wartość dla pana: bezcenna. Wpisuję rynkową."',
+ '„Rozumiem, że to narzędzie pracy. Wszyscy tak mówią, panie."',
+ '„Proszę o dokumenty na przyczepę. Jakiekolwiek."',
+ '„Miałem dziś trzy adresy. Pan był najbardziej uprzejmy."',
+ '„Widzę, że ma pan puchar. Pucharów nie zabieramy. To dobra wiadomość dnia."',
+ '„Wpłata częściowa też jest wpłatą. Proszę o tym pomyśleć."',
+ '„Numer konta ma pan w piśmie. To pismo, którego pan nie odebrał."',
+ '„Nie jestem od oceniania. Jestem od zajmowania."',
+ '„Ten telewizor jest leasingowany? Wszyscy tak mówią."',
+ '„Wrócę. To nie jest groźba, to jest procedura."',
+ '„Ma pan trzy dni. Potem mam ja."',
+ '„Sportowiec, a takie długi. Panie, widziałem gorsze przypadki. Wczoraj."',
+ '„Zajmujemy rachunek. Pozostałe środki: sprawdziłem, nie ma."',
+ '„Proszę się nie denerwować. Denerwowanie się nie wstrzymuje egzekucji."',
+ '„To pan jest tym żużlowcem? Syn mnie o pana pytał. Nie powiem mu, gdzie byłem."',
+ '„Kevlar zostaje. Nie ma na to rynku wtórnego."',
+ '„Panie, ja tu jestem od dziesiątej rano. Jest pan piątym zawodnikiem dzisiaj."',
+ '„Podpis tutaj. To tylko potwierdzenie, że pan wie."',
+ '„Rozłożenie na raty jest możliwe. Trzeba było odbierać telefony."',
+ '„Bus zostaje na razie. Ale numer rejestracyjny zapisałem."',
+ '„W protokole napiszę «brak przedmiotów wartościowych». To pana ratuje i pana opisuje."',
+ '„Widziałem pana w telewizji. Wyglądał pan na bogatszego."',
+ '„Nie ma pan pieniędzy, ale ma pan cztery silniki. Zaraz to zmienimy."',
+ '„Proszę nie zamykać drzwi. To niczego nie rozwiązuje, a wydłuża."',
+ '„Dług nie znika. Dług tylko czeka."',
+ '„Zostawiam wezwanie na stole. Przy fakturach. Ładnie się komponuje."',
+ '„Ma pan piękny kask. Ma pan też trzy niezapłacone tytuły wykonawcze."',
+ '„Do widzenia. Podkreślam: do widzenia."'
+]},
+
+/* ---------- SPRZĘT W OPŁAKANYM STANIE ---------- */
+junk: { who:'TUNING-GÓR', lines:[
+ '„Ten silnik to już nie silnik. To eksponat. Przynieś go do stodoły."',
+ '„Chłopie, ja to widziałem ostatnio w muzeum. I tam było w lepszym stanie."',
+ '„Otworzyłem to i się przeżegnałem. Zamknąłem z powrotem."',
+ '„Na tym się nie jeździ. Na tym się dojeżdża, jak dobrze pójdzie."',
+ '„Tłok wygląda jak po ostrzale. Serio, po ostrzale."',
+ '„Przywieź to do stodoły, ale przywieź na lawecie. Nie ryzykuj."',
+ '„Ten sprzęt ma za sobą więcej sezonów niż mój pies lat."',
+ '„Mogę to skleić. Nie mogę tego naprawić. To dwie różne usługi."',
+ '„Panie, tu nawet śruby są zmęczone."',
+ '„Zrobię ci przegląd, ale to będzie raczej sekcja zwłok."',
+ '„Ten motocykl nie potrzebuje tunera. Potrzebuje księdza."',
+ '„Głowica jest w takim stanie, że ja bym jej nie wziął nawet za darmo."',
+ '„Jak ty na tym jeździsz, to masz odwagę. Albo nie wiesz."',
+ '„Widziałem lepsze silniki wyciągnięte z rowu."',
+ '„To już nie kwestia mocy. To kwestia bezpieczeństwa."',
+ '„Chłopie, kup nowy. Serio. Nie żartuję, a ja zawsze żartuję."',
+ '„Ten sprzęt zabiera ci pół sekundy na okrążeniu. Pół sekundy to jest cały wyścig."',
+ '„Rozbieram to od trzech godzin i wciąż znajduję rzeczy, których nie rozumiem."',
+ '„Zapytałem, kiedy była ostatnia rewizja. Powiedziałeś, że nie pamiętasz. To była odpowiedź."',
+ '„Ja to potraktuję jak wyzwanie. Ale rachunek będzie wyzwaniem dla ciebie."',
+ '„Ten silnik ma charakter. Zły."',
+ '„Widzisz te opiłki? To nie powinno tak wyglądać. Nigdy."',
+ '„Możesz na tym jeździć jeszcze dwa mecze. Potem to już loteria."',
+ '„W stodole mam lepszy sprzęt na częściach. Dosłownie na częściach."',
+ '„Nie dziwię się twoim defektom. Dziwię się, że nie masz ich więcej."',
+ '„To jest sprzęt na trening. Na trening dla kogoś, kogo nie lubisz."',
+ '„Przywieź to, wypijemy kawę i pogadamy, co dalej. «Dalej» oznacza zakupy."',
+ '„Powiem ci szczerze, bo lubię: to się nadaje na kwietnik."',
+ '„Rama ma mikropęknięcie. Mikro, ale w złym miejscu."',
+ '„Twój silnik brzmi jak młocarnia mojego dziadka. Młocarnia jeździła szybciej."',
+ '„Wydajesz na paliwo więcej niż ten sprzęt jest wart."',
+ '„Nie oszczędzaj na sprzęcie. Oszczędzaj na czymś, co cię nie wysadzi na prostej."'
+]},
+
+/* ---------- WIEK 34+ I SŁABA FORMA ---------- */
+oldSlow: { who:'MENEDŻER', lines:[
+ '„Może czas pomyśleć o czymś spokojniejszym? Znam człowieka, ma myjnię."',
+ '„Nie mówię, żeby kończyć. Mówię, żeby mieć plan B. I C."',
+ '„Telefony od klubów przestały dzwonić. To nie jest awaria telefonu."',
+ '„Rynek się zmienił. Kluby wolą dwudziestolatka, który jest gorszy, ale tańszy i młodszy."',
+ '„Rozmawiałem z trzema prezesami. Wszyscy pytali o twój rocznik, nie o średnią."',
+ '„Ciało już nie wybacza. Kalendarz też nie."',
+ '„Masz doświadczenie, którego nikt nie chce kupić. Taki paradoks."',
+ '„Znam klub, który cię weźmie. Klasa niżej i za pół stawki."',
+ '„Nie chodzi o to, że jeździsz źle. Chodzi o to, że inni jeżdżą tak samo, tylko taniej."',
+ '„Pomyśl o licencji trenerskiej. Serio, mówię to jako przyjaciel, nie jako menedżer."',
+ '„W tym wieku każdy słaby sezon liczy się podwójnie."',
+ '„Mogę ci załatwić kontrakt, ale będziesz się na niego wstydził patrzeć."',
+ '„Regeneracja po meczu trwa u ciebie tyle, co kiedyś przygotowania do sezonu."',
+ '„Prezesi mówią o tobie w czasie przeszłym. Zauważyłem to w czerwcu."',
+ '„Masz jeszcze rok, może dwa. Wykorzystaj je świadomie."',
+ '„Nie sprzedam cię jako perspektywę. Mogę cię sprzedać jako stabilizację. To mniej warte."',
+ '„Kluby patrzą na PESEL zanim spojrzą na kartę meczową."',
+ '„Znam ludzi w mediach. Mógłbyś komentować. Płacą mniej, ale nie boli."',
+ '„Twoja wartość rynkowa spadła bardziej niż twoja średnia. Tak działa ten rynek."',
+ '„Powiem ci to raz: jeszcze jeden taki sezon i nie znajdę ci nic."',
+ '„Rozważ jazdę w niższej lidze. Będziesz tam liderem, nie balastem."',
+ '„W kadrze cię nie ma i już nie będzie. To nie jest opinia, to jest fakt."',
+ '„Twój sprzęt kosztuje tyle samo, co dziesięć lat temu. Twoja stawka nie."',
+ '„Możesz jeździć dla przyjemności. Tylko czy ta przyjemność jeszcze jest?"',
+ '„Miałeś dobrą karierę. Używam czasu przeszłego świadomie."',
+ '„Zapytałem cię przed sezonem, czego chcesz. Nie odpowiedziałeś. To też odpowiedź."',
+ '„Kolega w twoim wieku otworzył warsztat. Ma spokój i weekendy."',
+ '„Nie namawiam do niczego. Pokazuję ci arkusz i sam sobie zobacz."',
+ '„W tej dyscyplinie po trzydziestce nie ma powrotów. Są tylko przedłużenia."',
+ '„Jeszcze cię lubię, ale coraz trudniej mi cię komuś polecić."',
+ '„Trzy oferty w zeszłym roku, zero w tym. To nie jest przypadek."',
+ '„Zima jest dobrym momentem, żeby porozmawiać poważnie. Zadzwonię w grudniu."'
+]},
+
+/* ---------- MŁODY I SZYBKI ---------- */
+youngFast: { who:'SELEKCJONER', lines:[
+ '„Zapamiętajcie to nazwisko. Albo i nie, zobaczymy za trzy lata."',
+ '„Mamy chłopaka. Teraz trzeba go nie zepsuć, a to najtrudniejsza część."',
+ '„W tym wieku takie liczby robi się raz na kilka lat."',
+ '„Obserwujemy go od dwóch sezonów. Od dzisiaj obserwujemy uważnie."',
+ '„Talent widać. Głowę zobaczymy przy pierwszym gorszym miesiącu."',
+ '„Nie chcę mu zawrócić w głowie powołaniem. Ale powołanie będzie."',
+ '„Jeździ jak ktoś o pięć lat starszy. To rzadkie i cenne."',
+ '„Rozmawiałem z jego trenerem klubowym. Prosił, żeby go za bardzo nie chwalić. Za późno."',
+ '„Młodzieżowiec, który nie boi się pierwszego łuku. Reszty można nauczyć."',
+ '„Widziałem go w Kasku. Zapamiętałem, a widziałem tam trzydziestu innych."',
+ '„To jest materiał na reprezentanta. Materiał, podkreślam."',
+ '„Ma to coś, czego nie mierzy się stoperem."',
+ '„Nie zamierzam go przyspieszać. Ale zamierzam go pilnować."',
+ '„W jego wieku liczy się progresja, nie średnia. Progresja jest znakomita."',
+ '„Startuje odważniej niż połowa seniorów w tej lidze."',
+ '„Trzeba go trzymać z dala od głupich pieniędzy przez najbliższe dwa lata."',
+ '„Zapraszamy go na konsultacje. To nie jest jeszcze powołanie, ale to pierwszy stopień."',
+ '„Kluby już dzwonią po niego. Mam nadzieję, że wybierze rozwój, a nie stawkę."',
+ '„Widać robotę szkoleniowca. Widać też coś, czego szkoleniowiec nie dał."',
+ '„Sezon jak z podręcznika. Teraz najtrudniejsze: powtórzyć."',
+ '„Ma sprzęt gorszy od rywali i wyniki lepsze. To mówi wszystko."',
+ '„Nie chcę używać wielkich słów. Ale mam je przygotowane."',
+ '„Jeżeli utrzyma tempo rozwoju, za trzy lata rozmawiamy o zupełnie innej lidze."',
+ '„Popełnia błędy, ale zawsze do przodu. Wolę takie błędy."',
+ '„Zapytałem go o cele. Odpowiedział konkretnie i bez pozy. Dobry znak."',
+ '„Największym zagrożeniem dla niego są teraz ludzie wokół niego."',
+ '„Ma czternaście lat kariery przed sobą, jeżeli nie zrobi głupstwa."',
+ '„Widziałem, jak przegrywa bieg i jak reaguje. Reakcja była lepsza niż przejazd."',
+ '„Chcemy go w kadrze młodzieżowej. Chcemy też, żeby jeszcze trochę pojeździł w spokoju."',
+ '„To jest chłopak, dla którego warto zorganizować sparingi za granicą."',
+ '„Nie porównuję go do nikogo. Porównania w tym wieku zabijają."',
+ '„Sezon rewelacyjny jak na jego rocznik. Reszta zależy od zimy."'
+]}
+
+};

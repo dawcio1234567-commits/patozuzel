@@ -109,7 +109,11 @@ function scCreate(){
  <div class="brut mb-4"><div class="brut-h px-3 py-1.5 text-[11px] text-orange-500 font-bold">TWORZENIE ZAWODNIKA // WIEK STARTOWY: 16 LAT</div>
  <div class="p-4 space-y-4">
    <div><label class="block text-[11px] text-zinc-300 tracking-widest mb-1">IMIĘ I NAZWISKO</label>
-   <input id="pname" maxlength="28" value="Mariusz Kowalczyk" class="w-full sm:w-96"></div>
+   <div class="flex gap-2 flex-wrap items-center">
+     <input id="pname" maxlength="28" value="${esc(suggestName())}" class="w-full sm:w-96">
+     <button onclick="rollName()" class="btn px-3 py-2 text-[11px] font-bold tracking-widest text-orange-500">LOSUJ</button>
+   </div>
+   <div class="text-[11px] text-zinc-400 mt-1">Propozycja jest losowana z puli imion i nazwisk. Możesz ją nadpisać własną.</div></div>
    <div><label class="block text-[11px] text-zinc-300 tracking-widest mb-2">KLASA POSTACI</label>
    <div class="grid sm:grid-cols-2 gap-2">
    ${CLASSES.map(c=>`<label class="brut p-3 cursor-pointer hover:border-orange-600 block">
@@ -122,7 +126,41 @@ function scCreate(){
    Startujesz na kontrakcie <b class="text-zinc-300">amatorskim</b>: darmowy sprzęt klubowy, grosze za punkty, zero kasy za podpis.<br>
    Budżet: 0 zł &nbsp;·&nbsp; Sprzęt: 20 &nbsp;·&nbsp; Profesjonalizm i Medialność: ukryte, zależne od klasy.</div>
    <button onclick="doCreate()" class="btn px-6 py-2.5 font-bold tracking-widest text-orange-500">ZACZYNAM KARIERĘ &gt;</button>
- </div></div></div>`;
+ </div></div>
+ ${infoBox()}
+ ${changelogBox()}
+ </div>`;
+}
+/* ---- EKRAN TYTUŁOWY: ZGŁASZANIE BŁĘDÓW I ZASTRZEŻENIE ---- */
+function infoBox(){
+ return `<div class="brut mb-4" style="border-color:#a16207">
+  <div class="brut-h px-3 py-1.5 text-[11px] font-bold" style="border-color:#a16207;color:#eab308">
+    INFORMACJE // OSTATNI UPDATE: ${GAME_UPDATE}</div>
+  <div class="p-4 space-y-2 text-[12px] text-zinc-200 leading-relaxed">
+   <div><b style="color:#eab308">Wszelkie bugi proszę zgłaszać, oznaczając profil twórcy
+     <span class="text-zinc-100">${GAME_X}</span> na X.</b></div>
+   <div class="text-zinc-300">Podobieństwo do wszelkich wydarzeń, nazwisk i klubów do rzeczywistości jest przypadkowe.</div>
+   <div class="text-[11px] text-zinc-400">Ostatni update: <b class="text-zinc-300">${GAME_UPDATE}</b></div>
+  </div></div>`;
+}
+/* ---- EKRAN TYTUŁOWY: CHANGELOG ---- */
+function changelogBox(){
+ if(typeof CHANGELOG==='undefined' || !CHANGELOG.length) return '';
+ return `<div class="brut mb-4">
+  <div class="brut-h px-3 py-1.5 text-[11px] text-orange-500 font-bold">CHANGELOG — CO SIĘ ZMIENIŁO</div>
+  <div class="p-3 space-y-3">
+   ${CHANGELOG.map((c,i)=>`<details ${i===0?'open':''} class="border border-zinc-700">
+     <summary class="cursor-pointer px-3 py-1.5 text-[11px] tracking-widest text-orange-400 select-none">
+       ${esc(c.v)} — ${esc(c.t)}</summary>
+     <ul class="px-3 py-2 text-[11px] text-zinc-300 space-y-1 border-t border-zinc-700">
+       ${c.l.map(x=>'<li>› '+esc(x)+'</li>').join('')}</ul>
+   </details>`).join('')}
+  </div></div>`;
+}
+/* Przelosowanie propozycji bez przeładowania całego ekranu (radio klasy postaci
+   i tak zostaje tam, gdzie było). */
+function rollName(){
+ const el=document.getElementById('pname'); if(el) el.value=suggestName();
 }
 function doCreate(){
  const n=document.getElementById('pname').value.trim()||'Bezimienny Grajek';
@@ -168,6 +206,7 @@ function scSign(){
    <div class="brut-h px-3 py-1.5 text-[11px] text-red-500 font-bold" style="border-color:#7f1d1d">RYNEK TRANSFEROWY ${G.year} // BRAK OFERT</div>
    <div class="p-5">
    <div class="text-zinc-300 mb-3">Żaden klub w Polsce nie chce cię widzieć na torze. Telefon milczy.</div>
+   ${marketBox()}
    ${noRenewBox()}
    <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
      ${kpi('WIEK',p.age)}${kpi('OVR',p.ovr)}${kpi('LATA BEZ KLUBU',idle,idle>=2?'text-red-500':'text-zinc-100')}${kpi('BUDŻET',zl(p.budget),'text-orange-400')}
@@ -194,6 +233,7 @@ function scSign(){
  ${playerStrip()}
  ${longInjuryWarnHtml()}
  ${forcedExitHtml()}
+ ${marketBox()}
  ${noRenewBox()}
  <div class="brut"><div class="brut-h px-3 py-1.5 text-[11px] text-orange-500 font-bold">OKIENKO TRANSFEROWE // OFERTY NA SEZON ${G.year}</div>
  <div class="p-3 grid md:grid-cols-2 gap-2">
@@ -224,6 +264,7 @@ function scSign(){
      <div class="text-[11px] text-zinc-400 mt-0.5">${o.ride>=70?'pierwszy skład':o.ride>=40?'rotacja / rezerwa':'będziesz oglądał z parkingu'}</div>
    </div>
    ${o.debt>0?`<div class="text-[11px] text-red-500 mt-1">UWAGA: klub ma zaległości ${zl(o.debt)} — kadra takiego klubu jeździ wyraźnie słabiej</div>`:''}
+   ${offerWhyHtml(o,i)}
    <button onclick="pickOffer(${i})" class="btn w-full mt-2 py-1.5 text-[11px] font-bold tracking-widest">PODPISUJĘ NA ${o.years} ${lataTxt(o.years).toUpperCase()}</button>
  </div>`).join('')}
  </div>
@@ -235,6 +276,76 @@ function scSign(){
    </div></div>`:''}
  </div></div>`;
 }
+/* ============================================================
+   SKĄD SIĘ BIORĄ OFERTY — DWA JAWNE BOKSY
+   ------------------------------------------------------------
+   marketBox()    — twoja WARTOŚĆ RYNKOWA rozpisana na składniki (OVR, średnia,
+                    medialność, profesjonalizm, wiek, sprzęt) plus wyjaśnienie,
+                    ile telefonów w ogóle mogło zadzwonić.
+   offerWhyHtml() — przy KAŻDEJ ofercie: zainteresowanie tego klubu rozpisane
+                    na powody i rozbiór stawki za punkt.
+   Wcześniej gracz widział tylko wynik — stąd wrażenie, że oferty są losowe.
+   ============================================================ */
+function deltaLine(x){
+ return `<li class="flex justify-between gap-2">
+   <span class="text-zinc-300">${esc(x.w)}</span>
+   <span class="font-bold whitespace-nowrap ${x.d>0?'text-emerald-400':x.d<0?'text-red-400':'text-zinc-400'}">${x.d>0?'+':''}${x.d}</span></li>`;
+}
+function marketBox(){
+ const M=G.market; if(!M) return '';
+ const p=G.p;
+ const cat = M.rating>=85?['ZAWODNIK Z GÓRNEJ PÓŁKI','#f97316']
+   : M.rating>=70?['SOLIDNY LIGOWIEC','#84cc16']
+   : M.rating>=55?['ŚREDNIAK Z ROTACJI','#eab308']
+   : M.rating>=40?['ZAWODNIK DO WYPEŁNIENIA SKŁADU','#a1a1aa']
+   : ['NIKT SIĘ O CIEBIE NIE BIJE','#dc2626'];
+ return `<div class="brut mb-3" style="border-color:${cat[1]}">
+  <div class="brut-h px-3 py-1.5 text-[11px] font-bold" style="border-color:${cat[1]};color:${cat[1]}">
+    TWOJA WARTOŚĆ RYNKOWA — SKĄD BIORĄ SIĘ TE OFERTY</div>
+  <div class="p-3 grid md:grid-cols-2 gap-3">
+   <div>
+    <div class="flex items-end gap-2 mb-1">
+     <div class="text-3xl font-extrabold" style="color:${cat[1]}">${Math.round(M.rating)}</div>
+     <div class="text-[11px] text-zinc-400 pb-1">na skali OVR klubów · <b class="text-zinc-300">${cat[0]}</b></div>
+    </div>
+    <div class="text-[11px] text-zinc-400 mb-2">Kluby porównują tę liczbę ze swoim poziomem. Im wyżej jesteś ponad klubem, tym chętniej dzwonią i tym lepszą dają stawkę.</div>
+    <ul class="text-[11px] space-y-0.5 border-t border-zinc-700 pt-2">${(M.parts||[]).map(deltaLine).join('')}</ul>
+   </div>
+   <div>
+    <div class="text-[11px] text-zinc-400 tracking-widest mb-1">ILE TELEFONÓW MOGŁO ZADZWONIĆ: <b class="text-zinc-200">${M.maxOffers}</b></div>
+    <ul class="text-[11px] space-y-0.5 mb-2">${(M.maxWhy||[]).map(deltaLine).join('')}</ul>
+    <div class="text-[11px] text-zinc-400 border-t border-zinc-700 pt-2">
+     Sprawdzono <b class="text-zinc-300">${M.checked}</b> klubów w trzech ligach, realne zainteresowanie zgłosiło
+     <b class="text-zinc-300">${M.interested}</b>. Na ekran trafiają najmocniejsze z nich.
+     ${M.lastAvg!=null?`<br>Twoja średnia z sezonu ${G.year-1}: <b class="text-zinc-300">${M.lastAvg.toFixed(2)}</b> — to ona najmocniej rusza wartością w górę i w dół.`:''}
+     ${M.floor!=null?`<br>Próg dostępności: klub odpada, gdy jesteś od niego słabszy o więcej niż <b class="text-zinc-300">${Math.abs(M.floor)}</b> pkt
+       (${p.age<=21?'młodzieżowiec ma tu ogromną taryfę ulgową — wypełnia rubrykę':p.age<=24?'U24 ma taryfę ulgową dzięki obowiązkowej rubryce':'senior nie ma żadnej taryfy ulgowej'}).`:''}
+    </div>
+   </div>
+  </div></div>`;
+}
+function offerWhyHtml(o,i){
+ if(!o.ratingParts && !o.wantParts) return '';
+ const wc = o.want>=70?'text-emerald-400':o.want>=40?'text-yellow-500':'text-red-500';
+ return `<details class="mt-2 border border-zinc-700">
+  <summary class="cursor-pointer px-2 py-1 text-[11px] text-zinc-300 tracking-widest select-none">
+    SKĄD TA OFERTA · SZANSA NA TELEFON STĄD: <b class="${wc}">${o.want!=null?o.want+'%':'—'}</b>
+    ${o.gap!=null?`<span class="text-zinc-400">· twoja wartość ${Math.round(o.rating)} vs poziom klubu ${o.ovr} (${o.gap>0?'+':''}${o.gap})</span>`:''}
+  </summary>
+  <div class="px-2 py-2 border-t border-zinc-700">
+   ${o.want!=null&&o.want<25?`<div class="text-[11px] mb-2" style="color:#eab308">
+     Ten telefon nie miał prawa zadzwonić — przy ${o.want}% szans taka oferta trafia się raz na kilka lat. Ktoś w klubie postawił na ciebie wbrew tabelce.</div>`:''}
+   ${o.wantParts?`<div class="text-[11px] text-zinc-400 tracking-widest mb-1">DLACZEGO TEN KLUB CIĘ CHCE</div>
+     <ul class="text-[11px] space-y-0.5 mb-2">${o.wantParts.map(deltaLine).join('')}</ul>`:''}
+   ${o.rateParts&&o.rateParts.length?`<div class="text-[11px] text-zinc-400 tracking-widest mb-1 border-t border-zinc-700 pt-2">SKĄD STAWKA ${zl(o.rate)} ZA PUNKT</div>
+     <ul class="text-[11px] space-y-0.5">${o.rateParts.map(x=>`<li class="flex justify-between gap-2">
+       <span class="text-zinc-300">${esc(x.w)}</span><span class="text-zinc-200 font-bold whitespace-nowrap">${esc(x.v||'')}</span></li>`).join('')}</ul>`:''}
+   ${o.bonus?`<div class="text-[11px] text-zinc-400 mt-2 border-t border-zinc-700 pt-2">
+     Premia za podpis to ułamek budżetu klubu (${zl(o.budget)}) ważony twoją wartością${o.debt>0?', ścięty przez jego zaległości wobec ciebie':''}${o.arr>0?' i przez niezapłacone pensje kadry':''}.</div>`
+    :`<div class="text-[11px] text-zinc-400 mt-2 border-t border-zinc-700 pt-2">Bez premii za podpis${o.type==='Amatorski'?' — kontrakt amatorski nie przewiduje takiej rubryki.':'.'}</div>`}
+  </div></details>`;
+}
+
 /* ---- BOKS „DRUGA DROGA: PARK MASZYN" (wspólny dla obu wariantów ekranu ofert) ---- */
 function mechanicBox(reason){
  return `<div class="brut p-3 mb-4" style="border-color:#a16207">
@@ -274,6 +385,11 @@ function forcedExitHtml(){
 }
 function firstOffers(){
  const p=G.p, out=[], used=new Set();
+ const MV=marketValue(p, 1.40);
+ G.market={rating:MV.rating, parts:MV.parts, maxOffers:3,
+   maxWhy:[{d:3, w:'pierwszy kontrakt w karierze — trzy różne ścieżki do wyboru'}],
+   lastAvg:null, interested:3, checked:allClubs().length, floor:null,
+   age:p.age, prof:p.prof, med:p.med, ovr:p.ovr, first:true};
  // Trzy różne ścieżki: prestiż (będziesz grzał ławkę), środek, albo klub,
  // w którym od razu wskoczysz do składu. Wybór należy do ciebie.
  const targets=[p.ovr+32+R(-4,4), p.ovr+17+R(-4,4), p.ovr+5+R(-4,4)];
@@ -287,9 +403,14 @@ function firstOffers(){
    pool.sort((a,b)=>a.diff-b.diff);
    const best=pool[0]; if(!best) return;
    used.add(best.c.name);
-   out.push({club:best.c.name, lk:best.lk, ovr:best.c.ovr, budget:best.c.budget, debt:best.c.debt,
+   const I=clubInterest(p, best.c, best.lk, MV.rating);
+   out.push({club:best.c.name, lk:best.lk, ovr:best.c.ovr, budget:best.c.budget, debt:best.c.debt, arr:best.c.arr||0,
      type:'Amatorski', years:R(1,2), rate:R(150,400), bonus:0, stay:false,
-     ride:appearanceChance(p,best.c,55,null)});
+     ride:appearanceChance(p,best.c,55,null),
+     rating:MV.rating, ratingParts:MV.parts, want:I.want, wantParts:I.parts,
+     gap:Math.round(I.gap), press:I.press, rateParts:null, lastAvg:null,
+     titles:titleCount(best.c), sponsors:clubTitles(best.c).map(s=>s.n),
+     titlePen:sponsorPen(titleCount(best.c))});
  });
  return out.sort((a,b)=>b.ovr-a.ovr);
 }
@@ -444,7 +565,7 @@ function scHub(){
  <div class="brut mt-3">
   <div class="p-4 flex items-center justify-between flex-wrap gap-3">
    <div><div class="text-[11px] text-zinc-300 tracking-widest">SEZON ${G.year} · ${esc(club.name)} · ${G.leagues[p.lk].name}</div>
-   <div class="text-[11px] text-zinc-400">Szansa na skład w pojedynczej kolejce (140 symulacji ustawień trenera, z losowaną dyspozycją całej kadry): <b class="text-zinc-200">${appearanceChance(p,club,55,null)}%</b> ${isJun(p)?'· jesteś młodzieżowcem (U21) — masz do dyspozycji numery 1–7, w tym rubrykę młodzieżową':isU24(p)?'· jesteś seniorem U24 — numery 1–5, w tym rubryka U24. Numery 6 i 7 są dla ciebie zamknięte':'· jesteś seniorem — tylko numery 1–5'}
+   <div class="text-[11px] text-zinc-400">Szansa na skład w pojedynczej kolejce (140 symulacji ustawień trenera, z losowaną dyspozycją całej kadry): <b class="text-zinc-200">${appearanceChance(p,club,55,null)}%</b> ${isJun(p)?'· jesteś młodzieżowcem (U21) — walczysz o wszystkie siedem pozycji, łącznie z rubryką młodzieżową':isU24(p)?'· jesteś seniorem U24 — tylko pierwsza piątka, w tym rubryka U24. Pozycje młodzieżowe są dla ciebie zamknięte':'· jesteś seniorem — tylko pierwsza piątka'}
    <span class="block text-zinc-400 mt-0.5">To szansa na JEDNĄ kolejkę przy losowej dyspozycji kadry, a nie gwarancja liczby meczów.
    Powyżej 80% jeździsz praktycznie co tydzień; poniżej 60% to rotacja — jak forma nie wejdzie, sezon potrafi zejść na ławce.</span></div></div>
    <button onclick="startSeason()" class="btn px-7 py-3 font-extrabold tracking-[.2em] text-orange-500">SYMULUJ SEZON ${G.year} &gt;</button>
@@ -481,11 +602,11 @@ function squadHtml(){
  const meNum=numOf[(G.riders.find(r=>r.me)||{}).id];
  return `<div class="brut mb-3"><div class="brut-h px-3 py-1.5 text-[11px] text-orange-500 font-bold flex justify-between flex-wrap gap-2">
    <span>KADRA — ${esc(club.name)}</span>
-   <span class="${meNum?'text-emerald-400':'text-red-500'}">${meNum?'JEDZIESZ Z NUMEREM '+meNum:'POZA SIÓDEMKĄ — OGLĄDASZ Z PARKINGU'}</span></div>
+   <span class="${meNum?'text-emerald-400':'text-red-500'}">${meNum?'JESTEŚ W SKŁADZIE — POZYCJA '+meNum+' (u siebie nr '+(meNum+8)+', na wyjeździe nr '+meNum+')':'POZA SIÓDEMKĄ — OGLĄDASZ Z PARKINGU'}</span></div>
  <div class="p-2 overflow-x-auto">
  <table class="w-full text-[11px]">
  <thead><tr class="text-[11px] text-zinc-400 tracking-widest border-b border-zinc-700">
-  <th class="text-left">NR</th><th class="text-left">ZAWODNIK</th><th>WIEK</th><th class="text-left">KATEGORIA</th><th>OVR</th><th>FORMA</th><th>WARTOŚĆ</th><th class="text-left">STATUS</th></tr></thead>
+  <th class="text-left">POZ.</th><th class="text-left">ZAWODNIK</th><th>WIEK</th><th class="text-left">KATEGORIA</th><th>OVR</th><th>FORMA</th><th>WARTOŚĆ</th><th class="text-left">STATUS</th></tr></thead>
  <tbody>${sq.map(r=>{
    const n=numOf[r.id];
    const fm=Math.round((r.form||0)*10)/10;
@@ -507,9 +628,12 @@ function squadHtml(){
   <b class="text-zinc-300">O numerze NIE decyduje sam OVR.</b> Trener patrzy na WARTOŚĆ = OVR + forma × ${LINEUP_FORM_W}
   (forma chodzi od −12 do +12, więc potrafi przestawić zawodnika o ok. 20 punktów). Dlatego czwarty OVR w drużynie
   po dwóch słabych meczach ląduje poza składem, a rozkręcony rezerwowy wskakuje na jego miejsce.<br>
-  Numery 6 i 7 (14 i 15): wyłącznie zawodnicy młodzieżowi U21 — senior nie zajmie tych miejsc, choćby miał najwyższy OVR w lidze.
-  Wśród numerów 1–5 (9–13) musi jechać zawodnik U24: jeśli w piątce nie ma nikogo do 24 lat, najsłabszy z niej wylatuje,
-  nawet gdy jest wyżej w rankingu wartości. Skład układany jest od nowa PRZED KAŻDĄ KOLEJKĄ.</div>
+  Pozycje 6 i 7: wyłącznie zawodnicy młodzieżowi U21 — senior nie zajmie tych miejsc, choćby miał najwyższy OVR w lidze.
+  W pierwszej piątce musi jechać zawodnik U24: jeśli nie ma w niej nikogo do 24 lat, najsłabszy z niej wylatuje,
+  nawet gdy jest wyżej w rankingu wartości. Skład układany jest od nowa PRZED KAŻDĄ KOLEJKĄ.<br>
+  <b class="text-zinc-300">NUMERY STARTOWE:</b> kolumna POZ. to pozycja w składzie (1–5 = pierwsza piątka, 6–7 = młodzież).
+  Numer w programie zależy od tego, gdzie jedziecie: <b class="text-zinc-300">gospodarz startuje z numerami 9–15</b>,
+  <b class="text-zinc-300">gość z numerami 1–7</b> — pozycja 1 to nr 9 u siebie i nr 1 na wyjeździe.</div>
  </div></div>`;
 }
 /* ---- ŚREDNIE ZAWODNIKÓW KADRY ZA SEZON ---- */
@@ -751,6 +875,12 @@ function scRenew(){
      <div class="text-[12px] text-zinc-300">za podpis: ${o.bonus?zl(o.bonus):'—'}</div>
     </div>
    </div>
+   ${o.ratingParts?`<details class="mb-4 border border-zinc-700">
+    <summary class="cursor-pointer px-3 py-1.5 text-[11px] text-zinc-300 tracking-widest select-none">
+      ILE JESTEŚ WART NA RYNKU: <b class="text-orange-400">${Math.round(o.rating)}</b>
+      <span class="text-zinc-400">· poziom tego klubu: ${o.ovr} · sprawdź, zanim podpiszesz w ciemno</span></summary>
+    <ul class="px-3 py-2 text-[11px] space-y-0.5 border-t border-zinc-700">${o.ratingParts.map(deltaLine).join('')}</ul>
+   </details>`:''}
    <div class="text-[11px] text-zinc-400 mb-4 border border-zinc-700 px-3 py-2 leading-relaxed">
     PODPISUJĘ: +14 lojalności, +2 profesjonalizmu, premia za podpis od ręki — i zamknięte okienko na
     ${o.years} ${lataTxt(o.years)}. Kariera w jednych barwach robi się realna, ale rynku nie zobaczysz.<br>
@@ -786,7 +916,12 @@ function scEvent(){
 function chooseEv(i){
  const e=G.ev, o=e.o[i];
  G.S.evTitle=e.t; G.S.evChoice=o.l;
- G.S.evLog=o.f()||[];
+ /* fxApply() zamienia cokolwiek zwróci zdarzenie na listę czytelnych linijek
+    i odpala odroczone efekty z deskryptorów { t, f } — bez tego w rubryce
+    EFEKTY lądowało „[object Object]", a sam efekt nigdy się nie wykonywał.
+    try/catch, bo pojedyncze zdarzenie nie ma prawa zawiesić całego sezonu. */
+ try{ G.S.evLog=fxApply(o.f()); }
+ catch(err){ G.S.evLog=['(zdarzenie nie doszło do skutku: '+err.message+')']; }
  resolveSeason();
  G.screen='summary'; render();
 }
@@ -828,7 +963,7 @@ function scSummary(){
  <div class="brut mb-3"><div class="brut-h px-3 py-1.5 text-[11px] text-orange-500 font-bold">PODSUMOWANIE SEZONU ${r.year} // ${esc(r.club)} (${r.league})</div>
  <div class="p-4">
   <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 mb-4">
-   ${kpi('MECZE',r.matches)}
+   ${kpi('MECZE (LIGA)',r.matches)}
    ${kpi('BIEGI (STARTY)',r.heats)}
    ${kpi('ZDOBYTE PUNKTY',r.pts,'text-orange-400')}
    ${kpi('PUNKTY BONUSOWE',r.bonus,'text-sky-400')}
@@ -836,6 +971,17 @@ function scSummary(){
    ${kpi('WYKLUCZENIA',r.exclusions,'text-red-400')}
    ${kpi('ŚREDNIA BIEGOPUNKTOWA',r.avgTxt,'text-emerald-400')}
   </div>
+  ${/* Kafelki wyżej to SAMA runda zasadnicza (na nich opiera się kontrola matematyczna
+       niżej). Ta linijka pokazuje dorobek, który realnie trafia do statystyk kariery,
+       żeby nikt nie musiał się zastanawiać, skąd na karcie kariery bierze się
+       liczba większa niż liczba kolejek. */''}
+  ${(r.po && r.po.m) ? `<div class="text-[11px] text-zinc-400 mb-4 border border-zinc-700 px-3 py-2">
+   DO STATYSTYK KARIERY LICZY SIĘ LIGA <b class="text-zinc-300">RAZEM Z PLAY-OFFEM</b>:
+   mecze ${r.matches} + ${r.po.m} = <b class="text-zinc-300">${r.matchesAll}</b> ·
+   biegi ${r.heats} + ${r.po.h} = <b class="text-zinc-300">${r.heatsAll}</b> ·
+   punkty ${r.pts} + ${r.po.p} = <b class="text-zinc-300">${r.ptsAll}</b> ·
+   średnia łączna = <b class="text-emerald-400">${r.avgAllTxt}</b>
+  </div>` : ''}
   <div class="text-[11px] text-zinc-400 mb-4 border border-zinc-700 px-3 py-2">
    KONTROLA MATEMATYCZNA: biegi ukończone = ${r.heats} − (${r.defects} + ${r.exclusions}) = <b class="text-zinc-300">${r.completed}</b> ·
    maks. możliwe punkty = ${r.completed}×3 = <b class="text-zinc-300">${r.completed*3}</b> ·
@@ -858,6 +1004,7 @@ function scSummary(){
     <div class="text-[11px] text-orange-600 tracking-widest mb-1">ZDARZENIE: ${esc(r.evTitle||'—')}</div>
     <div class="text-[11px] text-zinc-300 mb-2">Wybór: „${esc(r.evChoice||'—')}”</div>
     <ul class="text-[11px] text-zinc-300 space-y-0.5">${(r.evLog||[]).map(l=>'<li>› '+esc(l)+'</li>').join('')}</ul>
+    ${evEffectsHtml(r)}
    </div>
   </div>
   ${careerOverHtml(r)}
@@ -873,6 +1020,57 @@ function scSummary(){
    <ul class="text-[11px] text-zinc-300 space-y-0.5">${r.notes.map(n=>'<li>› '+esc(n)+'</li>').join('')}</ul></div>`:''}
  </div></div>`+foot;
 }
+/* ============================================================
+   CO NAPRAWDĘ ZROBIŁ TWÓJ WYBÓR — KONTROLA WYKONANIA
+   Ekran zdarzenia obiecuje karę, walkower, więcej biegów, inną stawkę.
+   Ten boks pokazuje, jak te obietnice weszły do rozegranego sezonu
+   i co z nich przechodzi na kolejny rok. Nic tu nie jest opisem — to odczyt
+   stanu, z którym silnik naprawdę policzył sezon.
+   ============================================================ */
+function evEffectsHtml(r){
+ const E=r.evEffects; if(!E) return '';
+ const L=[];
+ const ok=(t)=>L.push({t, c:'text-emerald-400'});
+ const bad=(t)=>L.push({t, c:'text-red-400'});
+ const neu=(t)=>L.push({t, c:'text-zinc-300'});
+ if(E.fines)        bad('Kary finansowe pobrane z budżetu: '+zl(E.fines));
+ if(E.rateMul!==1)  (E.rateMul>1?ok:bad)('Stawka za punkt w tym sezonie: ×'+E.rateMul.toFixed(2)+' — rozliczona przy każdej kolejce');
+ if(E.noEarnings)   bad('Zrzeczenie się wynagrodzenia wykonane: z ligi nie wpłynął ani grosz');
+ if(E.heatPP)       (E.heatPP>0?ok:bad)('Wpływ na skład: '+(E.heatPP>0?'+':'')+E.heatPP+' p.p. — doliczone do twojej wartości u trenera przy KAŻDEJ kolejce');
+ if(E.ovrBonus)     (E.ovrBonus>0?ok:bad)('Dyspozycja w meczach: '+(E.ovrBonus>0?'+':'')+E.ovrBonus+' OVR — liczone w każdym biegu tego sezonu');
+ if(E.teamOvr)      (E.teamOvr>0?ok:bad)('OVR całej drużyny: '+(E.teamOvr>0?'+':'')+E.teamOvr+' — zmieniony na stałe');
+ if(E.teamPts)      (E.teamPts>0?ok:bad)('Punkty drużyny w tabeli: '+(E.teamPts>0?'+':'')+E.teamPts);
+ if(E.banMatches)   bad('Zawieszenie wykonane: '+E.banMatches+' spotkań poza składem');
+ if(E.injuryPP)     (E.injuryPP>0?bad:ok)('Ryzyko urazu: '+(E.injuryPP>0?'+':'')+E.injuryPP+' p.p. (łącznie w tym sezonie '+E.injuryP+'%)');
+ if(E.extraDefP)    bad('Ryzyko defektu: +'+Math.round(E.extraDefP*1000)/10+' p.p. na każdy bieg');
+ if(E.equipFit!=null && E.equipFit<100) bad('Dopasowanie sprzętu: '+E.equipFit+'% — mniej mocy w każdym biegu');
+ if(E.walkover)     bad('WALKOWER wykonany w '+E.walkover.round+'. kolejce ('+
+   ({lose:'0:75 dla rywala',win:'75:0 dla was',both:'obustronny 0:0',void:'wynik anulowany'}[E.walkover.mode]||'0:75')+
+   ')'+(E.walkover.pen?' + kara '+E.walkover.pen+' pkt w tabeli':'')+' — spotkanie NIE zostało rozegrane');
+ if(E.zeroMatches)  bad('Kara prezesa wykonana: zero meczów w tym sezonie');
+ if(E.forcedEnd)    bad('Sezon urwany decyzją pozaboiskową — play-off, DMPJ i turnieje odpadły');
+ if(E.noRenew)      bad('Klub zerwał rozmowy o kontrakcie — po sezonie wychodzisz na rynek');
+ const N=E.next||{}, NX=[];
+ if(N.zeroMatches)  NX.push('kolejny sezon: 0 meczów');
+ if(N.heatPP)       NX.push('szanse na skład '+(N.heatPP>0?'+':'')+N.heatPP+' p.p.');
+ if(N.injuryPP)     NX.push('ryzyko urazu '+(N.injuryPP>0?'+':'')+N.injuryPP+' p.p.');
+ if(N.rateMul&&N.rateMul!==1) NX.push('stawka ×'+N.rateMul.toFixed(2));
+ if(N.betterOffers) NX.push('lepsze oferty w najbliższym okienku (+5 do wartości rynkowej, +1 oferta)');
+ if(N.forceClub)    NX.push('wymuszona zmiana klubu w okienku');
+ if(N.lockTransfer) NX.push('blokada transferowa na '+N.lockTransfer+' okienko/okienka');
+ if(N.noSponsor)    NX.push('zero premii za podpis w najbliższym okienku');
+ if(N.rowPen)       NX.push('mniejsza szansa na ofertę z Rybnika');
+ if(N.longInjury)   NX.push('kolejny sezon poza torem (kontuzja długoterminowa)');
+ if(N.alimony)      NX.push('alimenty: pozostało rat '+N.alimony);
+ if(!L.length && !NX.length) return `<div class="text-[11px] text-zinc-400 mt-2 border-t border-zinc-700 pt-2">
+   KONTROLA WYKONANIA: ten wybór nie miał skutków mechanicznych — poza tym, co przeczytałeś wyżej.</div>`;
+ return `<div class="mt-2 border-t border-zinc-700 pt-2">
+  <div class="text-[11px] text-zinc-400 tracking-widest mb-1">KONTROLA WYKONANIA — CO SILNIK REALNIE POLICZYŁ</div>
+  <ul class="text-[11px] space-y-0.5">${L.map(x=>`<li class="${x.c}">✓ ${esc(x.t)}</li>`).join('')}</ul>
+  ${NX.length?`<div class="text-[11px] mt-1" style="color:#38bdf8">PRZECHODZI NA KOLEJNY ROK: ${esc(NX.join(' · '))}</div>`:''}
+ </div>`;
+}
+
 /* ---- SKĄD WZIĘŁA SIĘ TA OCENA ----
    Ocena to nie sama średnia biegowa: liczy się liczba odjechanych biegów
    (mała próba ciągnięta jest do średniej ligowej), awans, utrzymanie, medale,
@@ -1054,6 +1252,13 @@ function tableHtml(lk){
  <div class="text-[11px] text-zinc-400 mt-1.5 tracking-wider">RUNDA ZASADNICZA · 2 pkt za wygraną · 1 pkt za remis · +1 pkt bonusowy za wygrany dwumecz &nbsp;|&nbsp; <span class="text-emerald-500">1–4 play-off</span>${lk!=='KL'?' · <span class="text-yellow-600">5–8 play-down</span>':''}</div>`;
 }
 function myResultsHtml(r){
+ const head = r.chanceAvg!=null ? `<div class="text-[11px] mb-2 border border-zinc-700 px-2 py-1.5">
+   <span class="text-zinc-400 tracking-widest">SZANSA NA SKŁAD W TRAKCIE SEZONU:</span>
+   średnio <b class="text-zinc-200">${r.chanceAvg}%</b> ·
+   najniżej <b class="text-red-400">${r.chanceMin}%</b> ·
+   najwyżej <b class="text-emerald-400">${r.chanceMax}%</b>
+   <span class="block text-zinc-400">Liczona osobno przed KAŻDĄ kolejką z realnej dyspozycji całej kadry — dlatego rośnie po dobrych meczach i spada po słabych.</span>
+  </div>` : '';
  const rows=(r.lines||[]).map((m,i)=>{
   const w=m.teamFor>m.teamAgn?'text-emerald-400':m.teamFor<m.teamAgn?'text-red-500':'text-yellow-500';
   const line = m.rode
@@ -1065,17 +1270,25 @@ function myResultsHtml(r){
     : `<span class="text-zinc-400">— ${m.why}${m.gap!=null?` <span class="text-zinc-400">(zabrakło ${m.gap.toFixed(1)} pkt do ostatniego numeru)</span>`
         :m.reg?' <span class="text-sky-400">(byłeś lepszy — wypchnęła cię rubryka U24)</span>':''}</span>`;
   const cash = m.rode&&m.owed ? `<span class="${m.paid>=m.owed?'text-emerald-500':m.paid>0?'text-yellow-600':'text-red-500'}">${zl(m.paid)}${m.paid<m.owed?' / '+zl(m.owed):''}</span>` : '';
+  const ch = m.chance==null ? '<span class="text-zinc-600">—</span>'
+    : `<span class="${m.chance>=70?'text-emerald-400':m.chance>=40?'text-yellow-500':'text-red-500'}">${m.chance}%</span>`;
+  const surRow = m.sur ? `<tr class="border-b border-zinc-700/60" style="background:rgba(56,189,248,.08)">
+   <td colspan="8" class="text-[11px]" style="color:#38bdf8">⚡ ${esc(m.sur.log)}</td></tr>` : '';
   return `<tr class="border-b border-zinc-700/60 ${m.rode?'':'opacity-60'}${m.walk?' bg-red-950/30':''}">
    <td class="text-zinc-400 text-[11px] whitespace-nowrap">K${m.round||i+1}</td>
    <td class="text-zinc-400 text-[11px]">${m.home?'DOM':'WYJ'}</td>
    <td class="truncate max-w-[150px] text-zinc-300">${esc(m.opp)}</td>
+   <td class="text-[11px] text-right whitespace-nowrap">${ch}</td>
    <td class="text-right font-bold ${m.walk?'text-red-500':w} whitespace-nowrap">${m.walk==='void'?'—':m.teamFor+':'+m.teamAgn}</td>
    <td class="text-right whitespace-nowrap pl-2">${line}</td>
    <td class="text-[11px] text-zinc-400 text-right whitespace-nowrap">${m.rode&&m.num?'nr '+m.num:''}</td>
-   <td class="text-[11px] text-right whitespace-nowrap pl-2">${cash}</td></tr>`;}).join('');
- return `<table class="w-full text-[11px]">${rows}</table>
+   <td class="text-[11px] text-right whitespace-nowrap pl-2">${cash}</td></tr>${surRow}`;}).join('');
+ return head+`<table class="w-full text-[11px]">${rows}</table>
  <div class="text-[11px] text-zinc-400 mt-2 tracking-wide leading-relaxed">
- Kolejki idą chronologicznie — <b class="text-zinc-300">K1 … K14</b> · ostatnia kolumna to przelew z klubu za tę kolejkę (przelane / należne) ·
+ <span style="color:#38bdf8">⚡ niebieski wiersz</span> = nieoczekiwane zdarzenie tej kolejki (łącznie 5% szans na kolejkę, po 1% na typ) ·
+ Kolejki idą chronologicznie — <b class="text-zinc-300">K1 … K14</b> · kolumna SZANSA to wyliczona przed kolejką szansa na wejście do składu ·
+ kolumna NR to numer startowy z programu: <b class="text-zinc-300">gospodarz 9–15, gość 1–7</b> ·
+ ostatnia kolumna to przelew z klubu za tę kolejkę (przelane / należne) ·
  <b class="text-zinc-300">*liczba</b> = twój dorobek w meczu · w nawiasie biegi po kolei ·
  <span class="text-zinc-300">3/2/1/0</span> = zdobyte punkty (0 = ostatnie miejsce, ale bieg objechany) ·
  <span class="text-red-400">w</span> = wykluczenie · <span class="text-red-500">d</span> = defekt
@@ -1275,10 +1488,11 @@ function historyBox(){
  <th class="text-left">ROK</th><th class="text-left">KLUB</th><th>WIEK</th><th>M</th><th>BIEGI</th><th>PKT</th><th>BON</th><th>DEF</th><th>WYK</th><th>ŚR.</th><th>POZ.</th><th class="text-left">OCENA</th></tr></thead><tbody>
  ${G.history.slice().reverse().map(h=>`<tr class="border-b border-zinc-700/60">
   <td class="text-zinc-300">${h.year}</td><td class="truncate max-w-[150px] text-zinc-200">${esc(h.club)}</td>
-  <td class="text-center text-zinc-300">${h.age}</td><td class="text-center">${h.matches}</td><td class="text-center">${h.heats}</td>
-  <td class="text-center text-orange-400 font-bold">${h.pts}</td><td class="text-center text-sky-400">${h.bonus||0}</td><td class="text-center text-red-500">${h.defects}</td><td class="text-center text-red-400">${h.exclusions}</td>
-  <td class="text-center text-emerald-400">${h.avgTxt}</td><td class="text-center">${h.pos}.</td><td class="${h.grade.c} text-[11px]">${h.grade.t}</td></tr>`).join('')}
- </tbody></table></div></div>`;
+  <td class="text-center text-zinc-300">${h.age}</td><td class="text-center">${smM(h)}</td><td class="text-center">${smB(h)}</td>
+  <td class="text-center text-orange-400 font-bold">${smP(h)}</td><td class="text-center text-sky-400">${smBon(h)}</td><td class="text-center text-red-500">${h.defectsAll!=null?h.defectsAll:h.defects}</td><td class="text-center text-red-400">${h.exclAll!=null?h.exclAll:h.exclusions}</td>
+  <td class="text-center text-emerald-400">${smAvg(h)}</td><td class="text-center">${h.pos}.</td><td class="${h.grade.c} text-[11px]">${h.grade.t}</td></tr>`).join('')}
+ </tbody></table></div>
+ <div class="px-3 pb-2 text-[10px] text-zinc-500">Liczby obejmują rundę zasadniczą razem z fazą play-off — tak samo jak kafelki kariery.</div></div>`;
 }
 
 /* ---- PRZEJŚCIE DO KOLEJNEGO ROKU ---- */
@@ -1428,37 +1642,91 @@ const SM={g:'#0f8a3d', gd:'#0a6b2f', gl:'#eaf6ee', gl2:'#f6fbf7', bd:'#d5e3d9',
 
 /* Rozbicie kodów z linii meczowych: miejsca w biegach + biegi nieukończone.
    Silnik notuje "d" (defekt) i "w" (wykluczenie); kolumny U (upadek) i T (taśma)
-   zostają w tabeli dla zgodności z układem portalu i czekają na dane. */
+   zostają w tabeli dla zgodności z układem portalu i czekają na dane.
+   LICZYMY RUNDĘ ZASADNICZĄ **I** PLAY-OFF — dokładnie ten sam zakres, z którego
+   biorą się kolumny M i B oraz kafelki na górze karty. Wcześniej kody szły
+   wyłącznie z ligi, więc suma I+II+III+IV+D+W nie schodziła się z liczbą biegów. */
 function smCodes(h){
  const s={I:0,II:0,III:0,IV:0,D:0,U:0,W:0,T:0};
- (h.lines||[]).forEach(L=>{
-   if(!L.rode || !L.codes) return;
-   L.codes.forEach(c=>{
-     if(c==='-') return;                       // zmieniony przez rezerwę — to nie był start
-     if(c==='d'){s.D++;return;}
-     if(c==='u'){s.U++;return;}
-     if(c==='w'){s.W++;return;}
-     if(c==='t'){s.T++;return;}
-     const v=parseInt(c,10);
-     if(v===3)s.I++; else if(v===2)s.II++; else if(v===1)s.III++; else if(v===0)s.IV++;
-   });
- });
+ const one = c => {
+   if(c==='-') return;                       // zmieniony przez rezerwę — to nie był start
+   if(c==='d'){s.D++;return;}
+   if(c==='u'){s.U++;return;}
+   if(c==='w'){s.W++;return;}
+   if(c==='t'){s.T++;return;}
+   const v=parseInt(c,10);
+   if(v===3)s.I++; else if(v===2)s.II++; else if(v===1)s.III++; else if(v===0)s.IV++;
+ };
+ (h.lines||[]).forEach(L=>{ if(!L.rode || !L.codes) return; L.codes.forEach(one); });
+ ((h.po && h.po.codes) || []).forEach(one);
  return s;
 }
+/* Dorobek sezonu w jednym miejscu: liga + play-off. Stare zapisy w G.history
+   (sprzed poprawki) nie mają pól *All — dla nich liczymy je z r.po na miejscu,
+   żeby wczytana wcześniej kariera też pokazywała spójne liczby. */
+const smM   = h => h.matchesAll != null ? h.matchesAll : (h.matches||0) + ((h.po&&h.po.m)||0);
+const smB   = h => h.heatsAll   != null ? h.heatsAll   : (h.heats||0)   + ((h.po&&h.po.h)||0);
+const smP   = h => h.ptsAll     != null ? h.ptsAll     : (h.pts||0)     + ((h.po&&h.po.p)||0);
+const smBon = h => h.bonusAll   != null ? h.bonusAll   : (h.bonus||0)   + ((h.po&&h.po.b)||0);
+const smAvg = h => { const b=smB(h); return b>0 ? (smP(h)/b).toFixed(2) : '—'; };
 /* Kluby z kariery — kolejne "przystanki", sklejone po sąsiadujących sezonach. */
 function smClubs(){
  const out=[];
  G.history.forEach(h=>{
    const last=out[out.length-1];
    if(last && last.club===h.club){
-     last.to=h.year; last.seasons++; last.pts+=h.pts; last.matches+=h.matches;
+     last.to=h.year; last.seasons++; last.pts+=smP(h); last.matches+=smM(h);
      if(!last.leagues.includes(h.league)) last.leagues.push(h.league);
      last.debt += (h.settle&&h.settle.unpaid)||0;
    } else out.push({club:h.club, leagues:[h.league], from:h.year, to:h.year,
-                    seasons:1, pts:h.pts, matches:h.matches,
+                    seasons:1, pts:smP(h), matches:smM(h),
                     debt:(h.settle&&h.settle.unpaid)||0});
  });
  return out;
+}
+/* ============================================================
+   GABLOTA — OSIĄGNIĘCIA INDYWIDUALNE I TYTUŁY
+   Karta kariery pokazywała dotąd wyłącznie ligę, sezon po sezonie. Cały
+   dorobek z turniejów (IMP, MIMP, Kaski) i DMPJ istniał w danych, ale nigdzie
+   nie schodził się w jedno miejsce — trzeba go było zbierać z zakładek
+   poszczególnych sezonów. Tu leci komplet: złoto / srebro / brąz z latami,
+   liczba startów i najlepszy wynik dla każdych rozgrywek osobno.
+   ============================================================ */
+const SM_TROPHY = [
+ {k:'imp',  n:'INDYWIDUALNE MISTRZOSTWA POLSKI', s:'IMP',  gold:'Indywidualny Mistrz Polski'},
+ {k:'mimp', n:'MŁODZIEŻOWE IND. MISTRZOSTWA POLSKI', s:'MIMP', gold:'Młodzieżowy Ind. Mistrz Polski'},
+ {k:'zk',   n:'ZŁOTY KASK',    s:'ZK', gold:'Zwycięzca Złotego Kasku'},
+ {k:'sk',   n:'SREBRNY KASK',  s:'SK', gold:'Zwycięzca Srebrnego Kasku'},
+ {k:'bk',   n:'BRĄZOWY KASK',  s:'BK', gold:'Zwycięzca Brązowego Kasku'}
+];
+/* Pozycja drużyny gracza w finale DMPJ (0 = nie było jej w finałowej czwórce). */
+function smDmpjPos(h){
+ const D=h.dmpj;
+ if(!D || !D.eligible) return null;
+ const team = D.myTeam || h.club;
+ return ((D.classification||[]).indexOf(team) + 1) || 0;
+}
+function smTrophies(){
+ const mk=(n,s)=>({n, s, g:[], si:[], b:[], starts:0, best:0, bestYear:null});
+ const rows = SM_TROPHY.map(d=>Object.assign(mk(d.n,d.s), {k:d.k, gold:d.gold}));
+ const dmpj = Object.assign(mk('DMPJ — DRUŻYNOWE MP JUNIORÓW','DMPJ'),
+                            {gold:'Drużynowy Mistrz Polski Juniorów'});
+ const dmp  = Object.assign(mk('DMP — DRUŻYNOWE MISTRZOSTWA POLSKI','DMP'),
+                            {gold:'Drużynowy Mistrz Polski'});
+ const note = (r,pos,year)=>{
+   if(pos===1) r.g.push(year); else if(pos===2) r.si.push(year); else if(pos===3) r.b.push(year);
+   if(pos>0 && (!r.best || pos<r.best)){ r.best=pos; r.bestYear=year; }
+ };
+ G.history.forEach(h=>{
+   const I=h.ind||{};
+   rows.forEach(r=>{ const c=I[r.k]; if(!c || !c.rode) return;
+     r.starts++; note(r, c.mePos||0, h.year); });
+   const dp=smDmpjPos(h);
+   if(dp!==null){ dmpj.starts++; note(dmpj, dp, h.year); }
+   /* Liga: 1-3 miejsce w play-off to komplet medali DMP danej klasy rozgrywkowej. */
+   if(h.matches>0 && h.pos>0){ dmp.starts++; note(dmp, h.pos<=3?h.pos:0, h.year); }
+ });
+ return [...rows, dmpj, dmp];
 }
 /* "1 klub", "2 kluby", "7 klubów" — portal ma wyglądać poważnie. */
 const smKlub = n => n===1 ? 'klub'
@@ -1485,8 +1753,8 @@ function careerCardHtml(){
  /* --- suma wszystkich sezonów (wiersz ŁĄCZNIE) --- */
  const tot={M:0,B:0,I:0,II:0,III:0,IV:0,D:0,U:0,W:0,T:0,P:0,BON:0,DL:0};
  H.forEach(h=>{ const s=smCodes(h);
-   tot.M+=h.matches; tot.B+=h.heats; tot.I+=s.I; tot.II+=s.II; tot.III+=s.III; tot.IV+=s.IV;
-   tot.D+=s.D; tot.U+=s.U; tot.W+=s.W; tot.T+=s.T; tot.P+=h.pts; tot.BON+=h.bonus||0;
+   tot.M+=smM(h); tot.B+=smB(h); tot.I+=s.I; tot.II+=s.II; tot.III+=s.III; tot.IV+=s.IV;
+   tot.D+=s.D; tot.U+=s.U; tot.W+=s.W; tot.T+=s.T; tot.P+=smP(h); tot.BON+=smBon(h);
    tot.DL+=smUnpaid(h); });
  const totAvg = tot.B>0 ? (tot.P/tot.B).toFixed(2) : '—';
 
@@ -1498,12 +1766,12 @@ function careerCardHtml(){
      ${TD(h.age)}
      ${TD(esc(h.league),'color:'+SM.g+';font-weight:bold')}
      ${TD(esc(h.club),'text-align:left;color:'+SM.g+';font-weight:bold;padding-left:8px')}
-     ${TD(h.matches)}${TD(h.heats)}
+     ${TD(smM(h))}${TD(smB(h))}
      ${TD(s.I,'font-weight:bold')}${TD(s.II)}${TD(s.III)}${TD(s.IV,'color:'+SM.mu)}
      ${TD(s.D,'color:'+SM.rd)}${TD(s.U,'color:'+SM.mu)}${TD(s.W,'color:'+SM.rd)}${TD(s.T,'color:'+SM.mu)}
-     ${TD(h.pts,'font-weight:bold;font-size:13px')}
-     ${TD(h.bonus||0,'color:#1d4ed8')}
-     ${TD(h.avgTxt,'font-weight:bold;background:'+SM.gl)}
+     ${TD(smP(h),'font-weight:bold;font-size:13px')}
+     ${TD(smBon(h),'color:#1d4ed8')}
+     ${TD(smAvg(h),'font-weight:bold;background:'+SM.gl)}
      ${TD(esc(h.grade.t),'font-size:10px;letter-spacing:.02em')}
      ${TD(dl?'−'+zl(dl):'0 zł', dl?'color:'+SM.rd+';font-weight:bold;white-space:nowrap':'color:'+SM.mu+';white-space:nowrap')}
    </tr>`;
@@ -1517,6 +1785,107 @@ function careerCardHtml(){
  const nav=['ŻUŻEL','PIŁKA NOŻNA','SIATKÓWKA','KOSZYKÓWKA','MMA','TENIS','TRANSFERY','TYPER']
    .map((t,i)=>`<span style="display:inline-block;padding:10px 13px;font-size:12px;font-weight:bold;
      color:${i===0?'#fff':'#d9f0e1'};${i===0?'background:'+SM.gd+';':''}">${t}</span>`).join('');
+
+ /* ============================================================
+    OSIĄGNIĘCIA INDYWIDUALNE — GABLOTA
+    Wchodzi zaraz pod tabelą sezonów ligowych: komplet tytułów i medali
+    z IMP, MIMP, Złotego / Srebrnego / Brązowego Kasku oraz DMPJ i DMP.
+    ============================================================ */
+ const GOLD='#b8860b', SILV='#71797e', BRNZ='#a0522d';
+ const T=smTrophies();
+ const rode=T.filter(t=>t.starts>0);
+ const gAll =T.reduce((a,t)=>a+t.g.length,0);
+ const siAll=T.reduce((a,t)=>a+t.si.length,0);
+ const bAll =T.reduce((a,t)=>a+t.b.length,0);
+ const medAll=gAll+siAll+bAll;
+ const smMedale = n => n===1 ? 'medal'
+   : (n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20)) ? 'medale' : 'medali';
+ /* Kafelek z krążkiem — puste miejsce zostaje szare, żeby gablota nie kłamała. */
+ const disc=(cnt,col,lab)=>`<td style="border:1px solid ${SM.bd};background:${cnt?'#fffdf5':'#fafafa'};
+   padding:8px 10px;text-align:center;width:96px">
+   <div style="font-size:22px;font-weight:bold;color:${cnt?col:'#c9cdd1'};line-height:1.1">${cnt}</div>
+   <div style="font-size:9px;letter-spacing:.08em;color:${cnt?col:SM.mu}">${lab}</div></td>`;
+ /* Lata na podium z widoczną etykietą krążka — bez niej „2027, 2028  2026"
+    czytało się jak jeden ciąg i nie było wiadomo, co jest złotem, a co brązem. */
+ const yrs=(arr,col,lab)=>arr.length
+   ? `<span style="white-space:nowrap"><span style="display:inline-block;background:${col};color:#fff;
+        font-size:9px;font-weight:bold;padding:1px 4px;margin-right:3px;vertical-align:1px">${lab}</span>
+      <span style="color:${col};font-weight:bold">${arr.join(', ')}</span></span>` : '';
+ const posTxt=t=>{
+   if(!t.starts) return `<span style="color:${SM.mu}">nie startował</span>`;
+   if(!t.best)   return `<span style="color:${SM.mu}">bez miejsca w finale</span>`;
+   return `<b>${t.best}.</b> miejsce <span style="color:${SM.mu}">(${t.bestYear})</span>`;
+ };
+ const trophyRows = rode.map((t,i)=>{
+   const bg = i%2 ? SM.gl2 : '#fff';
+   const parts=[yrs(t.g,GOLD,'ZŁ'), yrs(t.si,SILV,'SR'), yrs(t.b,BRNZ,'BR')].filter(Boolean);
+   return `<tr style="background:${bg}">
+     ${TD(esc(t.s),'font-weight:bold;color:'+SM.gd+';font-size:11px')}
+     ${TD(esc(t.n),'text-align:left;font-weight:bold;color:'+SM.tx+';padding-left:8px')}
+     ${TD(t.starts,'color:'+SM.mu)}
+     ${TD(t.g.length ||'–', t.g.length ?'font-weight:bold;font-size:14px;color:'+GOLD:'color:#c9cdd1')}
+     ${TD(t.si.length||'–', t.si.length?'font-weight:bold;font-size:14px;color:'+SILV:'color:#c9cdd1')}
+     ${TD(t.b.length ||'–', t.b.length ?'font-weight:bold;font-size:14px;color:'+BRNZ:'color:#c9cdd1')}
+     ${TD(posTxt(t),'text-align:left;padding-left:8px;font-size:11px')}
+     ${TD(parts.join('&nbsp;&nbsp;')||`<span style="color:${SM.mu}">—</span>`,
+          'text-align:left;padding-left:8px;font-size:11px')}
+   </tr>`;
+ }).join('');
+ /* Pasek tytułów: każdy złoty krążek osobno, rok po roku — to jest to,
+    po co gracz w ogóle otwiera taką kartę. */
+ const goldBadges = T.flatMap(t=>t.g.map(y=>({s:t.s, title:t.gold||t.n, y})))
+   .sort((a,b)=>a.y-b.y || a.s.localeCompare(b.s))
+   .map(x=>`<span style="display:inline-block;border:1px solid ${GOLD};border-left:5px solid ${GOLD};
+     background:#fffbef;padding:6px 11px;margin:0 6px 6px 0;font-size:12px;white-space:nowrap">
+     <b style="color:${GOLD}">★ ${esc(x.title)}</b>
+     <span style="color:${SM.mu}"> · ${esc(x.s)} · </span><b>${x.y}</b></span>`).join('');
+
+ const trophyBlock = `
+  <div style="padding:0 22px 14px 22px">
+    <div style="background:${SM.g};color:#fff;font-size:13px;font-weight:bold;padding:6px 10px">
+      OSIĄGNIĘCIA INDYWIDUALNE I TYTUŁY
+      <span style="float:right;font-weight:normal;font-size:11px;color:#d9f0e1">
+        IMP · MIMP · ZŁOTY / SREBRNY / BRĄZOWY KASK · DMPJ · DMP</span>
+      <div style="clear:both"></div>
+    </div>
+    <div style="border:1px solid ${SM.bd};border-top:none;padding:12px">
+
+      <table style="width:100%;margin-bottom:12px"><tr>
+        ${disc(gAll,GOLD,'ZŁOTO')}${disc(siAll,SILV,'SREBRO')}${disc(bAll,BRNZ,'BRĄZ')}
+        <td style="padding:8px 14px;vertical-align:middle">
+          ${medAll
+            ? `<div style="font-size:15px;font-weight:bold;color:${SM.tx}">
+                 ${medAll} ${smMedale(medAll)} w ${rode.reduce((a,t)=>a+t.starts,0)} startach w rozgrywkach mistrzowskich</div>
+               <div style="font-size:11px;color:${SM.mu};margin-top:2px">
+                 Tytuły mistrzowskie (złoto): <b style="color:${GOLD}">${gAll}</b> ·
+                 medale indywidualne (IMP, MIMP, Kaski): <b>${(p.career.medals||0)}</b></div>`
+            : `<div style="font-size:15px;font-weight:bold;color:${SM.mu}">Gablota pusta.</div>
+               <div style="font-size:11px;color:${SM.mu};margin-top:2px">
+                 Ani jednego medalu w rozgrywkach mistrzowskich. Za to bus ma przebieg jak autobus miejski.</div>`}
+        </td>
+      </tr></table>
+
+      ${goldBadges ? `<div style="margin-bottom:12px">${goldBadges}</div>` : ''}
+
+      <table style="width:100%;border:1px solid ${SM.bd}">
+        <thead><tr>
+          ${TH('CYKL',62)}${TH('ROZGRYWKI',null,'left')}${TH('STARTY',58)}
+          ${TH('ZŁOTO',54)}${TH('SREBRO',58)}${TH('BRĄZ',50)}
+          ${TH('NAJLEPSZY WYNIK',150,'left')}${TH('LATA NA PODIUM',null,'left')}
+        </tr></thead>
+        <tbody>
+          ${trophyRows || `<tr><td colspan="8" style="padding:14px;text-align:center;font-size:12px;color:${SM.mu}">
+            Zawodnik nie wystąpił w żadnych rozgrywkach mistrzowskich.</td></tr>`}
+        </tbody>
+      </table>
+      <div style="font-size:10px;color:${SM.mu};padding:6px 2px;line-height:1.6">
+        STARTY — sezony, w których zawodnik faktycznie pojawił się w danym cyklu (choćby w eliminacjach).
+        DMPJ liczone tylko do 21. roku życia. DMP — miejsce w fazie play-off tej klasy rozgrywkowej,
+        w której zawodnik jeździł w danym sezonie.
+        ${(p.career.dmpjTitles||0)?`Drużynowe mistrzostwo Polski juniorów: <b style="color:${SM.g}">${p.career.dmpjTitles}×</b>.`:''}
+      </div>
+    </div>
+  </div>`;
 
  return `<div id="smCardWrap"><div id="smCard" style="width:1240px;background:#fff;color:${SM.tx}">
 
@@ -1565,7 +1934,8 @@ function careerCardHtml(){
             <div style="font-size:17px;font-weight:bold;color:${SM.tx}">${x[1]}</div></td>`).join('')}
       </tr></table>
       <div style="font-size:10px;color:${SM.mu};margin-top:5px">
-        Kafelki: dorobek łączny z ligi i fazy play-off. Tabela poniżej: runda zasadnicza, sezon po sezonie.</div>
+        Kafelki i tabela poniżej liczą to samo: rundę zasadniczą razem z fazą play-off.
+        Turnieje indywidualne (IMP, MIMP, Kaski) i DMPJ mają własną rubrykę — patrz OSIĄGNIĘCIA INDYWIDUALNE.</div>
     </td>
   </tr></table>
 
@@ -1596,7 +1966,7 @@ function careerCardHtml(){
     <tbody>
       ${rows || `<tr><td colspan="19" style="padding:14px;text-align:center;font-size:12px;color:${SM.mu}">Brak sezonów w archiwum.</td></tr>`}
       <tr style="background:${SM.gl};border-top:2px solid ${SM.g}">
-        ${TD('ŁĄCZNIE','font-weight:bold;color:'+SM.gd)}${TD('')}${TD('LIGA','font-size:10px;color:'+SM.gd)}
+        ${TD('ŁĄCZNIE','font-weight:bold;color:'+SM.gd)}${TD('')}${TD('LIGA+PO','font-size:10px;color:'+SM.gd)}
         ${TD(clubs.length+' '+smKlub(clubs.length),'text-align:left;color:'+SM.gd+';font-weight:bold;padding-left:8px')}
         ${TD(tot.M,'font-weight:bold')}${TD(tot.B,'font-weight:bold')}
         ${TD(tot.I,'font-weight:bold')}${TD(tot.II,'font-weight:bold')}${TD(tot.III,'font-weight:bold')}${TD(tot.IV,'font-weight:bold')}
@@ -1608,13 +1978,16 @@ function careerCardHtml(){
     </tbody>
    </table>
    <div style="font-size:10px;color:${SM.mu};padding:6px 2px;line-height:1.6">
-     M — mecze ligowe (runda zasadnicza) · B — biegi (starty) · I / II / III / IV — miejsca w biegach ·
+     M — mecze (runda zasadnicza + play-off) · B — biegi (starty) · I / II / III / IV — miejsca w biegach ·
      D — defekt · U — upadek · W — wykluczenie · T — taśma · ŚR./B — średnia biegopunktowa ·
      DŁUG — kwota, której klub nie przelał w danym sezonie.
      ${totalPzm?`Startowe i kilometrówka PZM przez całą karierę: <b style="color:${SM.g}">${zl(totalPzm)}</b>.`:''}
      Biegi zdjęte przez rezerwę taktyczną nie wchodzą do statystyki startów.
    </div>
   </div>
+
+  <!-- ===== OSIĄGNIĘCIA INDYWIDUALNE ===== -->
+  ${trophyBlock}
 
   <!-- ===== WIELKI CZERWONY NAPIS ===== -->
   <div style="margin:4px 22px 0 22px;border:3px solid ${SM.rd};background:#fff5f5;padding:16px;text-align:center">

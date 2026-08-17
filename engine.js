@@ -167,7 +167,11 @@ function newGame(){
      sponsorRenames: zmiany nazw klubów czekające na wejście w nowym roku (do raportu w UI). */
   bannedSponsors:[], sponsorRenames:[], renamed:{},
   /* --- ZDARZENIE MIĘDZYSEZONOWE (przerwa zimowa) --- */
-  wev:null, wevLog:[], wevTitle:null, wevChoice:null, wevAfter:'hub'
+  wev:null, wevLog:[], wevTitle:null, wevChoice:null, wevAfter:'hub',
+  /* --- PAMIĘĆ KOMENTARZY POSEZONOWYCH ---
+     { klucz warunku: [użyte indeksy] } — dzięki temu „CO MÓWIĄ PO SEZONIE"
+     nie powtarza tych samych zdań, dopóki nie wyczerpie całej puli. */
+  talkSeen:{}
  };
 }
  
@@ -240,6 +244,82 @@ function appearanceChance(p,club,atm,S){
 }
  
  
+/* --- SZANSA NA SKŁAD W KONKRETNEJ KOLEJCE ---
+   appearanceChance() (wyżej) liczy szansę "na zimno": zakłada, że cała kadra
+   wjeżdża w sezon z zerową dyspozycją. To dobre na ekran ofert, ale bezużyteczne
+   w trakcie sezonu, gdzie o numerach decyduje BIEŻĄCA forma — twoja i kolegów.
+   Ta funkcja bierze realny stan kadry na dziś i dokłada tylko tyle losowości,
+   ile ma sam trener przy układaniu składu. Dzięki temu liczba pokazywana przy
+   każdej kolejce faktycznie się zmienia: po dwóch dobrych meczach rośnie,
+   po dwóch słabych spada. */
+function appearanceChanceNow(clubName, meR, bias, N){
+ if(!clubName || !meR) return null;
+ const sq=squadOf(clubName).filter(r=>!r.inj && !r.strike && !r.out && !r.me);
+ if(!sq.length) return 99;
+ N = N || 48;
+ const jitter = (f,s) => cl((f||0)*0.65 + cl(gauss(0,s),-12,12), -12, 12);
+ let hit=0;
+ for(let t=0;t<N;t++){
+   const pool=sq.map(r=>({...r, form:jitter(r.form, FORM_SIGMA*0.80)}));
+   pool.push({...meR, form:jitter(meR.form, FORM_SIGMA*0.62)});
+   const L=lineupFrom(pool, 0.8, bias);
+   if(L && Object.values(L).some(r=>r&&r.id===meR.id)) hit++;
+ }
+ return cl(Math.round(100*hit/N),1,99);
+}
+
+/* ============================================================
+   NIEOCZEKIWANE ZDARZENIA — RZUT KOŚCIĄ PRZED KAŻDĄ KOLEJKĄ
+   Progi w SURPRISE (data.js): pięć typów po 1%, łącznie 5% na kolejkę.
+   Zwraca opis tego, co się stało, i ustawia flagi na TĘ JEDNĄ kolejkę.
+   ============================================================ */
+function surpriseScale(){
+ const S=SURPRISE, sum=S.halfSquad+S.jumpIn+S.formUp+S.formDown+S.dropOut;
+ const cap=S.total||sum;
+ return sum>cap ? cap/sum : 1;                 // nikt nie przekroczy sufitu, choćby ustawił 9%
+}
+function rollRoundSurprise(rd, clubName, meR){
+ const S=SURPRISE, k=surpriseScale();
+ const out={round:rd+1, forceIn:false, forceOut:null, hidden:[], log:null, kind:null};
+ if(!clubName || !meR) return null;
+ /* Kolejność ma znaczenie: jeden typ na kolejkę, żeby suma szans naprawdę
+    wynosiła 5%, a nie 5% razy pięć. */
+ if(chance(S.halfSquad*k)){
+   const sq=squadOf(clubName).filter(r=>!r.me && !r.inj && !r.strike);
+   const n=Math.min(sq.length, Math.max(1, Math.round(sq.length*(S.halfShare||0.5))));
+   out.hidden=shuffle(sq).slice(0,n);
+   out.hidden.forEach(r=>{ r.inj=1; });
+   out.forceIn=true; out.kind='halfSquad';
+   out.log='Kolejka '+(rd+1)+': POŁOWA SKŁADU KONTUZJOWANA ('+n+' zawodników poza torem — kraksa na treningu, grypa i dwie kontuzje z poprzedniego meczu). Trener nie ma z kogo układać siódemki — wskakujesz do składu.';
+   return out;
+ }
+ if(chance(S.jumpIn*k)){
+   out.forceIn=true; out.kind='jumpIn';
+   out.log='Kolejka '+(rd+1)+': WSKOCZYŁEŚ DO SKŁADU. Ktoś nie dojechał, komuś zabrali licencję na tydzień, ktoś inny pokłócił się z prezesem. Telefon o 22:00, rano pakujesz bus.';
+   return out;
+ }
+ if(chance(S.formUp*k)){
+   const d=R(S.formUpMin, S.formUpMax);
+   meR.form = cl((meR.form||0)+d, -12, 12);
+   out.forceIn=true; out.kind='formUp';
+   out.log='Kolejka '+(rd+1)+': NAGŁY WZROST FORMY (+'+d+' pkt dyspozycji). Silnik nagle chodzi, tor nagle pasuje, taśma nagle puszcza w dobrym momencie — trener wpisuje cię do składu.';
+   return out;
+ }
+ if(chance(S.formDown*k)){
+   const d=R(S.formDownMin, S.formDownMax);
+   meR.form = cl((meR.form||0)-d, -12, 12);
+   out.kind='formDown';
+   out.log='Kolejka '+(rd+1)+': NAGŁY ZJAZD FORMY (-'+d+' pkt dyspozycji). Nic się nie zmieniło w sprzęcie ani w głowie, a jedziesz o pół sekundy wolniej. Skład układa się bez ciebie.';
+   return out;
+ }
+ if(chance(S.dropOut*k)){
+   out.forceOut='NIEOCZEKIWANIE POZA SKŁADEM'; out.kind='dropOut';
+   out.log='Kolejka '+(rd+1)+': NAGLE WYPADASZ ZE SKŁADU. Bez powodu, bez rozmowy, bez uzasadnienia — dowiedziałeś się z komunikatu na stronie klubu.';
+   return out;
+ }
+ return null;
+}
+
 /* ============================================================
    2. START SEZONU
    ============================================================ */
@@ -352,7 +432,9 @@ function applyWinterChoice(e, i){
  G.S=Object.assign(winterCtx(), {teamPts:0, teamOvr:0, ovrBonus:0, injuryPP:0, heatPP:0,
    extraDefP:0, banMatches:0, fines:0, equipFit:100, rateMul:1, evLog:[], walkower:false});
  let out=[];
- try{ out=o.f()||[]; }catch(err){ out=['(zdarzenie zimowe nie doszło do skutku: '+err.message+')']; }
+ // fxApply: spłaszcza wynik f(), odpala odroczone deskryptory { t, f } i zwraca
+ // same stringi — inaczej w rubryce EFEKTY lądowało „[object Object]".
+ try{ out=fxApply(o.f()); }catch(err){ out=['(zdarzenie zimowe nie doszło do skutku: '+err.message+')']; }
  G.S=keep;
  G.wevTitle=e.t; G.wevChoice=o.l; G.wevLog=out;
  return out;
@@ -479,7 +561,8 @@ function resolveSeason(){
  let heats=0, defects=0, exclusions=0, pts=0, bonus=0, replaced=0, matches=0;
  const lines=G.myLog.map(L=>{
    const base={round:L.round, home:L.home, opp:L.opp, teamFor:L.teamFor, teamAgn:L.teamAgn,
-               paid:L.paid||0, owed:L.owed||0, debt:L.debt||0, walk:L.walk||null};
+               paid:L.paid||0, owed:L.owed||0, debt:L.debt||0, walk:L.walk||null,
+               chance:(L.chance==null?null:L.chance), sur:L.sur||null};
    if(!L.rode || !L.me) return {...base, rode:false, why:L.why||'ŁAWKA / POZA SKŁADEM', gap:L.gap, reg:L.reg};
    const M=L.me;
    matches++; heats+=M.starts; pts+=M.pts; bonus+=M.bon;
@@ -488,6 +571,16 @@ function resolveSeason(){
  });
  const strike = S.strikeRounds>0;
  if(strike) notes.push('Bunt płacowy: opuściłeś '+S.strikeRounds+' kolejek przez zaległości klubu.');
+ /* --- SZANSA NA SKŁAD: JAK SIĘ ZMIENIAŁA W CIĄGU SEZONU --- */
+ const chances = lines.map(L=>L.chance).filter(v=>v!=null && v>0);
+ if(chances.length){
+   const avgCh = Math.round(chances.reduce((a,b)=>a+b,0)/chances.length);
+   notes.push('Szansa na skład liczona przed każdą kolejką (z realnej dyspozycji całej kadry): '+
+     'średnio '+avgCh+'%, najniżej '+Math.min(...chances)+'%, najwyżej '+Math.max(...chances)+'%. '+
+     'To ona, a nie sam OVR, decydowała o tym, czy pakujesz bus.');
+ }
+ /* --- NIEOCZEKIWANE ZDARZENIA (5% na kolejkę, po 1% na typ) --- */
+ (S.surprises||[]).forEach(s=>{ if(s && s.log) notes.push('NIEOCZEKIWANE ZDARZENIE — '+s.log); });
  if(S.saveIn>0) notes.push('Nieoczekiwane zdarzenie: wskoczyłeś do składu na mecze ligowe, bo klub miał problemy finansowe i oszczędzał na gwiazdach.');
  /* Ile razy trener zostawił cię poza siódemką i jak blisko było — bez tej liczby
     ławka wygląda jak kaprys, a jest arytmetyką: OVR plus bieżąca forma. */
@@ -514,10 +607,15 @@ function resolveSeason(){
  const pos=order.indexOf(club.name)+1;
  
  /* --- TWÓJ DOROBEK W FAZIE PLAY-OFF (liczony osobno) --- */
- const po={m:0,h:0,p:0,b:0,d:0,w:0,rep:0};
+ /* po.codes — komplet kodów z dwumeczów play-off. Bez tego karta kariery
+    liczyła miejsca w biegach (I/II/III/IV) wyłącznie z rundy zasadniczej,
+    a kafelki BIEGI/MECZE brały już ligę RAZEM z play-offem — stąd tabela,
+    która nie sumowała się do własnego podsumowania. */
+ const po={m:0,h:0,p:0,b:0,d:0,w:0,rep:0,codes:[]};
  G.phase[lk].ties.forEach(t=>t.legs.forEach(L=>{ if(!L.me)return;
    po.m++; po.h+=L.me.starts; po.p+=L.me.pts; po.b+=L.me.bon;
-   L.me.codes.forEach(c=>{if(c==='d')po.d++;else if(c==='w')po.w++;else if(c==='-')po.rep++;}); }));
+   L.me.codes.forEach(c=>{ po.codes.push(c);
+     if(c==='d')po.d++;else if(c==='w')po.w++;else if(c==='-')po.rep++;}); }));
  po.avg = po.h>0 ? po.p/po.h : 0;
  po.avgTxt = po.h>0 ? po.avg.toFixed(2) : '—';
  
@@ -704,12 +802,36 @@ function resolveSeason(){
   year:G.year, club:seasonClubName, pname:p.name, lk, leagueName:G.leagues[lk].name, league:G.leagues[lk].short, age:p.age,
   bankrupt:myBk, bankruptsAll:G.bankrupts||[], greenTable:G.greenTable||[],
   atm:S.atm, atmTxt, matches, heats, completed, pts, bonus, defects, exclusions,
+  /* ------------------------------------------------------------------
+     DOROBEK ŁĄCZNY (RUNDA ZASADNICZA + PLAY-OFF)
+     BŁĄD, KTÓRY TO NAPRAWIA: kafelek „MECZE" na karcie kariery czytał
+     p.career.matches, a ten od zawsze rósł o `matches + po.m` (liga plus
+     dwumecze play-off). Tabela sezon-po-sezonie w tej samej karcie brała
+     natomiast r.matches, czyli SAMĄ rundę zasadniczą. Zawodnik, który
+     przejechał 14 kolejek i dwa dwumecze play-off, widział więc 14 w tabeli
+     i 16 w kafelku — i słusznie uznawał to za błąd liczenia.
+     Trzymamy teraz jedną, jawną definicję dorobku i podajemy ją do UI,
+     żeby wiersz „ŁĄCZNIE" faktycznie sumował się do kafelków.
+     ------------------------------------------------------------------ */
+  matchesAll : matches + po.m,
+  heatsAll   : heats   + po.h,
+  ptsAll     : pts     + po.p,
+  bonusAll   : bonus   + po.b,
+  defectsAll : defects + po.d,
+  exclAll    : exclusions + po.w,
+  avgAll     : (heats+po.h) > 0 ? (pts+po.p)/(heats+po.h) : 0,
+  avgAllTxt  : (heats+po.h) > 0 ? ((pts+po.p)/(heats+po.h)).toFixed(2) : '—',
   avg, avgTxt, grade, earned, earnedBon, pos, posReg, po, dmpj, ind, tally, overall, medals,
   tabRow:myRow, injured, injMissed, clubEvents, strikeRounds:S.strikeRounds, payLog:S.payLog,
   strike, ovrFrom:oldOvr, ovrTo:p.ovr, notes, fines:S.fines, lines, replaced,
   profFrom:S.prof0, profTo:p.prof, profDelta, medFrom:S.med0, medTo:p.med, medDelta, statLog,
   evLog:S.evLog, evTitle:S.evTitle, evChoice:S.evChoice,
   ban:p.banSeasons>0,
+  /* --- NIEOCZEKIWANE ZDARZENIA I SZANSA NA SKŁAD (do UI) --- */
+  surprises : (S.surprises||[]).slice(),
+  chanceAvg : chances.length ? Math.round(chances.reduce((a,b)=>a+b,0)/chances.length) : null,
+  chanceMin : chances.length ? Math.min(...chances) : null,
+  chanceMax : chances.length ? Math.max(...chances) : null,
   /* --- KONTUZJE DŁUGOTERMINOWE (do czerwonego boksu w UI) --- */
   longInjuryOut : !!S.longInjury,                 // ten sezon przeleciał w gipsie
   longInjuryWhy : S.longInjuryWhy||'',
@@ -721,6 +843,36 @@ function resolveSeason(){
   /* --- KARIERA URWANA PRZEZ ZDARZENIE (fxEnd) --- */
   careerOver    : !!p.retired,
   careerOverWhy : p.retireReason||''
+ };
+ /* ============================================================
+    KONTROLA WYKONANIA SKUTKÓW ZDARZENIA
+    ------------------------------------------------------------
+    Ekran zdarzenia obiecuje konkretne rzeczy: karę, walkower, więcej biegów,
+    większe ryzyko urazu, inną stawkę, gorsze oferty. Do tej pory gracz musiał
+    wierzyć na słowo. Tu spisujemy stan, w jakim te obietnice REALNIE weszły
+    do sezonu (i co przechodzi na kolejny rok), a UI pokazuje to obok wyboru.
+    ============================================================ */
+ res.evEffects = {
+   heatPP     : S.heatPP||0,
+   injuryPP   : S.injuryPP||0,
+   injuryP    : S.injuryP||0,
+   ovrBonus   : S.ovrBonus||0,
+   teamOvr    : S.teamOvr||0,
+   teamPts    : S.teamPts||0,
+   banMatches : S.banMatches||0,
+   fines      : S.fines||0,
+   equipFit   : S.equipFit,
+   rateMul    : S.rateMul||1,
+   extraDefP  : S.extraDefP||0,
+   noEarnings : !!S.noEarnings,
+   zeroMatches: !!S.zeroMatches,
+   forcedEnd  : !!S.forcedEnd,
+   noRenew    : !!S.noRenew,
+   walkover   : S.walkower ? {mode:S.walkMode, round:(S.walkRound||0)+1, pen:S.walkPen||0} : null,
+   next : {zeroMatches:!!p.next.zeroMatches, heatPP:p.next.heatPP||0, injuryPP:p.next.injuryPP||0,
+           betterOffers:!!p.next.betterOffers, rateMul:p.next.rateMul||1, forceClub:p.next.forceClub||null,
+           lockTransfer:p.next.lockTransfer||0, noSponsor:!!p.next.noSponsor, rowPen:!!p.next.rowPen,
+           longInjury:p.longInjury||0, alimony:p.alimony||0}
  };
  res.gradeParts = gradeCalc.parts;      // rozpiska oceny do UI: skąd wzięła się ta ocena
  res.gradeScore = Math.round(gradeCalc.score*100)/100;
@@ -827,41 +979,66 @@ function resolveSeason(){
  return res;
 }
  
-/* ---- KOMENTARZE PO SEZONIE ---- */
+/* ============================================================
+   KOMENTARZE PO SEZONIE
+   ------------------------------------------------------------
+   Każdy warunek miał wcześniej JEDNĄ linijkę wpisaną na stałe, więc gracz
+   czytał w kółko to samo zdanie komornika, mechanika i Ostafińskiego.
+   Teraz teksty siedzą w puli TALK (data.js, po 32 na warunek), a talkPick()
+   losuje z PAMIĘCIĄ: dopóki pula się nie wyczerpie, żaden tekst nie wróci.
+   Pamięć trzymamy w G.talkSeen, żeby przechodziła przez cały przebieg kariery.
+   ============================================================ */
+function talkPick(key, vars){
+ const pool = (typeof TALK!=='undefined') && TALK[key];
+ if(!pool || !pool.lines || !pool.lines.length) return null;
+ if(!G.talkSeen) G.talkSeen={};
+ let used = G.talkSeen[key] || [];
+ // wszystkie teksty z tej puli już poszły — zaczynamy od nowa, ale bez
+ // powtórki ostatnio użytego zdania (żeby nie trafić dwa razy pod rząd)
+ if(used.length >= pool.lines.length) used = used.slice(-1);
+ let free = pool.lines.map((_,i)=>i).filter(i=>!used.includes(i));
+ if(!free.length) free = pool.lines.map((_,i)=>i);
+ const idx = pick(free);
+ G.talkSeen[key] = used.concat(idx);
+ let txt = pool.lines[idx];
+ // podstawienia: {n}, {rok}, {kasa}, {avg}, {klub}
+ if(vars) Object.keys(vars).forEach(k=>{ txt = txt.split('{'+k+'}').join(vars[k]); });
+ return {who:pool.who, txt};
+}
 function seasonTalk(r,p){
  const A=[], avg=r.avg;
- const add=(who,txt)=>A.push({who,txt});
+ const add=(key,vars)=>{ const t=talkPick(key,vars); if(t) A.push(t); };
  // --- główna ocena jazdy ---
- if(r.matches===0) add('SZATNIA','„A on to w ogóle jeszcze jeździ? Myślałem, że skończył."');
- else if(avg<0.5) add('KIBIC Z SEKTORA B','„Pojechałeś jak pizda. Mój wujek na kosiarce robi lepsze czasy."');
- else if(avg<0.9) add('KIBIC Z SEKTORA B','„Kolego, ja płacę za bilet, a nie za oglądanie, jak wywozisz się na własnym cieniu."');
- else if(avg<1.4) add('TRENER','„Jest średnio. Ani nie boli, ani nie cieszy. Jak zupa w barze mlecznym."');
- else if(avg<1.8) add('TRENER','„Solidnie. Bez fajerwerków, ale w tabelce się zgadza."');
- else if(avg<2.2) add('TRENER','„No i o to chodziło. Wreszcie ktoś jedzie do tego pierwszego łuku, a nie obok."');
- else add('EKSPERT TV','„To już nie jest zawodnik ligowy. To jest problem dla reszty stawki."');
+ if(r.matches===0) add('none');
+ else if(avg<0.5) add('awful');
+ else if(avg<0.9) add('bad');
+ else if(avg<1.4) add('meh');
+ else if(avg<1.8) add('solid');
+ else if(avg<2.2) add('good');
+ else add('great');
  // --- Ostafiński ---
- if(r.medDelta<=-10) add('OSTAFIŃSKI','„W tym sezonie nie napisałem o nim ani słowa. Nie było o czym. I to jest najsmutniejsze zdanie w tym tekście."');
- else if(r.medDelta>=12) add('OSTAFIŃSKI','„Rozpisywałem się o nim tak, że redakcja kazała mi zrobić przerwę. Nie zrobiłem."');
- else if(p.med>70) add('OSTAFIŃSKI','„Znowu on. Czy ktoś w tej lidze robi coś poza nim? Pytam poważnie."');
- else if(p.med<20) add('OSTAFIŃSKI','„Zapytałem o niego w parku maszyn. Nikt nie skojarzył nazwiska."');
+ if(r.medDelta<=-10) add('ostaSilent');
+ else if(r.medDelta>=12) add('ostaLoud');
+ else if(p.med>70) add('ostaStar');
+ else if(p.med<20) add('ostaNobody');
  // --- defekty i wykluczenia ---
- if(r.defects>=6) add('MECHANIK','„'+r.defects+' defektów. Ja już nie wiem, czy to silnik, czy klątwa."');
- else if(r.defects===0&&r.heats>15) add('MECHANIK','„Zero defektów. Zapamiętaj ten sezon, bo drugi taki nie będzie."');
- if(r.exclusions>=5) add('SĘDZIA LIS','„Znam pana kevlar lepiej niż własne dzieci. '+r.exclusions+' razy pan u mnie był."');
+ if(r.defects>=6) add('defMany',{n:r.defects});
+ else if(r.defects===0&&r.heats>15) add('defZero');
+ if(r.exclusions>=5) add('excMany',{n:r.exclusions});
  // --- bonusy ---
- if(r.bonus>=10) add('KOLEGA Z PARY','„Chłopie, ty tych bonusów masz tyle, że powinieneś mi płacić abonament."');
- else if(r.bonus===0&&r.heats>10) add('KOLEGA Z PARY','„Ani jednego bonusa. Ty jedziesz w tej drużynie czy obok niej?"');
+ if(r.bonus>=10) add('bonMany');
+ else if(r.bonus===0&&r.heats>10) add('bonZero');
  // --- tabela ---
- if(r.pos===1) add('PREZES','„Mistrzostwo! Premie wypłacimy... no, wypłacimy. Kiedyś."');
- else if(r.pos===8) add('PREZES','„Spadliśmy, ale to był rok budowania. Budowaliśmy. Dół tabeli."');
+ if(r.pos===1) add('champion');
+ else if(r.pos===8) add('relegated');
  // --- finanse ---
- if(r.strike) add('DZIENNIKARZ','„Zawodnik nie wyjechał na tor, bo klub nie płaci. Klasyka gatunku, wydanie '+r.year+'."');
- if(r.fines>50000) add('KSIĘGOWA KLUBU','„Kar na '+zl(r.fines)+'. Panie, pan więcej płaci, niż zarabia."');
- if(p.budget<0) add('KOMORNIK','„Dzień dobry. Ładny ten bus."');
+ if(r.strike) add('strike',{rok:r.year});
+ if(r.fines>50000) add('fines',{kasa:zl(r.fines)});
+ if(p.budget<0) add('broke');
  // --- sprzęt / wiek ---
- if(p.equip<15) add('TUNING-GÓR','„Ten silnik to już nie silnik. To eksponat. Przynieś go do stodoły."');
- if(p.age>=34&&avg<1.2) add('MENEDŻER','„Może czas pomyśleć o czymś spokojniejszym? Znam człowieka, ma myjnię."');
- if(p.age<=19&&avg>1.6) add('SELEKCJONER','„Zapamiętajcie to nazwisko. Albo i nie, zobaczymy za trzy lata."');
+ if(p.equip<15) add('junk');
+ if(p.age>=34&&avg<1.2) add('oldSlow');
+ if(p.age<=19&&avg>1.6) add('youngFast');
  // wybierz maks. 4, zawsze z pierwszą pozycją
  const first=A.shift(), rest=A.sort(()=>Math.random()-0.5).slice(0,3);
  return [first,...rest].filter(Boolean);
@@ -953,9 +1130,17 @@ function gradeOf(avg,heats){
    ============================================================ */
 /* ============================================================
    5a. MECZ LIGOWY — SYSTEM 15-BIEGOWY (art. 717-721)
-   Numery 1-5 / 9-13 : każdy zawodnik
-   Numery 6,7 / 14,15: wyłącznie zawodnicy młodzieżowi
-   Numery 8 / 16     : zawodnicy do lat 24 (mogą też juniorzy)
+   ------------------------------------------------------------
+   NAPRAWA (patch 17.08.2026): NUMERY STARTOWE BYŁY ODWRÓCONE.
+   W polskiej lidze numery przydziela się tak, że GOSPODARZ jedzie z numerami
+   9-15, a GOŚĆ z numerami 1-7 (w niższych ligach odpowiednio 9-16 i 1-8).
+   Silnik robił dokładnie odwrotnie: w meczu u siebie Gracz dostawał numer
+   1-7, czyli numer gościa, a na wyjeździe 9-15. Teraz jest zgodnie
+   z regulaminem:
+     · GOSPODARZ  — numery 9, 10, 11, 12, 13 (pierwsza piątka) + 14, 15 (młodzież)
+     · GOŚĆ       — numery 1, 2, 3, 4, 5     (pierwsza piątka) + 6, 7  (młodzież)
+   Program biegów (HEAT_SETS) zostaje ten sam — jest symetryczny, zmienia się
+   wyłącznie to, która drużyna siedzi pod którym kompletem numerów.
    ============================================================ */
 // Rozkład biegów I-XIII wg dwóch regulaminowych zestawów torów.
 const HEAT_SETS=[
@@ -964,7 +1149,10 @@ const HEAT_SETS=[
  [[9,1,11,3],[6,15,7,14],[12,5,13,2],[4,14,6,10],[3,11,4,12],[2,13,1,15],[10,7,9,5],
   [13,3,14,4],[1,9,2,10],[11,6,12,5],[4,12,1,9],[15,2,11,7],[5,10,3,13]]
 ];
-const isHomeNum = n => n<=7;
+/* Numer z programu (1-15) → strona. Gospodarz: 9-15. Gość: 1-7. */
+const isHomeNum = n => n>=9;
+/* Numery „w programie" dla danej strony: gospodarz startuje od 9. */
+const numFor = (side, slot) => side==='h' ? slot+8 : slot;
  
 /* ------------------------------------------------------------
    USTAWIENIE SKŁADU PRZED KOLEJKĄ (art. 717)
@@ -1107,7 +1295,14 @@ function simMeeting(homeName, awayName, ctx, meId, forceSave){
      }
    }
  }
- const map={}; for(let n=1;n<=7;n++){ if(LH[n]) map[n]=LH[n]; if(LA[n]) map[n+8]=LA[n]; }
+ /* --- PRZYDZIAŁ NUMERÓW STARTOWYCH ---
+    Gospodarz: 9-15. Gość: 1-7. `sideOf` trzyma stronę dla KAŻDEGO klucza w mapie
+    (także dla wirtualnych kluczy rezerwy taktycznej) — patrz naprawa niżej. */
+ const map={}, sideOf={};
+ for(let n=1;n<=7;n++){
+   if(LH[n]){ map[n+8]=LH[n]; sideOf[n+8]='h'; }
+   if(LA[n]){ map[n]  =LA[n]; sideOf[n]  ='a'; }
+ }
  const REF={h:refFor(homeName), a:refFor(awayName)};
  const TRB={h:clubTrouble(homeName), a:clubTrouble(awayName)};   // kara za niepłacenie
  const st={}; Object.values(map).forEach(r=>{ if(r) st[r.id]={r, starts:0, pts:0, bon:0, codes:[], num:null}; });
@@ -1116,13 +1311,24 @@ function simMeeting(homeName, awayName, ctx, meId, forceSave){
  let hs=0, as=0;
  const tacticUsed={h:false,a:false};
  const heats=[];
- const reserves=side=>[6,7].map(n=>map[side==='h'?n:n+8]).filter(Boolean);
- 
+ const reserves=side=>[6,7].map(n=>map[numFor(side,n)]).filter(Boolean);
+
  const runHeat=(nums, label)=>{
    const entries=[];
    const inHeat=()=>entries.map(e=>e.r.id);
    nums.forEach(n=>{
-     const side = isHomeNum(n)?'h':'a';
+     /* ------------------------------------------------------------
+        NAPRAWA (patch 17.08.2026): PUNKTY DOPISYWANE NIE TEJ DRUŻYNIE.
+        Rezerwa taktyczna wjeżdżała do biegu pod WIRTUALNYM numerem `-id`
+        (liczba ujemna). Stronę wyliczano wtedy z `isHomeNum(n)`, czyli
+        z porównania liczbowego — a każda liczba ujemna wychodziła z niego
+        jako GOSPODARZ. Efekt: gdy rezerwę taktyczną robili GOŚCIE, ich
+        punkty lądowały na koncie gospodarzy. Stąd brały się wyniki, których
+        nie da się zdobyć na torze (m.in. 76:14 czy 16:74) i sytuacje, w których
+        zawodnik „zdobył punkty", a jego drużyna ich nie miała. Teraz strona
+        czyta się z jawnej mapy `sideOf`, a nie ze znaku liczby.
+        ------------------------------------------------------------ */
+     const side = sideOf[n] || (isHomeNum(n)?'h':'a');
      let r=map[n];
      // brak zawodnika pod numerem albo wyczerpany limit startów → rezerwa zwykła (art. 719 ust. 3)
      if(!r || st[r.id].starts>=5){
@@ -1133,7 +1339,10 @@ function simMeeting(homeName, awayName, ctx, meId, forceSave){
        if(!r) return;
      }
      if(inHeat().includes(r.id)) return;
-     entries.push({r, side, home:side==='h', num:n, ref:REF[side], trouble:TRB[side]});
+     // numer w programie bierzemy z kartoteki zawodnika — nie z klucza mapy,
+     // bo pod kluczem może siedzieć rezerwa taktyczna albo zwykłe zastępstwo
+     const pnum = (st[r.id] && st[r.id].num!=null) ? st[r.id].num : (n>0?n:null);
+     entries.push({r, side, home:side==='h', num:pnum, ref:REF[side], trouble:TRB[side]});
    });
    if(entries.length<2) return;
    const res=leagueHeat(entries, ctx, meId);
@@ -1165,8 +1374,10 @@ function simMeeting(homeName, awayName, ctx, meId, forceSave){
      if(!cand || cand.ovr<=weak.ovr) return;
      tacticUsed[side]=true;
      st[weak.id].codes.push('-');            // zmieniony — to NIE jest jego start
-     nums=nums.map(n=>map[n]&&map[n].id===weak.id ? -cand.id : n);
-     map[-cand.id]=cand;                      // wirtualny numer dla rezerwy taktycznej
+     const vkey = -cand.id;                   // wirtualny klucz dla rezerwy taktycznej
+     nums=nums.map(n=>map[n]&&map[n].id===weak.id ? vkey : n);
+     map[vkey]=cand;
+     sideOf[vkey]=side;                       // ← bez tego punkty szły do złej drużyny
    });
    runHeat(nums, h+1);
  }
@@ -1190,7 +1401,7 @@ function simMeeting(homeName, awayName, ctx, meId, forceSave){
    s.r.sea.m++; s.r.sea.starts+=s.starts; s.r.sea.pts+=s.pts; s.r.sea.bon+=s.bon;
    s.codes.forEach(c=>{ if(c==='d') s.r.sea.def++; else if(c==='w') s.r.sea.exc++; else if(c==='-') s.r.sea.rep++; });
    if(s.starts>0){
-     const side = st[s.r.id].num<=7 ? 'h':'a';
+     const side = isHomeNum(st[s.r.id].num) ? 'h':'a';
      const exp = cl(1.35 + (s.r.ovr - REF[side])*0.055, 0.15, 2.75);   // czego się po nim spodziewano
      const got = s.pts/s.starts;
      // DYNAMICZNA FORMA: pamięć krótka (0.40), reakcja ostra (×3.5), zakres -12..+12.
@@ -1207,6 +1418,18 @@ function simMeeting(homeName, awayName, ctx, meId, forceSave){
    if(st[r.id] && st[r.id].starts>0) return;
    if(r.form) r.form = Math.abs(r.form)<0.4 ? 0 : r.form*0.7;
  }));
+ /* --- KONTROLA WYNIKU ---
+    Wynik drużyny to suma punktów jej zawodników i nic więcej. Ta rekonstrukcja
+    liczy go jeszcze raz, tym razem po SKŁADACH (a nie po stronie zapisanej przy
+    biegu), więc żadna przyszła przeróbka rezerw nie ma jak dopisać punktów
+    nie tej drużynie. Przy 15 biegach daje to twardy zakres 15-75 na drużynę. */
+ {
+  const idsH=new Set(Object.values(LH).filter(Boolean).map(r=>r.id));
+  const idsA=new Set(Object.values(LA).filter(Boolean).map(r=>r.id));
+  let hh=0, aa=0;
+  Object.values(st).forEach(s=>{ if(idsH.has(s.r.id)) hh+=s.pts; else if(idsA.has(s.r.id)) aa+=s.pts; });
+  hs=hh; as=aa;
+ }
  const me = meId && st[meId] ? st[meId] : null;
  return {hs, as, heats, st, me: me? {starts:me.starts, pts:me.pts, bon:me.bon, codes:me.codes.filter(c=>typeof c==='string'), num:me.num} : null,
    lineH:LH, lineA:LA, saveIn, save:{h:svH, a:svA}, meGap, meReg};
@@ -1483,7 +1706,23 @@ function simSeasonChrono(ctx, myLk, myClub, ptsPen){
  
  for(let rd=0; rd<BAL.rounds; rd++){
    G.roundNo=rd+1;
-   const status = (ctx&&myClub) ? playerRoundStatus(rd) : null;
+   let status = (ctx&&myClub) ? playerRoundStatus(rd) : null;
+   /* --- NIEOCZEKIWANE ZDARZENIE TEJ KOLEJKI (5% łącznie) --- */
+   let sur=null, biasBoost=0;
+   if(ctx && myClub && meR && !status){
+     sur = rollRoundSurprise(rd, myClub, meR);
+     if(sur){
+       if(G.S){ G.S.surprises=G.S.surprises||[]; G.S.surprises.push(sur); }
+       if(sur.forceOut) status = sur.forceOut;
+       if(sur.forceIn && ctx.bias){ biasBoost=SURPRISE.jumpBias; ctx.bias.v += biasBoost; }
+     }
+   }
+   /* --- SZANSA NA SKŁAD PRZED TĄ KOLEJKĄ ---
+      Liczona z REALNEJ dyspozycji kadry na dziś, więc zmienia się z tygodnia
+      na tydzień. Zapisujemy ją do dziennika, żeby gracz widział w tabeli,
+      czy ławka była pechem, czy arytmetyką. */
+   let chanceNow=null;
+   if(ctx && myClub && meR) chanceNow = status ? 0 : appearanceChanceNow(myClub, meR, ctx.bias);
    if(meR) meR.out = !!status;                      // trener nie ma cię do dyspozycji
    LKEYS.forEach(k=>{
      (st[k].sched[rd]||[]).forEach(([h,a])=>{
@@ -1536,10 +1775,18 @@ function simSeasonChrono(ctx, myLk, myClub, ptsPen){
          G.myLog.push({round:rd+1, home, opp:home?a:h,
            teamFor:home?M.hs:M.as, teamAgn:home?M.as:M.hs,
            rode, me:rode?M.me:null, savedIn, gap: rode?null:M.meGap, reg: rode?false:!!M.meReg,
+           chance: chanceNow, sur: sur?{kind:sur.kind, log:sur.log}:null,
            why: status || (c? 'ŁAWKA / POZA SKŁADEM' : 'BRAK MIEJSCA W SKŁADZIE')});
        }
      });
    });
+   /* --- SPRZĄTANIE PO NIEOCZEKIWANYM ZDARZENIU ---
+      Efekty formy zostają (mają boleć albo cieszyć przez kilka kolejek),
+      ale zbiorowa kontuzja kadry i podbicie u trenera dotyczą TEJ jednej kolejki. */
+   if(sur){
+     sur.hidden.forEach(r=>{ r.inj=0; });
+     if(biasBoost && ctx.bias) ctx.bias.v -= biasBoost;
+   }
    clubsAfterRound();
    aiStrikes();
    if(ctx&&myClub) settleRound(rd, myClub);
@@ -2141,7 +2388,15 @@ function meeting20(field, meIdx, ctx){
    h.forEach(i=>{
      const t=T[i], o=H.res.find(x=>x.i===i);
      t.pts+=H.pts[i];
-     if(o.out) t.codes.push(o.out); else t.codes.push(H.pts[i]===0?'-':String(H.pts[i]));
+     /* ZERO PUNKTÓW TO „0", A NIE „-".
+        W polskiej notacji kreska w rubryce biegu oznacza, że zawodnik w tym
+        biegu NIE STARTOWAŁ (w lidze: został zdjęty przez rezerwę taktyczną —
+        patrz simMeeting). Turniej indywidualny jedzie się według tabeli
+        20-biegowej: każdy z szesnastki ma pięć swoich startów i nikt go w nich
+        nie zastępuje. Wpisywanie „-" za przejechany bieg bez punktu wyglądało
+        więc tak, jakby gracza w kółko ktoś zmieniał, a do tego kod „-" jest
+        w reszcie gry liczony jako NIEODBYTY start. */
+     if(o.out) t.codes.push(o.out); else t.codes.push(String(H.pts[i]));
      if(!o.out) t.places[H.place[i]]++;
    });
  });
@@ -2171,7 +2426,8 @@ function impFinalRound(field, meIdx, ctx){
  if(meRow){
    if(sfIdx.includes(meIdx)){ meSemi = semi.res.find(x=>x.i===meIdx).out || String(semi.place[meIdx])+'m'; }
    if(finIdx.includes(meIdx)){ const o=fin.res.find(x=>x.i===meIdx);
-     meFin = o.out || String(fin.pts[meIdx]); meCodes.push('F:'+(o.out||(fin.pts[meIdx]===0?'-':fin.pts[meIdx]))); }
+     // jak wyżej: bieg finałowy bez punktu to „F:0", nie „F:-"
+     meFin = o.out || String(fin.pts[meIdx]); meCodes.push('F:'+(o.out||String(fin.pts[meIdx]))); }
  }
  return {T, cls, score, semiOrder, finOrder, meCodes, meSemi, meFin,
    mePts: meRow? score[meIdx] : 0, mainPts: meRow? meRow.pts : 0};
@@ -2518,6 +2774,139 @@ function renewRejection(miss, rating, lastAvg){
 }
  
 /* ============================================================
+   RYNEK TRANSFEROWY — SKĄD BIORĄ SIĘ OFERTY
+   ------------------------------------------------------------
+   Do tej pory cała wycena zawodnika mieściła się w jednej linijce
+   (`rating = OVR + medialność*0,08 + (średnia-1,4)*7`), a gracz nie widział
+   z niej NIC: na ekranie pojawiały się kluby, stawki i premie, których nie
+   dało się z niczym powiązać — stąd wrażenie, że oferty są przypadkowe.
+   Teraz są dwie jawne liczby, obie rozpisane na składniki i obie pokazywane
+   przy każdej ofercie:
+
+     WARTOŚĆ RYNKOWA — ile jesteś wart sportowo, na tej samej skali, na której
+                       liczony jest OVR klubów. Składa się z: OVR, średniej
+                       z ostatniego sezonu, medialności, profesjonalizmu,
+                       wieku i (u zawodowca) własnego sprzętu.
+     ZAINTERESOWANIE — na ile TEN konkretny klub cię chce: różnica wartości
+                       do jego poziomu, rubryka młodzieżowa/U24, lojalność,
+                       realne miejsce w ich składzie i stan ich kasy.
+
+   Stawka za punkt i premia za podpis liczone są z tych samych liczb oraz
+   z zamożności klubu — a nie z gołego rzutu kością. Klub bez pieniędzy nie
+   złoży oferty jak z Ekstraligi, a klub z pełną kadrą na twojej pozycji
+   nie będzie się bił o kogoś, kto i tak będzie oglądał mecze z parkingu.
+   ============================================================ */
+const MARKET={
+ avgRef   : 1.40,  avgW  : 9,        // średnia biegopunktowa: odniesienie i waga
+ medRef   : 40,    medW  : 0.10,
+ profRef  : 45,    profW : 0.12,
+ equipRef : 55,    equipW: 0.10,
+ /* Krzywa wieku: 19-27 to okno, w którym kluby płacą najchętniej. Junior jest
+    tańszy sportowo (ale ma rubrykę), trzydziestolatek zaczyna tracić. */
+ age      : {16:-6, 17:-4, 18:-2, 19:0, 20:1, 21:2, 22:2, 23:2, 24:2, 25:2,
+             26:1, 27:1, 28:0, 29:0, 30:-1, 31:-2, 32:-4, 33:-6, 34:-8, 35:-10},
+ ageOld   : -13,                                    // 36 lat i więcej
+ rateBase : {EL:2400, E2:1150, KL:480},             // zł/pkt w klubie o średnim poziomie ligi
+ bonusMax : 0.030                                   // maks. część budżetu klubu na premię za podpis
+};
+
+/* WARTOŚĆ RYNKOWA + ROZPISKA. Skala ta sama, co OVR klubów. */
+function marketValue(p, lastAvg){
+ const parts=[];
+ const add=(d,w)=>{ d=Math.round(d*10)/10; if(d) parts.push({d,w}); return d; };
+ let s=p.ovr;
+ parts.push({d:p.ovr, w:'OVR '+p.ovr+' — czysta jazda, punkt wyjścia całej wyceny'});
+ s += add((lastAvg-MARKET.avgRef)*MARKET.avgW,
+   'średnia biegopunktowa ostatniego sezonu '+lastAvg.toFixed(2)+' (odniesienie '+MARKET.avgRef.toFixed(2)+')');
+ s += add((p.med-MARKET.medRef)*MARKET.medW,
+   'medialność '+p.med+' — bilety, logo sponsora, telefon od dziennikarza');
+ s += add((p.prof-MARKET.profRef)*MARKET.profW,
+   'profesjonalizm '+p.prof+' — sprzęt gotowy na czas, terminy, brak awantur');
+ const ag = p.age>=36 ? MARKET.ageOld : (MARKET.age[p.age]!=null?MARKET.age[p.age]:0);
+ s += add(ag, 'wiek '+p.age+' lat — '+(ag>0
+     ? 'jesteś w oknie, w którym kluby płacą najchętniej'
+     : ag<0 ? (p.age<=18 ? 'jeszcze surowy, klub kupuje przyszłość, nie punkty'
+                         : 'kluby liczą lata, nie tylko punkty')
+            : 'wiek neutralny dla wyceny'));
+ if(p.contract && p.contract.type==='Zawodowy')
+   s += add((p.equip-MARKET.equipRef)*MARKET.equipW,
+     'sprzęt '+p.equip+'/99 — jeździsz swoim, klub bierze to pod uwagę');
+ if(p.next.betterOffers) s += add(5, 'twoja sprawa poszła szeroko — menedżerowie dzwonią sami');
+ if(p.banSeasons>0)      s += add(-15, 'aktywna dyskwalifikacja — na papierze jesteś nie do wystawienia');
+ return {rating: Math.round(s*10)/10, parts};
+}
+
+/* SZYBKI SZACUNEK MIEJSCA W SKŁADZIE (bez 140 symulacji na każdy z 24 klubów).
+   Z kim realnie walczysz: młodzieżowiec o dwa miejsca młodzieżowe, senior
+   o pierwszą piątkę. Wynik >0 = wchodzisz do składu tego klubu. */
+function squadPressure(p, clubName){
+ const sq=squadOf(clubName).filter(r=>!r.me && !r.retired);
+ if(!sq.length) return 12;
+ const me=effectiveOvr(p, 100, 0);
+ const rel = isJun(p) ? sq.filter(isJun) : sq.filter(r=>!isJun(r)||isU24(r));
+ const slots = isJun(p) ? 2 : 5;
+ const sorted = (rel.length?rel:sq).slice().sort((a,b)=>b.ovr-a.ovr);
+ const cut = sorted[slots-1] ? sorted[slots-1].ovr : (sorted[sorted.length-1]||{ovr:0}).ovr;
+ return Math.round(me-cut);
+}
+
+/* ZAINTERESOWANIE KLUBU (0-100 %) + ROZPISKA. */
+function clubInterest(p, c, lk, rating){
+ const parts=[];
+ const add=(d,w)=>{ d=Math.round(d); if(d) parts.push({d,w}); return d; };
+ const gap = rating - riderLevel(c);
+ let want=42;
+ parts.push({d:42, w:'punkt wyjścia — każdy klub kogoś szuka'});
+ /* Młodzieżowiec bije się o rubrykę młodzieżową, a nie o miejsce w pierwszej
+    piątce — dlatego bycie poniżej poziomu klubu boli go dużo mniej niż seniora.
+    Bez tego 16-latek z OVR 30 nie dostawał telefonu z ŻADNEJ ligi, mimo że
+    regulamin każe klubom szukać właśnie takich. */
+ const gw = gap>=0 ? 2.4 : (p.age<=21 ? 1.0 : p.age<=24 ? 1.7 : 2.4);
+ want += add(cl(gap*gw,-60,40),
+   'wartość rynkowa '+Math.round(rating)+' kontra poziom klubu '+c.ovr+' (różnica '+(gap>0?'+':'')+Math.round(gap)+')'+
+   (gap<0&&p.age<=24?' — łagodzona przez rubrykę wiekową':''));
+ if(p.age<=21)      want += add(20, 'rubryka młodzieżowa U21 — bez młodzieżowca klub nie ustawi składu');
+ else if(p.age<=24) want += add(9,  'rubryka U24 — obowiązkowe miejsce w pierwszej piątce');
+ if(p.age>=33)      want += add(-10,'wiek '+p.age+' — klub buduje kadrę na kilka sezonów do przodu');
+ if(c.name===p.club && p.loyalty>0) want += add(p.loyalty*0.55, 'znają cię tu — lojalność '+p.loyalty+'/100');
+ if(p.prof<30)      want += add(-14,'profesjonalizm '+p.prof+' — opinia idzie przed tobą');
+ else if(p.prof>75) want += add(8,  'profesjonalizm '+p.prof+' — z takim zawodnikiem nie ma problemów organizacyjnych');
+ if(p.med>70)       want += add(7,  'medialność '+p.med+' — sprzedajesz bilety i zadowalasz sponsora');
+ const press=squadPressure(p, c.name);
+ want += add(cl(press*0.9,-24,10), press>=0
+   ? 'ich kadra: wchodzisz do składu (przewaga '+press+' pkt nad ostatnim z rotacji)'
+   : 'ich kadra: mają już kogo wystawiać (brakuje ci '+(-press)+' pkt do składu)');
+ if((c.debt||0)>150000)             want += add(12, 'klub ma wobec kadry zaległości '+zl(c.debt)+' — bierze tego, kto podpisze');
+ if(c.budget<=0 && (c.arr||0)>0)    want += add(-22,'puste konto i niezapłacone pensje — nie mają za co brać nikogo');
+ if(c.name.includes('Rybnik') && p.next.rowPen) want += add(-25, 'twój wpis o „guru" — tutaj ci go nie zapomnieli');
+ return {want: cl(Math.round(want),2,96), parts, gap, press};
+}
+
+/* STAWKA ZA PUNKT — LICZONA, NIE LOSOWANA.
+   Liga × poziom klubu × jego realna zamożność × twoja wartość × medialność. */
+function offerRate(p, c, lk, rating, gap){
+ const parts=[];
+ const base=MARKET.rateBase[lk]||MARKET.rateBase.KL;
+ const avgL=leagueAvgOvr(lk)||c.ovr;
+ const qual   = cl(0.55+0.45*(c.ovr/Math.max(1,avgL)), 0.50, 1.50);
+ const budgetF= cl(0.70+Math.max(0,c.budget)/Math.max(1,(LEAGUE_INC[lk]||1)*2.2), 0.55, 1.45);
+ const valF   = cl(1+gap*0.022, 0.60, 1.70);
+ const medF   = cl(1+(p.med-40)/320, 0.85, 1.20);
+ let rate = base*qual*budgetF*valF*medF*RF(0.94,1.08);
+ parts.push({w:'stawka bazowa w lidze '+(G.leagues[lk]?G.leagues[lk].short:lk), v:zl(base)});
+ parts.push({w:'poziom klubu ('+c.ovr+' przy średniej ligi '+Math.round(avgL)+')', v:'×'+qual.toFixed(2)});
+ parts.push({w:'zamożność klubu (budżet '+zl(c.budget)+')', v:'×'+budgetF.toFixed(2)});
+ parts.push({w:'twoja wartość kontra poziom klubu', v:'×'+valF.toFixed(2)});
+ parts.push({w:'medialność '+p.med, v:'×'+medF.toFixed(2)});
+ if((c.arr||0)>0){ rate*=0.85; parts.push({w:'klub zalega kadrze '+zl(c.arr)+' — negocjuje w dół', v:'×0,85'}); }
+ if(p.age<=23){
+   const m=ECON.youngRate[p.age]||1;
+   parts.push({w:'uwaga: przy twoim wieku klub wypłaci '+Math.round(m*100)+'% tej stawki (taryfa młodzieżowa)', v:''});
+ }
+ return {rate: Math.max(120, Math.round(rate)), parts};
+}
+
+/* ============================================================
    PRZEDŁUŻENIE W TRAKCIE UMOWY — „ONE-CLUB MAN"
    Jeżeli masz umowę wieloletnią, wysoką lojalność i sezon, który się broni,
    klub sam wychodzi z nową, dłuższą i lepiej płatną umową — jeszcze zanim
@@ -2543,9 +2932,13 @@ function makeRenewOffer(){
  const mul=RF(1.08,1.32) + cl((avg-1.50)*0.14, 0, 0.22);
  const rate=Math.round(p.contract.rate*mul);
  const bonus=Math.round(Math.max(0,c.budget)*RF(0.004,0.020)*cl(p.loyalty/70,0.5,1.6));
+ /* Ta sama wycena, co na rynku — żeby gracz mógł porównać, ile jest wart
+    „na mieście", zanim podpisze przedłużenie w ciemno. */
+ const MV=marketValue(p, avg);
  return {club:c.name, lk:p.lk, ovr:c.ovr, budget:c.budget, debt:c.debt,
    type:p.contract.type, years, rate, bonus, extend:true, stay:true,
    oldRate:p.contract.rate, oldYears:p.contract.years, avg,
+   rating:MV.rating, ratingParts:MV.parts,
    ride:appearanceChance(p, c, 55, null)};
 }
 function acceptRenew(o){
@@ -2567,21 +2960,37 @@ function makeOffers(){
  const p=G.p, cands=[];
  let oldMiss=null;                 // dlaczego stary klub odpadł z listy
  G.noRenew=null;
- const lastAvg = G.history.length ? G.history[G.history.length-1].avg : 1.4;
- const rating = p.ovr + p.med*0.08 + (p.next.betterOffers?5:0) + (lastAvg-1.4)*7;
- 
+ const lastAvg = G.history.length ? (G.history[G.history.length-1].avg||0) : 1.4;
+ const MV = marketValue(p, lastAvg);
+ const rating = MV.rating;
+
  /* --- JEDNA FABRYKA OFERT (używana też przez skutki zdarzeń losowych) --- */
- const mkOffer=(c,lk,gap)=>{
+ const mkOffer=(c,lk,gap,interest)=>{
    const pro = c.ovr>55 || p.ovr>45;
-   const rate = pro ? Math.round((600 + c.ovr*38 + c.budget/26000) * RF(0.85,1.2) * cl(1+gap*0.02,0.7,1.4))
-                    : R(150,400);
-   // BRAK OFERT SPONSORSKICH (decyzja „pierdolcie się, śmieszki”) = zero premii za podpis
-   // BALANS: premie za podpis ścięte (było RF(0.008,0.05)) — na starcie kariery
-   // nie ma „darmowych" 200 tysięcy za sam podpis pod umową amatorsko-zawodową.
-   const bon  = (pro && !p.next.noSponsor) ? Math.round(c.budget*RF(0.004,0.030)*cl(rating/70,0.25,1.5)) : 0;
-   return {club:c.name, lk, ovr:c.ovr, budget:c.budget, debt:c.debt,
-     type: pro?'Zawodowy':'Amatorski', years:R(1,3), rate, bonus:bon,
+   const RT  = offerRate(p, c, lk, rating, gap);
+   const rate = pro ? RT.rate : R(150,400);
+   /* PREMIA ZA PODPIS — realny ułamek budżetu klubu, ważony twoją wartością
+      i przycięty przez jego długi. Klub, który zalega kadrze, nie wykłada
+      gotówki za sam podpis. Decyzja „pierdolcie się, śmieszki" (noSponsor)
+      zabiera premię w całości. */
+   const bon = (pro && !p.next.noSponsor)
+     ? Math.round(Math.max(0,c.budget) * MARKET.bonusMax
+         * cl(rating/95, 0.05, 0.95)
+         * cl(1-(c.debt||0)/1500000, 0.20, 1)
+         * ((c.arr||0)>0?0.45:1)
+         * RF(0.35,1.00))
+     : 0;
+   /* DŁUGOŚĆ UMOWY też ma logikę: młodego wiąże się na dłużej, weterana na rok. */
+   const years = p.age<=21 ? R(2,3) : p.age<=27 ? R(1,3) : p.age<=32 ? R(1,2) : 1;
+   const I = interest || clubInterest(p, c, lk, rating);
+   return {club:c.name, lk, ovr:c.ovr, budget:c.budget, debt:c.debt, arr:c.arr||0,
+     type: pro?'Zawodowy':'Amatorski', years, rate, bonus:bon,
      stay:c.name===p.club, ride:appearanceChance(p, c, 55, null),
+     /* --- SKĄD TA OFERTA (rozpiska dla UI) --- */
+     rating, ratingParts: MV.parts,
+     want: I.want, wantParts: I.parts, gap: Math.round(I.gap), press: I.press,
+     rateParts: pro ? RT.parts : [{w:'kontrakt amatorski — sprzęt klubowy, stawka symboliczna, zero premii za podpis', v:zl(rate)+'/pkt'}],
+     lastAvg,
      /* ILE SZYLDÓW NA KEVLARZE — UI pokazuje to przy ofercie, a profesjonalista
         w ogóle takiej oferty nie zobaczy (patrz filtr niżej). */
      titles: titleCount(c), sponsors: clubTitles(c).map(s=>s.n),
@@ -2594,6 +3003,12 @@ function makeOffers(){
    const want=p.next.forceClub; p.next.forceClub=null; p.next.noSponsor=false;
    let hit=null;
    if(want==='weak'){ const c=pick(G.leagues.KL.clubs.slice().sort((a,b)=>a.ovr-b.ovr).slice(0,3)); hit={c, lk:'KL'}; }
+   /* 'any' = zdarzenie wypycha cię z klubu, ale nie mówi dokąd — losowy klub
+      z dowolnej ligi. 'current' = blokada, zostajesz tam, gdzie jesteś.
+      Wcześniej obie wartości szły do findClub() i zwracały null, więc opcja
+      nie robiła absolutnie nic. */
+   else if(want==='any'){ const k=pick(LKEYS); hit={c:pick(G.leagues[k].clubs), lk:k}; }
+   else if(want==='current'){ hit = p.club ? findClub(p.club) : null; }
    else hit=findClub(want);
    if(hit){ const o=mkOffer(hit.c, hit.lk, rating-riderLevel(hit.c));
             if(p.next.rateMul && p.next.rateMul!==1){ o.rate=Math.round(o.rate*p.next.rateMul); p.next.rateMul=1; }
@@ -2606,14 +3021,20 @@ function makeOffers(){
    if(hit) return [mkOffer(hit.c, hit.lk, rating-riderLevel(hit.c))];
  }
  
- // ILE OFERT MOŻESZ W OGÓLE DOSTAĆ
- let maxOffers;
- if(p.age<=21)      maxOffers = 4;                          // juniora chce każdy, regulamin
- else if(p.age<=24) maxOffers = 3;                          // pozycja U24
- else               maxOffers = rating>72?4 : rating>58?3 : rating>46?2 : 1;
- if(p.age>34) maxOffers = Math.max(1, maxOffers-1);
- if(p.prof<25) maxOffers = Math.max(1, maxOffers-1);
- 
+ /* --- ILE TELEFONÓW MOŻE ZADZWONIĆ ---
+    Też jawnie, żeby dało się przeczytać, dlaczego w jednym roku masz cztery
+    oferty, a w kolejnym jedną. */
+ const maxWhy=[];
+ let maxOffers = rating>78?4 : rating>62?3 : rating>48?2 : 1;
+ maxWhy.push({d:maxOffers, w:'wartość rynkowa '+Math.round(rating)});
+ if(p.age<=21){      maxOffers+=1; maxWhy.push({d:1, w:'jesteś młodzieżowcem U21 — regulamin zmusza kluby do szukania'}); }
+ else if(p.age<=24){ maxOffers+=1; maxWhy.push({d:1, w:'pozycja U24 — obowiązkowa rubryka w pierwszej piątce'}); }
+ if(p.med>=70){      maxOffers+=1; maxWhy.push({d:1, w:'medialność '+p.med+' — dzwonią też ci, którzy cię nie potrzebują'}); }
+ if(p.age>34){       maxOffers-=1; maxWhy.push({d:-1,w:'wiek '+p.age+' — lista chętnych sama się skraca'}); }
+ if(p.prof<25){      maxOffers-=1; maxWhy.push({d:-1,w:'profesjonalizm '+p.prof+' — połowa menedżerów nawet nie oddzwoni'}); }
+ if(p.next.betterOffers){ maxOffers+=1; maxWhy.push({d:1, w:'sprawa poszła szeroko — masz na stole więcej niż zwykle'}); }
+ maxOffers = cl(maxOffers, 1, 5);
+
  // JAK DALEKO PONIŻEJ POZIOMU KLUBU MOŻESZ BYĆ, ŻEBY W OGÓLE ZADZWONILI
  // (junior wypełnia rubrykę młodzieżową, więc bierze go nawet klub o klasę wyżej)
  const floor = p.age<=21 ? -45 : p.age<=24 ? -22 : -8;
@@ -2635,25 +3056,24 @@ function makeOffers(){
    }
    const gap = rating - riderLevel(c);            // >0 = jesteś ponad poziomem tej drużyny
    if(gap < floor){ if(isOld) oldMiss={code:'sport', gap}; return; }
-   let want = 50 + gap*2.2 + (isOld?p.loyalty*1.1:0) - (p.prof<35?10:0);
-   // juniora chce każdy — bez niego klub nie wypełni rubryki młodzieżowej
-   if(p.age<=21) want = Math.max(want+16, 32); else if(p.age<=24) want += 7;
-   if(p.age>33) want -= 18;
-   if(c.debt>150000) want += 14;                  // klub z długami bierze każdego...
-   if(c.budget<=0 && (c.arr||0)>0) want -= 20;    // ...ale bankrut nie ma czym zapłacić nikomu
-   // (poprawka: klub nazywa się „MRÓZ Rybnik", więc stary warunek na 'ROW Rybnik' nigdy nie działał)
-   if(c.name.includes('Rybnik') && p.next.rowPen) want -= 25;
-   if(!chance(cl(want,3,96))){ if(isOld) oldMiss={code:'roll', want:Math.round(want), gap}; return; }
-   cands.push({c,lk,gap});
+   /* ZAINTERESOWANIE liczone jednym, jawnym wzorem (clubInterest) — ta sama
+      liczba trafia potem na ekran oferty jako „ZAINTERESOWANIE KLUBU". */
+   const I = clubInterest(p, c, lk, rating);
+   if(!chance(I.want)){ if(isOld) oldMiss={code:'roll', want:I.want, gap}; return; }
+   cands.push({c, lk, gap, interest:I});
   });
  });
  
- // koło ratunkowe: jak nikt nie chce, czasem odezwie się ktoś z dołu KLŻ
- if(!cands.length && p.banSeasons===0 && chance(60)){
+ /* KOŁO RATUNKOWE: jak nikt nie chce, czasem odezwie się ktoś z dołu KLŻ.
+    Dla młodzieżowca to niemal pewnik — klub bez młodzieżowca nie ustawi składu
+    i weźmie nawet zawodnika, który jeszcze nie umie wyjechać z łuku. */
+ if(!cands.length && p.banSeasons===0 && chance(p.age<=21?92:60)){
    const weak=G.leagues.KL.clubs.slice()
      .filter(c=>!(p.prof>SPON.profBlock && titleCount(c)>=SPON.profBlockFrom))
      .sort((a,b)=>a.ovr-b.ovr).slice(0,3);
-   if(weak.length){ const c=pick(weak); cands.push({c, lk:'KL', gap:rating-riderLevel(c), lifeline:true}); }
+   if(weak.length){ const c=pick(weak);
+     cands.push({c, lk:'KL', gap:rating-riderLevel(c), lifeline:true,
+                 interest:clubInterest(p, c, 'KL', rating)}); }
  }
  
  // najmocniejsze kluby, które faktycznie cię chcą
@@ -2666,10 +3086,21 @@ function makeOffers(){
  if(oldIn && !sel.some(x=>x.c.name===p.club)){
    if(sel.length) sel[sel.length-1]=oldIn; else sel=[oldIn];
  }
- const out = sel.map(({c,lk,gap})=>mkOffer(c,lk,gap));
+ const out = sel.map(({c,lk,gap,interest})=>mkOffer(c,lk,gap,interest));
  /* POWÓD BRAKU PRZEDŁUŻENIA — do pokazania na ekranie ofert */
  G.noRenew = (p.club && !out.some(o=>o.stay)) ? renewRejection(oldMiss, rating, lastAvg) : null;
+ /* --- PODSUMOWANIE RYNKU DLA UI: skąd w ogóle wzięła się ta lista --- */
+ G.market = {rating, parts:MV.parts, maxOffers, maxWhy, lastAvg,
+             interested:cands.length, checked:allClubs().length, floor,
+             age:p.age, prof:p.prof, med:p.med, ovr:p.ovr};
+ /* --- JEDNORAZOWE FLAGI ZE ZDARZEŃ: KONSUMUJEMY JE TU ---
+    Wcześniej `betterOffers` i `rowPen` raz ustawione zostawały na stałe:
+    jeden dobry (albo jeden głupi) wybór na ekranie zdarzenia rzutował
+    na KAŻDE kolejne okienko transferowe do końca kariery. Teraz działają
+    na to jedno okienko, tak jak opisuje je samo zdarzenie. */
  p.next.noSponsor=false;      // blokada sponsorska obowiązywała na TO okienko
+ p.next.betterOffers=false;
+ p.next.rowPen=false;
  return out;
 }
 function signContract(o){

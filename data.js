@@ -16,13 +16,122 @@ const BAL={
  rounds  : 14      // kolejek w sezonie zasadniczym
 };
  
+/* ============================================================
+   WIEK EMERYTALNY — DYNAMICZNY (czyta go retireAgeOf() w engine.js)
+   Kariery nie kończy sztywna liczba 40. Kończy ją ciało i głowa:
+   zawodowiec z profesjonalizmem 99 dojeżdża nawet do 45. roku życia,
+   a patus z profesjonalizmem poniżej 20 pakuje bus zaraz po trzydziestce —
+   chyba że ma taki OVR, że kluby wciąż płacą mu za same punkty.
+   ============================================================ */
+const RETIRE={
+ base     : 29.5,   // punkt wyjścia: zero profesjonalizmu, zero talentu
+ profSpan : 11.5,   // pełne 99 profesjonalizmu dokłada tyle lat
+ ovrSpan  : 4.2,    // sam talent (OVR) dokłada maksymalnie tyle lat
+ ovrRef   : 55,     // OVR neutralny — poniżej niego talent zaczyna zabierać lata
+ ovrFloor : -2.0,   // ile lat maksymalnie zabiera bardzo niski OVR
+ min      : 28,     // niżej nie schodzimy
+ max      : 45,     // twardy sufit
+ /* Ostatnie lata przed wyliczoną granicą to loteria: ciało potrafi odmówić
+    wcześniej, a im gorszy profesjonalizm, tym częściej. */
+ wobbleFrom : 2,
+ wobbleP    : 26,
+ wobbleMin  : 30    // loteria "cialo odmowilo wczesniej" wchodzi dopiero po trzydziestce
+};
+ 
+/* ============================================================
+   KONTUZJE — TO MA BOLEĆ
+   injuryP liczone jest NA SEZON, a potem rozbijane na kolejki
+   (S.injPerRound w engine.js). Przy tych wartościach zawodnik
+   z profesjonalizmem 50 łapie uraz mniej więcej co trzeci sezon,
+   a patus z profesjonalizmem 10 — prawie co drugi.
+   ============================================================ */
+const INJ={
+ base    : 19,     // bazowe % szans na uraz w sezonie
+ profW   : 0.26,   // ile dokłada każdy brakujący punkt profesjonalizmu
+ ageFrom : 31,     // od tego wieku ciało regeneruje się gorzej
+ ageW    : 1.6,    // p.p. za każdy rok powyżej
+ equipW  : 7,      // zajeżdżony sprzęt też łamie obojczyki (skala 0-100)
+ outMin  : 2,      // minimum opuszczonych spotkań
+ outMax  : 7,      // maksimum przy zwykłym urazie
+ badP    : 14,     // % szans, że uraz jest ciężki...
+ badMin  : 8, badMax:13,   // ...i wtedy pauza jest taka
+ dmgMin  : 1, dmgMax:4,    // ile OVR zabiera uraz
+ /* ============================================================
+    KONTUZJE, PO KTÓRYCH NIE MA SEZONU — ZERWANE WIĘZADŁA / ZŁAMANE UDO
+    Do tej pory najgorsze, co mogło się stać, to pauza 8-13 spotkań: gracz
+    wracał w tym samym roku i sezon dawało się jeszcze uratować. W żużlu
+    zerwane więzadła krzyżowe albo złamana kość udowa to nie „13 meczów",
+    to CAŁY ROK: operacja, rehabilitacja, powrót dopiero w kolejnym sezonie.
+    catP liczone jest OD URAZU (a nie od sezonu): raz na kilkanaście urazów
+    trafia się ten, po którym pakuje się bus na dwanaście miesięcy.
+    ============================================================ */
+ catP      : 7,            // % szans, że złapany uraz jest katastrofalny
+ catDmgMin : 5,            // ...i wtedy zabiera tyle OVR
+ catDmgMax : 11,
+ catSeasons: 1             // ile PEŁNYCH kolejnych sezonów wypada z gry (p.longInjury)
+};
+ 
+/* ============================================================
+   EKONOMIA GRACZA — ŻEBY LICZYĆ KAŻDY GROSZ
+   Wcześniej pieniądze tylko wpływały. Teraz istnieje druga strona
+   przelewu: bus, paliwo, hotele, dom. Do tego młody zawodnik NIE
+   zarabia stawki seniora, nawet jeśli ma ją wpisaną w kontrakcie —
+   reszta „idzie na jego rozwój” (i na nowy samochód prezesa).
+   ============================================================ */
+const ECON={
+ liveBase   : 46000,                        // roczny koszt życia na starcie
+ liveAge    : 3200,                         // każdy rok powyżej 18 lat
+ liveLeague : {EL:1.40, E2:1.12, KL:0.90},  // w Ekstralidze wszystko jest droższe
+ liveIdle   : 0.55,                         // rok bez klubu = tańsze życie, ale wciąż koszt
+ liveAmat   : 0.50,                         // amator mieszka u mamy i jeździ klubowym sprzętem
+ /* Mnożnik stawki za punkt wg wieku: junior dostaje ułamek tego, co ma na papierze. */
+ youngRate  : {16:0.40, 17:0.46, 18:0.54, 19:0.62, 20:0.72, 21:0.82, 22:0.90, 23:0.96},
+ /* Serwis posezonowy — zawodowiec musi rozebrać, umyć i złożyć sprzęt. */
+ svcBase    : 12000,
+ svcPerHeat : 1200,
+ svcEquipW  : 140,                          // im lepszy sprzęt, tym droższy serwis
+ /* Odstępne za mechanika: tyle procent ceny odzyskujesz, oddając go dalej. */
+ mechBuyout : 0.35,
+ /* ALIMENTY — jedna zima w Argentynie, osiemnaście lat przelewów.
+    Kwota jest sztywna i schodzi z budżetu po KAŻDYM sezonie, dopóki
+    licznik p.alimony nie zejdzie do zera. Sąd nie interesuje się tym,
+    czy miałeś kontuzję i czy klub ci zapłacił. */
+ alimony    : 45000,
+ alimonyYrs : 18
+};
+ 
+/* ============================================================
+   OCENA SEZONU — WAGI (czyta je seasonScore() w engine.js)
+   Ocena to NIE jest sucha średnia biegowa. Zawodnik, który wrócił
+   z gipsu na cztery mecze i uratował klub w barażu, nie może dostać
+   „BEZNADZIEJNEJ” tylko dlatego, że nie zdążył nabić biegów.
+   ============================================================ */
+const GRADE={
+ shrinkW : 20,    // przy tylu biegach ocena jest w połowie drogi między twoją średnią a średnią ligi
+ neutral : 1.25,  // średnia „szarego zawodnika ligowego” — do niej ciągniemy małe próby
+ volume  : 0.16,  // premia za odjeżdżenie pełnego sezonu
+ champ   : 0.30,  // mistrzostwo ligi
+ podium  : 0.14,  // podium play-off
+ promo   : 0.28,  // awans do wyższej ligi
+ saved   : 0.20,  // utrzymanie wywalczone w play-downie/barażu
+ releg   : -0.12, // spadek
+ dmpj    : 0.18,  // drużynowe mistrzostwo Polski juniorów
+ medal   : [0, 0.34, 0.20, 0.12],  // złoto / srebro / brąz w turnieju indywidualnym
+ injW    : 0.025, // za każde spotkanie opuszczone przez kontuzję (do injMax)
+ injMax  : 0.14,
+ bonusPts: 0.06   // za sezon z 8+ punktami bonusowymi (jazda na kolegę)
+};
+ 
+/* `budget` = z czym wchodzisz w dorosłość. U większości klas jest UJEMNY:
+   bus na kredyt, kevlar na raty, dług u ojca za pierwszy silnik. Pierwsze
+   sezony to nie budowanie majątku, tylko wychodzenie na zero. */
 const CLASSES=[
- {id:'okno', n:'Okno życia',                 ovr:[1,10],  pot:[22,46], prof:[5,30],  med:[0,15], d:'Klub bierze cię, bo ktoś musi wypełnić rubrykę. Jeździsz dla siebie i dla mamy.'},
- {id:'lic',  n:'Licencja żeby klub był bez kar', ovr:[11,25], pot:[34,60], prof:[10,40], med:[0,20], d:'Istniejesz wyłącznie po to, żeby regulamin się zgadzał.'},
- {id:'bez',  n:'Bezjajeczny grajek',         ovr:[26,40], pot:[48,74], prof:[20,55], med:[5,30], d:'Umiesz jeździć, ale w pierwszym łuku zawsze puszczasz gaz.'},
- {id:'pot',  n:'Jakiś potencjał jest',       ovr:[41,50], pot:[60,84], prof:[30,65], med:[10,40],d:'Trener mówi "on ma to coś". Trener mówi tak od czterech lat.'},
- {id:'tal',  n:'Wielki talent',              ovr:[51,60], pot:[72,93], prof:[35,75], med:[20,55],d:'Portale piszą o tobie w każdą środę. Ciśnienie rośnie.'},
- {id:'zma',  n:'Następca Zmarzliny',         ovr:[61,67], pot:[84,99], prof:[40,80], med:[35,75],d:'Etykieta cięższa niż silnik. Albo hala sław, albo hala odlotów.'}
+ {id:'okno', n:'Okno życia',                 ovr:[1,10],  pot:[22,46], prof:[5,30],  med:[0,15], budget:-14000, d:'Klub bierze cię, bo ktoś musi wypełnić rubrykę. Jeździsz dla siebie i dla mamy. Bus po dziadku, rata jeszcze leci.'},
+ {id:'lic',  n:'Licencja żeby klub był bez kar', ovr:[11,25], pot:[34,60], prof:[10,40], med:[0,20], budget:-11000, d:'Istniejesz wyłącznie po to, żeby regulamin się zgadzał.'},
+ {id:'bez',  n:'Bezjajeczny grajek',         ovr:[26,40], pot:[48,74], prof:[20,55], med:[5,30], budget:-8000, d:'Umiesz jeździć, ale w pierwszym łuku zawsze puszczasz gaz.'},
+ {id:'pot',  n:'Jakiś potencjał jest',       ovr:[41,50], pot:[60,84], prof:[30,65], med:[10,40],budget:-5000, d:'Trener mówi "on ma to coś". Trener mówi tak od czterech lat.'},
+ {id:'tal',  n:'Wielki talent',              ovr:[51,60], pot:[72,93], prof:[35,75], med:[20,55],budget:0, d:'Portale piszą o tobie w każdą środę. Ciśnienie rośnie.'},
+ {id:'zma',  n:'Następca Zmarzliny',         ovr:[61,67], pot:[84,99], prof:[40,80], med:[35,75],budget:6000, d:'Etykieta cięższa niż silnik. Albo hala sław, albo hala odlotów.'}
 ];
  
 /* ---------- BAZA KLUBÓW ---------- */
@@ -135,6 +244,48 @@ const fxFit = d => { G.S.equipFit = cl(G.S.equipFit-d,0,100); return 'Dopasowani
 const fxRate= m => { G.S.rateMul *= m; return 'Stawka za punkt w tym sezonie '+(m>=1?'+':'')+Math.round((m-1)*100)+'%'; };
 const fxRateN=m => { G.p.next.rateMul = m; return 'Stawka za punkt w kolejnym sezonie '+(m>=1?'+':'')+Math.round((m-1)*100)+'%'; };
 const fxEnd = why => { G.p.retired=true; G.p.retireReason=why; G.S.forcedEnd=true; return 'KONIEC KARIERY: '+why; };
+
+/* --- WALKOWER — MECZ, KTÓRY SIĘ NIE ODBYŁ ---
+   Wcześniej `G.S.walkower=true` powodowało wyłącznie to, że Gracz nie jechał
+   w jednej kolejce, a mecz i tak rozgrywał się normalnie i wchodził do tabeli
+   z prawdziwym wynikiem. Teraz flaga naprawdę przerywa spotkanie.
+   mode:
+     'lose' — twoja drużyna oddaje mecz walkowerem (0:75), rywal bierze 2 pkt
+     'win'  — rywal się nie stawia (75:0 dla ciebie)
+     'both' — obustronny walkower: 0:0, obie drużyny bez punktów meczowych
+     'void' — mecz nierozegrany i nieweryfikowany (nikt nie dostaje nic)
+   pen — ile punktów w tabeli traci twoja drużyna (przy 'both' traci tyle samo rywal). */
+const fxWalk = (mode, pen) => {
+ G.S.walkower = true;
+ G.S.walkMode = mode || 'lose';
+ G.S.walkPen  = pen || 0;
+ return ({lose:'WALKOWER: oddajecie spotkanie 0:75.',
+          win :'WALKOWER: rywal się nie stawił — 75:0 dla was.',
+          both:'OBUSTRONNY WALKOWER: mecz nieodbyty, 0:0.',
+          void:'MECZ NIEROZEGRANY: wynik anulowany, nikt nie dostaje punktów.'}[G.S.walkMode])
+        + (pen?' Kara w tabeli: -'+pen+' pkt'+(G.S.walkMode==='both'?' dla obu drużyn.':' dla twojej drużyny.'):'');
+};
+
+/* --- BARDZO DŁUGA KONTUZJA — ZERWANE WIĘZADŁA / ZŁAMANE UDO ---
+   Kończy TEN sezon i zabiera CAŁY kolejny (p.longInjury). Czyta to
+   startSeason() i playerRoundStatus() w engine.js. */
+const fxLongInj = (what) => {
+ const p=G.p;
+ p.longInjury = Math.max(p.longInjury||0, INJ.catSeasons);
+ const dmg = R(INJ.catDmgMin, INJ.catDmgMax);
+ p.ovr = cl(p.ovr-dmg, 1, 99);
+ G.S.forcedEnd = true;
+ G.S.longInjuryNew = (what||'Zerwane więzadła krzyżowe.');
+ G.S.longInjuryDmg = dmg;
+ return 'KONIEC SEZONU I CAŁY KOLEJNY ROK POZA TOREM: '+(what||'zerwane więzadła krzyżowe')+
+        ' (-'+dmg+' OVR). Operacja, rehabilitacja, powrót najwcześniej za dwa lata.';
+};
+
+/* --- ALIMENTY --- */
+const fxAlimony = () => {
+ G.p.alimony = ECON.alimonyYrs;
+ return 'ALIMENTY DO ARGENTYNY: '+zl(ECON.alimony)+' co sezon przez '+ECON.alimonyYrs+' lat.';
+};
  
 const EVENTS=[
  
@@ -274,7 +425,7 @@ const EVENTS=[
  x:'Przyjeżdżasz na mecz, na którym gospodarz przygotował tor tak przyczepny, że koledzy z drużyny wywracają się już na próbie toru.',
  cond:(p,c,S)=>S.round>0,
  o:[
-  {l:'Buntuję ekipę i odmawiamy startu.', f:()=>{const l=[fxA(2), 'Rywal wygrywa walkowerem 75:0.'];G.S.walkower=true;
+  {l:'Buntuję ekipę i odmawiamy startu.', f:()=>{const l=[fxA(2), fxWalk('lose',0)];
      if(chance(20)) l.push(fxBan(1)+' — PZM uznał odmowę za twoją inicjatywę'); return l;}},
   {l:'Odjeżdżam pełne spotkanie.', f:()=>[fxP(3), fxI(10)]}
  ]},
@@ -284,8 +435,8 @@ const EVENTS=[
  o:[
   {l:'Męska decyzja — odjeżdżamy spotkanie.', f:()=>[fxP(6), fxA(6)]},
   {l:'Odwołujemy spotkanie.',                 f:()=>[fxP(-2), fxA(-2)]},
-  {l:'Sędzia mówi, że tor jest dobry — razem z rywalami odmawiamy jazdy.', f:()=>{G.S.walkower=true;G.S.teamPts-=1;
-     return [fxP(-7), fxM(15), 'Obustronny walkower, obie drużyny tracą po punkcie w tabeli.'];}}
+  {l:'Sędzia mówi, że tor jest dobry — razem z rywalami odmawiamy jazdy.', f:()=>{
+     return [fxP(-7), fxM(15), fxWalk('both',1), 'Obustronny walkower, obie drużyny tracą po punkcie w tabeli.'];}}
  ]},
 {id:'przerwanie', t:'CZEKANIE NA PRZERWANIE WYŚCIGU',
  x:'W trakcie meczu rywal wsadza cię w płot na przeciwległej prostej. Leżysz w trawie, silniki jeszcze pracują.',
@@ -293,7 +444,12 @@ const EVENTS=[
  o:[
   {l:'Nic nie robię.', f:()=>[fxP(3)]},
   {l:'Mówię w wywiadzie, że to kawał szmaty i nic więcej.', f:()=>[fxM(6), fxP(-2)]},
-  {l:'Wstaję i stoję na środku toru, aż sędzia przerwie wyścig.', f:()=>[fxP(-7), fxM(15), 'Czerwona kartka — wykluczenie z meczu.', fxBan(1)]}
+  {l:'Wstaję i stoję na środku toru, aż sędzia przerwie wyścig.', f:()=>{
+     const l=[fxP(-7), fxM(15), 'Czerwona kartka — wykluczenie z meczu.', fxBan(1)];
+     /* Stanie na torze przy pracujących silnikach to nie protest, to loteria. */
+     if(chance(12)) l.push('Ostatni zawodnik nie zdążył zejść z gazu i wjechał w ciebie.',
+                           fxLongInj('wieloodłamowe złamanie kości udowej po wjechaniu przez rywala'));
+     return l;}}
  ]},
 {id:'lis', t:'SĘDZIA LIS WYKLUCZA CIĘ NIESŁUSZNIE',
  x:'Dokładnie tak samo, jak w poprzednim biegu wyglądała próba rywala — tam było czysto. Czerwona lampa, ty stoisz z rozłożonymi rękami, stadion buczy.',
@@ -448,6 +604,8 @@ const EVENTS=[
  x:'Klub z Zielonej Góry zaprasza cię na darmowy pobyt w hotelu Qubus. Pokój z widokiem, siłownia w cenie.',
  o:[
   {l:'Korzystam z gościnności i ćwiczę na siłowni.', f:()=>{ if(chance(85)) return [fxO(2)+' (trzy dni porządnej pracy)'];
+     if(chance(35)) return ['Widzisz klamkę. Potem szpital.',
+                            fxLongInj('złamana kość udowa — sztyft, sześć miesięcy o kulach')];
      G.S.forcedEnd=true;return ['Widzisz klamkę. Potem szpital.','Koniec sezonu.'];}},
   {l:'Nigdzie nie jadę.', f:()=>['Zostajesz w domu. Nic się nie dzieje.']}
  ]},
@@ -731,7 +889,11 @@ const EVENTS=[
  x:'Zdjęcie RTG nie pozostawia złudzeń. Trener stoi obok i patrzy na ciebie tym jednym spojrzeniem, które wszyscy w tym sporcie znają.',
  cond:(p,c,S)=>S.round>=10,
  o:[
-  {l:'Jadę na zastrzykach.',        f:()=>[fxM(10), fxP(10), fxOB(-3)+' (jedziesz jedną ręką)', fxI(30)]},
+  {l:'Jadę na zastrzykach.',        f:()=>{
+     const l=[fxM(10), fxP(10), fxOB(-3)+' (jedziesz jedną ręką)', fxI(30)];
+     if(chance(14)) l.push('Ręka puściła kierownicę w pierwszym łuku barażu.',
+                           fxLongInj('zerwane więzadła w kolanie i otwarte złamanie udu po upadku z niedoleczoną ręką'));
+     return l;}},
   {l:'Leczę się jak dorosły człowiek.', f:()=>[fxBan(3), fxM(-5), fxO(2)+' — ciało wreszcie odpoczęło']}
  ]},
 {id:'dietetyk', t:'DIETETYK Z INSTAGRAMA',
@@ -746,9 +908,11 @@ const EVENTS=[
  o:[
   {l:'Jadę, bo co może się złego wydarzyć.', f:()=>{const r=R(1,100);
      if(r<=30) return [fxO(2), fxH(5), fxA(1)];
-     if(r<=60) return ['Trzy weekendy w błocie. Zero efektu.'];
-     if(r<=90){G.S.forcedEnd=true;return ['Wpadka dopingowa — zawieszenie do końca sezonu.'];}
-     if(r<=98) return ['Otarcia, siniaki i nic więcej.'];
+     if(r<=58) return ['Trzy weekendy w błocie. Zero efektu.'];
+     if(r<=86){G.S.forcedEnd=true;return ['Wpadka dopingowa — zawieszenie do końca sezonu.'];}
+     if(r<=92) return ['Otarcia, siniaki i nic więcej.'];
+     if(r<=99) return ['Zeskok z hopy, kolano zostaje w koleinie.',
+                       fxLongInj('zerwane więzadła krzyżowe w kolanie na treningu crossowym')];
      return [fxEnd('poważny uraz kręgosłupa na crossie — renta')];}},
   {l:'Nie będę się rozpraszać bzdurami.', f:()=>[fxP(3)]}
  ]},
@@ -808,15 +972,16 @@ const EVENTS=[
  o:[
   {l:'To wielka szansa — jedziemy.', f:()=>{G.S.noRenew=true;
      return [fxM(12), fxP(10), fxI(25), 'Klub nie przedłuży z tobą umowy — prezeska zapamiętała.'];}},
-  {l:'Wracamy do Rzeszowa.', f:()=>{G.S.walkower=true;
-     return [fxP(-15), fxM(-15), fxFine(15000)+' z PZM', fxK(-3000)+' na lakierowanie obrzuconego busa', 'Mecz kończy się wynikiem 0:75.'];}}
+  {l:'Wracamy do Rzeszowa.', f:()=>{
+     return [fxP(-15), fxM(-15), fxFine(15000)+' z PZM', fxK(-3000)+' na lakierowanie obrzuconego busa',
+             fxWalk('lose',0), 'Mecz kończy się wynikiem 0:75.'];}}
  ]},
 {id:'rozdzielnia', t:'ROZDZIELNIA PRĄDU',
  x:'Drużyna jedzie fatalny mecz rewanżowy w finale o awans. Od ciebie zależy, czy to spotkanie w ogóle zostanie dokończone.',
  cond:(p,c,S)=>S.round>=14,
  o:[
-  {l:'Proszę prezesa o zajebanie siekierą w rozdzielnię.', f:()=>{G.S.walkower=true;
-     return ['Mecz odwołany przy stanie, którego nikt już nie policzy.', fxM(12), fxP(-10)];}},
+  {l:'Proszę prezesa o zajebanie siekierą w rozdzielnię.', f:()=>{
+     return ['Mecz odwołany przy stanie, którego nikt już nie policzy.', fxWalk('void',0), fxM(12), fxP(-10)];}},
   {l:'Odjeżdżam mecz do końca.', f:()=>{G.S.teamPts-=2;
      return [fxP(7), 'Brak awansu — rywal był po prostu lepszy.'];}}
  ]},
@@ -831,8 +996,9 @@ const EVENTS=[
  x:'Sędzia Lis źle kliknął cyferki w kalkulatorze i przez ciebie jest walkower. Łysa pała z telewizji już biegnie z mikrofonem.',
  cond:(p,c,S)=>S.round>=14,
  o:[
-  {l:'Płaczę, że to nie moja wina.', f:()=>{G.S.walkower=true;return [fxM(10), fxP(-10), 'Walkower — omijasz to spotkanie.'];}},
-  {l:'Odmawiam wywiadu przez „problemy żołądkowe”.', f:()=>{G.S.walkower=true;return [fxM(-10), fxFine(10000), 'Walkower — omijasz to spotkanie.'];}}
+  {l:'Płaczę, że to nie moja wina.', f:()=>[fxM(10), fxP(-10), fxWalk('lose',0)],
+  },
+  {l:'Odmawiam wywiadu przez „problemy żołądkowe”.', f:()=>[fxM(-10), fxFine(10000), fxWalk('lose',0)]}
  ]},
 {id:'quad', t:'ŚWIĘTOWANIE NA QUADZIE',
  x:'Po zwycięstwie w pierwszym meczu finałowym atmosfera na stadionie jest znakomita, ale przed wami wciąż rewanż decydujący o awansie.',
@@ -931,14 +1097,19 @@ const EVENTS=[
 {id:'swistek', t:'ŚWISTEK W GORZOWIE',
  x:'W parku maszyn podchodzi do ciebie człowiek w kurtce klubowej ze świstkiem A5. „Podpisz tu, to formalność, kwestie regulaminowe”. Nie ma nagłówka, nie ma pieczątki. Jest rubryka „oświadczam, że odmawiam…”.',
  o:[
-  {l:'Podpisuję.', f:()=>{G.S.walkower=true;G.S.teamPts-=1;
-     return [fxFine(10000)+' z PZM', fxM(5)+' (świstek wyciekł do mediów)', 'Następny mecz: obustronny walkower, obie drużyny tracą po punkcie.'];}},
+  {l:'Podpisuję.', f:()=>{
+     return [fxFine(10000)+' z PZM', fxM(5)+' (świstek wyciekł do mediów)', fxWalk('both',1),
+             'Następny mecz: obustronny walkower, obie drużyny tracą po punkcie.'];}},
   {l:'Nie podpisuję.', f:()=>[fxI(25)+' w najbliższej kolejce', 'Jedziesz na torze, na który nikt nie chciał wyjechać.']}
  ]},
 {id:'rempala', t:'DUCH KRYSTIANA REMPAŁY',
  x:'O 3:14 w nocy na parkingu przy stodole materializuje się postać w biało-niebieskim kevlarze. Trzyma biały kask z napisem „RECEPTA NA SUKCES” i chce ci sprzedać patent na lepszą aerodynamikę.',
  o:[
-  {l:'Słuchasz go.',     f:()=>[fxO(3)+' — nagle rozumiesz pierwszy łuk', fxI(50)+' (duch nie mówił o hamowaniu)']},
+  {l:'Słuchasz go.',     f:()=>{
+     const l=[fxO(3)+' — nagle rozumiesz pierwszy łuk', fxI(50)+' (duch nie mówił o hamowaniu)'];
+     if(chance(10)) l.push('Patent na aerodynamikę zadziałał. Hamowanie już nie.',
+                           fxLongInj('zerwane więzadła i złamane udo po wjechaniu w bandę na pełnym gazie'));
+     return l;}},
   {l:'Nie słuchasz go.', f:()=>{const k=R(1000,5000);return ['Odganiasz ducha kaskiem.', fxK(k)+' od producenta kasków za tę reklamę'];}}
  ]},
 {id:'gaczorek', t:'GACZOREK AI DOSTAJE AKTUALIZACJĘ',
@@ -947,12 +1118,145 @@ const EVENTS=[
   {l:'Korzystam — ale ktoś kabluje.', f:()=>[fxO(R(-3,3))+' (algorytm to loteria)', fxM(-10), fxP(-10)]},
   {l:'„Sam sobie poradzisz”.', f:()=>['Ustawiasz na czuja, jak dziadek. Nic się nie zmienia.']}
  ]},
+/* ===== MIĘDZYSEZONIE: KUSZENIE PRZEZ RYWALA =====
+   (IM ARGENTYNY przeniesione do WINTER_EVENTS — patrz niżej) */
+{id:'kuszenie', t:'KUSZENIE PRZEZ INNY KLUB — RYWAL PŁACI KARĘ UMOWNĄ',
+ x:()=>{const t=temptClub(); return 'Masz podpisane jeszcze '+G.p.contract.years+' lata. Menedżer '+
+   (t?esc(t.name):'bogatszego klubu')+' mówi wprost: „karę umowną bierzemy na siebie, prezes twojego klubu dostanie przelew, '+
+   'a ty busa i stawkę, o jakiej tam nie pomarzysz”. Wszystko na parkingu przed halą, bez świadków.';},
+ /* Tylko przy DŁUGIM, wciąż trwającym kontrakcie i realnym klubie */
+ cond:(p,c,S)=>!!c && p.contract.years>=2 && !!temptClub(),
+ w:6,
+ o:[
+  {l:'Biorę kasę i jadę. Lojalność nie płaci rat za busa.', f:()=>{
+     const t=temptClub();
+     const kara=R(60000,140000);
+     G.p.contract.years=1;                       // umowa kończy się z tym sezonem
+     G.p.next.forceClub = t ? t.name : 'weak';
+     G.S.noRenew=true;
+     return [fxK(kara)+' „premii lojalnościowej” od nowego pracodawcy',
+             fxL(-45), fxP(-12), fxM(10),
+             'Kara umowna zapłacona przez '+(t?t.name:'nowy klub')+'. Twój stary prezes dowiedział się z portalu.',
+             'PO SEZONIE PRZECHODZISZ DO: '+(t?t.name:'losowego klubu')+'.']; }},
+  {l:'Mam umowę i mam słowo. Zostaję.', f:()=>{
+     const t=temptClub();
+     return [fxL(18), fxP(10), fxM(-4),
+             'Menedżer '+(t?t.name:'rywala')+' wyszedł bez pożegnania. Szatnia i sektor B dowiedzieli się, że odmówiłeś.']; }}
+ ]},
 {id:'slowacja', t:'ZAPROSZENIE ZE SŁOWACJI',
  x:'Martin ze Słowacji zaprasza cię do znajomych na Facebooku, a w wiadomości ma już gotową propozycję kontraktu i zdjęcie toru w Żarnovicy.',
  o:[
   {l:'Akceptuję.', f:()=>{G.p.next.forceClub='weak';G.p.next.rateMul=1.4;
      return ['Transfer do losowego klubu z najniższej ligi — za to z wysoką stawką za punkt.', fxP(-5)];}},
   {l:'Odrzucam.',  f:()=>[fxL(3)]}
+ ]}
+];
+
+/* ============================================================
+   3-bis. ZDARZENIA MIĘDZYSEZONOWE (PRZERWA ZIMOWA)
+   ------------------------------------------------------------
+   OSOBNA PULA, odpalana WYŁĄCZNIE między sezonami: po resolveSeason()
+   i PRZED makeOffers() (patrz rollWinterEvent() / scWinter w engine.js
+   i index.html). Dzięki temu „zima w Argentynie" nie trafia się już
+   w środku okresu startowego, a jej skutki (OVR, sprzęt, gotówka,
+   alimenty, wymuszony transfer) są widoczne jeszcze przed okienkiem
+   transferowym — dokładnie tak, jak w życiu.
+
+   UWAGA DLA AUTORÓW NOWYCH ZDARZEŃ ZIMOWYCH:
+   w przerwie zimowej NIE MA obiektu sezonu (G.S jest wyzerowany do
+   pustego kontekstu), więc nie używamy tu fxA / fxT / fxOB / fxH / fxI
+   ani fxBan — one dotyczą TRWAJĄCEGO sezonu. Zamiast nich:
+     fxHN  — szanse na biegi w KOLEJNYM sezonie
+     fxIN  — ryzyko urazu w KOLEJNYM sezonie
+     fxRateN, G.p.next.* — wszystko, co ma zadziałać po okienku
+   cond dostaje (p, c, S) tak jak zwykle, ale S to pusty kontekst zimowy
+   ({winter:true, round:0, matches:0}).
+   ============================================================ */
+const WINTER_EVENTS=[
+
+{id:'argentyna_im', t:'INDYWIDUALNE MISTRZOSTWA ARGENTYNY',
+ x:()=>'Zima. Faks (tak, faks) z Buenos Aires: zaproszenie na cykl turniejów o mistrzostwo Argentyny. '+
+       'Twój OVR ('+G.p.ovr+') mieści się dokładnie w przedziale, którego szukają: ktoś z Europy, kto nie jest gwiazdą '+
+       'i zgodzi się jechać za bilet oraz asado. Liga rusza za sześć tygodni.',
+ /* TYLKO ŚREDNI OVR. `noArg` = spaliłeś most, sprzedając Argentyńcowi oklejony złom. */
+ cond:(p)=>p.ovr>=45 && p.ovr<=75 && !p.next.noArg,
+ w:10,
+ o:[
+  {l:'Jadę na własny koszt — zima w Argentynie brzmi lepiej niż Mietek.', f:()=>{
+     const koszt=R(25000,40000);
+     const l=[fxK(-koszt)+' za bilety i transport sprzętu'];
+     /* --- CZĘŚĆ SPORTOWA: bez zmian względem starej wersji (zysk OVR / utrata sprzętu / upadek) --- */
+     const r=R(1,100);
+     if(r<=30){ const nagr=R(60000,110000);
+       l.push('WYGRYWASZ CAŁY CYKL. Mistrz Argentyny.', fxO(3), fxM(8), fxK(nagr)+' nagród i startowego', fxP(4)); }
+     else if(r<=70){
+       l.push('Linia lotnicza zgubiła skrzynię ze sprzętem. Znalazła się. W Limie. Po sezonie.',
+              fxE(-20), fxK(-R(20000,45000))+' na sprzęt zastępczy i odprawy celne',
+              fxM(5)+' (płacz na wizji obejrzała cała Polska)'); }
+     else {
+       l.push('Upadek na twardym torze w Prowincji Buenos Aires na tydzień przed startem ligi.',
+              fxIN(25)+' (plecy pamiętają ten tor)', fxO(1)+' (jazdy jednak trochę było)'); }
+     /* --- TWARDE 10%: WPADKA Z ARGENTYNKĄ ---
+        Losowane NIEZALEŻNIE od wyniku sportowego: możesz wrócić jako mistrz
+        Argentyny i z alimentami na osiemnaście lat. */
+     if(chance(10)){
+       l.push('Valentina z Mar del Plata. Trzy tygodnie, jedno asado i telefon w lipcu: będzie dziecko.',
+              fxAlimony(),
+              fxM(6)+' (temat obiegł wszystkie portale)', fxP(-6));
+     }
+     return l; }},
+  {l:'Zostaję trenować u Mietka. Przysiady na czas, ale u siebie.',
+   f:()=>[fxO(1), fxP(4), 'Bez fajerwerków. Za to bez gipsu, bez faktur z lotniska i bez alimentów.']}
+ ]},
+
+{id:'zima_hiszpania', t:'ZIMOWE ZGRUPOWANIE W ALMERII',
+ x:'Grupa zawodników leci na trzy tygodnie do Almerii: tor, siłownia, dietetyk i zero wymówek. Cena za osobę robi wrażenie.',
+ cond:(p)=>p.budget>=80000,
+ w:4,
+ o:[
+  {l:'Lecę. Trzy tygodnie jazdy w styczniu robią sezon.', f:()=>[fxK(-80000), fxO(3), fxP(5), fxHN(5)]},
+  {l:'Siłownia u pana Mietka na osiedlu.', f:()=>[fxO(1), fxM(-4)+' — inni wrzucali story z plaży']}
+ ]},
+
+{id:'zima_warsztat', t:'ZIMA W WARSZTACIE ALBO ZIMA W WERANDZIE',
+ x:'Cztery miesiące bez meczu. Mechanik rozłożył silniki na części i pyta, czy przyjeżdżasz to składać, czy on ma to zrobić sam.',
+ w:3,
+ o:[
+  {l:'Siedzę z nim w warsztacie do lutego.', f:()=>[fxP(8), fxE(6), fxM(-4)+' — zniknąłeś z internetu']},
+  {l:'Zima jest raz w roku. Weranda też.',   f:()=>[fxM(8), fxP(-8), fxE(-4), fxIN(8)+' (kondycja po zimie)']}
+ ]},
+
+{id:'zima_menedzer', t:'MENEDŻER DZWONI PRZED OKIENKIEM',
+ x:'„Mam dla ciebie dwa telefony, ale musisz mi obiecać, że nie podpiszesz nic bez mojej wiedzy”. Chce 15% i zaliczkę na paliwo.',
+ w:3,
+ o:[
+  {l:'Niech dzwoni. 15% to 15%.', f:()=>{G.p.next.betterOffers=true;
+     return [fxK(-8000)+' zaliczki', 'Menedżer obdzwonił ligę — w tym okienku dostajesz lepsze oferty.'];}},
+  {l:'Sam sobie zadzwonię.', f:()=>[fxP(5)]}
+ ]},
+
+{id:'zima_operacja', t:'ZIMOWA OPERACJA — „TO TRZEBA WRESZCIE POSKŁADAĆ”',
+ x:'Ortopeda oglądał zdjęcia z całej kariery i mówi wprost: albo teraz płytka i śruby, albo za dwa lata koniec.',
+ cond:(p)=>p.career.seasons>=3 && p.age>=24,
+ w:3,
+ o:[
+  {l:'Kładę się na stół w grudniu.', f:()=>[fxK(-35000)+' za zabieg poza kolejką', fxO(2), fxIN(-15)+' (wreszcie poskładany)', fxP(6)]},
+  {l:'Pojadę na zastrzykach, jak zawsze.', f:()=>[fxIN(18), fxM(3)]}
+ ]},
+
+{id:'zima_alimenty', t:'LIST Z SĄDU RODZINNEGO',
+ x:()=>'Koperta z Buenos Aires przez polski sąd. Zostało rat: '+(G.p.alimony||0)+'. Adwokat proponuje wniosek o obniżenie kwoty.',
+ /* Odpala się TYLKO wtedy, gdy naprawdę płacisz alimenty */
+ cond:(p)=>(p.alimony||0)>0,
+ w:8,
+ o:[
+  {l:'Płacę adwokatowi i walczę o obniżkę.', f:()=>{
+     const l=[fxK(-12000)+' zaliczki dla adwokata'];
+     if(chance(35)){ G.p.alimony=Math.max(0,G.p.alimony-4);
+       l.push('Sąd skrócił obowiązek o 4 lata. Zostało rat: '+G.p.alimony+'.'); }
+     else l.push('Wniosek odrzucony. Zostało rat: '+G.p.alimony+'.');
+     return l;}},
+  {l:'Płacę i nie komentuję.', f:()=>[fxP(4), 'Rat do zapłaty: '+(G.p.alimony||0)+'.']}
  ]}
 ];
  
@@ -966,7 +1270,58 @@ const BANKRUPTCY={
  onSpoloss : 100,        // % szans po UTRACIE SPÓŁKI SKARBU PAŃSTWA z dziurą w kasie
  deepMinus : 0.25,       // "potężny minus" = budżet poniżej -25% kosztów sezonu
  debtLimit : 3000000,    // powyżej tego długu (3 mln zł) wchodzi syndyk...
- onDebt    : 50          // ...z taką szansą (przy ujemnym budżecie)
+ onDebt    : 50,         // ...z taką szansą (przy ujemnym budżecie)
+ onSponsorRun : 75       // % szans na syndyka, gdy sponsor z Grupy B uciekł i została dziura
+};
+
+/* ============================================================
+   SPONSORZY TYTULARNI — DWIE LIGI, DWA ŚWIATY
+   ------------------------------------------------------------
+   Klub może mieć w nazwie od 1 do 3 sponsorów tytularnych. Nazwa składa się
+   z ich nazw doklejonych PRZED nazwą bazową klubu, np.:
+       "Złomrex MojeKajmany META Gniezno"
+   Obsługa siedzi w clubEconomy() (silnik) i applyPendingSponsors() (nowy rok).
+
+   GRUPA A — bieda, ale stabilnie. Mały zastrzyk gotówki co sezon, zero ryzyka.
+   GRUPA B — oszuści. Ogromny hajs przy wejściu, po 1-2 sezonach ucieczka,
+             potężna dziura w kasie i syndyk. Uciekinier ląduje w
+             G.bannedSponsors i NIGDY nie wraca do gry.
+   ============================================================ */
+const SPONSORS_A=[
+ 'Marne Polskie Kondomy','Miliard TEAM','Wenus RTV AGD','Punkt G','Judyta','Bractwo','Złomrex',
+ 'Dundersztyc','Murzynianka','ZGP Komputery','MojeKajmany','Retard','Polska Grupa Biedy',
+ 'Grupa Kłopoty','H. Nielot Usługi Pogrzebowe','Eko-Dno','Salami Kabanos','Drewnospan','Cell-slow',
+ 'Farma Polskie Folie','Dusz-pel','Półbax','Zdu-pol','Aluminium','Tor-Złom','Pogo','Mróz-Pol',
+ 'Kantor w Budzie','Amator','Błotos','Siko','Kałum','Wena','Najs','Globus'
+];
+const SPONSORS_B=[
+ 'Piusa X','Polnord','AmberGold','Browary Starego','Morawiecki','Jeanette','Trabant','Video-Brud',
+ 'Twoje Guantanamo','składypapy.pl','Guns&Roses Recycling','KJG Company','Auto Nie-Gwarant',
+ 'Aferti Financial','Diamentowe Czeki Nawrota','Get Lost','eFrajer','Wał-ron','Kredyty Pętla',
+ 'Kapi-Wał','Fin-Zawał','Tax-Off','Cipciarz.com','ZOOleszczyk','Bory-Szef','Węglo-Brak','H-Zero',
+ '7Z','Opatrzność Finanse','Ślepy Traf Bookmacher','Fundusz Bezprawia'
+];
+const SPON={
+ max        : 3,          // maksymalnie tyle sponsorów tytularnych w nazwie
+ addBase    : 30,         // % szans na dopięcie KOLEJNEGO sponsora w danym sezonie
+ addPerHave : 11,         // ...minus tyle p.p. za każdego, którego klub już ma
+ addPoor    : 12,         // +tyle p.p., gdy klub jest pod kreską (desperacja zarządu)
+ bChance    : 5,          // % — jeżeli już dopina sponsora, to z takim prawdopodobieństwem z GRUPY B
+                          //     (celowo bardzo mało: jedna afera na kilka sezonów w całej lidze,
+                          //      inaczej syndyk chodziłby po klubach co roku)
+ /* GRUPA A: mały, przewidywalny zastrzyk co sezon (skalowany poziomem ligi) */
+ aCash      : [0.010, 0.045],
+ /* GRUPA B: wielkie wejście, a potem dziura */
+ bCash      : [0.55, 1.35],   // × roczne wpływy przeciętnego klubu ligi
+ bLife      : [1, 2],         // po tylu sezonach uciekają
+ bHole      : [1.15, 2.30],   // dziura zostawiona w kasie = tyle × kwota wejścia
+ bArrShare  : 0.35,           // ...z czego tyle ląduje jako zaległości wobec kadry
+ /* KARA ZA BYCIE SŁUPEM OGŁOSZENIOWYM (kumulatywnie, wg liczby sponsorów) */
+ ovrPen     : [0, 0, -2, -5],
+ /* Zawodnik z profesjonalizmem powyżej tej wartości nie podpisze z klubem,
+    który ma 2-3 sponsorów tytularnych w nazwie (patrz makeOffers). */
+ profBlock  : 50,
+ profBlockFrom : 2
 };
  
 const IMIE=['Bartosz','Maciej','Patryk','Dawid','Kacper','Szymon','Mateusz','Jakub','Wiktor','Damian',
@@ -980,5 +1335,3 @@ const NAZW=['Nowak','Wiśniewski','Wójcik','Kamiński','Zieliński','Szymański
  'Zawadzki','Sadowski','Chmielewski','Włodarczyk','Borkowski','Czarnecki','Sawicki','Sokołowski','Urbański',
  'Kubiak','Maciejewski','Szczepański','Kucharski','Wilk','Kalinowski','Mazurek','Wysocki','Adamski',
  'Kaźmierczak','Sobczak','Czerwiński','Konieczny','Kaczmarek','Głowacki','Bednarek','Ziółkowski'];
-
-

@@ -23,6 +23,108 @@ const esc= s => String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt
 const shuffle=a=>{const b=a.slice();for(let i=b.length-1;i>0;i--){const j=R(0,i);[b[i],b[j]]=[b[j],b[i]];}return b;};
  
 /* ============================================================
+   WIEK EMERYTALNY — LICZONY, NIE WPISANY NA SZTYWNO
+   Wcześniej kariera kończyła się zawsze na 40. urodzinach, niezależnie
+   od tego, czy zawodnik był zawodowcem z fizjoterapeutą, czy człowiekiem,
+   który regenerację rozumie jako drugie piwo. Teraz granicę wyznaczają
+   PROFESJONALIZM (główny czynnik) i OVR (talent, za który klub jeszcze płaci).
+   Progi siedzą w RETIRE w data.js.
+   ============================================================ */
+function retireAgeOf(p){
+ if(!p) return RETIRE.max;
+ const prof=cl(p.prof||0,0,99), ovr=cl(p.ovr||1,1,99);
+ let a = RETIRE.base + (prof/99)*RETIRE.profSpan;
+ const t = (ovr-RETIRE.ovrRef)/(99-RETIRE.ovrRef);        // >0 = talent ponad przeciętną
+ a += t>=0 ? cl(t,0,1)*RETIRE.ovrSpan : cl(t,-1,0)*(-RETIRE.ovrFloor);
+ return cl(Math.round(a), RETIRE.min, RETIRE.max);
+}
+/* Czy TEN rok jest ostatnim? Zwraca powód (string) albo null.
+   Tuż pod wyliczoną granicą wchodzi loteria — im gorszy profesjonalizm,
+   tym większa szansa, że ciało wysiądzie rok czy dwa wcześniej. */
+function retireCheck(p){
+ const lim=retireAgeOf(p);
+ if(p.age>=lim)
+   return 'Wiek. Przy profesjonalizmie '+p.prof+' i OVR '+p.ovr+' twoje ciało kończy karierę w wieku '+lim+' lat.';
+ if(p.age>=Math.max(lim-RETIRE.wobbleFrom, RETIRE.wobbleMin||30) &&
+    chance(RETIRE.wobbleP*(1-cl(p.prof,0,99)/99)))
+   return 'Ciało odmówiło wcześniej, niż wynikało z papierów (granica: '+lim+' lat). Przy takim profesjonalizmie regeneracja to loteria.';
+ return null;
+}
+/* ---------- EKONOMIA GRACZA: KOSZTY ŻYCIA I MNOŻNIK WIEKU ---------- */
+function livingCostOf(p, idle){
+ const lk = (p.lk && ECON.liveLeague[p.lk]) ? p.lk : 'KL';
+ let c = (ECON.liveBase + Math.max(0,(p.age||18)-18)*ECON.liveAge) * ECON.liveLeague[lk];
+ if(idle) c *= ECON.liveIdle;
+ else if(p.contract && p.contract.type==='Amatorski') c *= ECON.liveAmat;
+ return Math.round(c);
+}
+/* Młody nie dostaje stawki seniora, choćby miał ją wpisaną w umowie. */
+function youngRateMul(p){ return ECON.youngRate[p.age] || 1; }
+
+/* ============================================================
+   ALIMENTY DO ARGENTYNY — 45 000 ZŁ CO SEZON
+   Jedno miejsce dla całej gry: wołane z resolveSeason() (po rozegranym
+   sezonie), ale też ze skipYear() i mechanicPath() — sąd nie robi przerwy
+   tylko dlatego, że nie miałeś kontraktu. Zwraca null albo {amount, left}.
+   ============================================================ */
+function chargeAlimony(p){
+ p = p || (typeof G!=='undefined' && G ? G.p : null);
+ if(!p || !(p.alimony>0)) return null;
+ const amount = ECON.alimony;
+ p.budget -= amount;
+ p.alimony = Math.max(0, p.alimony-1);
+ p.career.alimony = (p.career.alimony||0) + amount;
+ return {amount, left:p.alimony};
+}
+ 
+/* ---------- KLUB, KTÓRY CIĘ KUSI (event „KUSZENIE PRZEZ INNY KLUB") ----------
+   Wybór jest stabilny w obrębie sezonu: opis eventu i jego skutek muszą
+   mówić o TYM SAMYM klubie. */
+function temptClub(){
+ try{
+  const p=(typeof G!=='undefined'&&G)?G.p:null; if(!p) return null;
+  const c=clubOf(p); if(!c) return null;
+  const pool=allClubs().filter(x=>x.name!==c.name && !x.bankrupt && x.ovr>=c.ovr+3 && (x.budget||0)>200000);
+  if(!pool.length) return null;
+  if(G.S && G.S.temptClub){ const f=pool.find(x=>x.name===G.S.temptClub); if(f) return f; }
+  const sorted=pool.sort((a,b)=>b.ovr-a.ovr);
+  const hit=sorted[R(0,Math.min(3,sorted.length-1))];
+  if(G.S) G.S.temptClub=hit.name;
+  return hit;
+ }catch(_){ return null; }
+}
+ 
+/* ============================================================
+   ANTY-KLON: OVR W OBRĘBIE JEDNEJ DRUŻYNY MUSI SIĘ RÓŻNIĆ
+   Skąd brały się identyczne OVR? Z trzech miejsc naraz:
+     · pięciu zawodników pierwszej piątki losowano z JEDNEGO rozkładu
+       gauss(L-1, 4.2), a wynik obcinano do 99 — w klubie o OVR 93-95
+       kilku z nich lądowało dokładnie na suficie,
+     · genAllSquads() dostrajało kadrę, dodając WSZYSTKIM tę samą liczbę,
+     · applySquadOvr() i korekta driftu w ageRiders() robiły to samo po sezonie.
+   Zaokrąglenie do liczby całkowitej dokańczało dzieła. Ten przebieg
+   rozsuwa kolizje o 1 pkt (najpierw w dół, potem w górę), zachowując
+   kolejność siły w drużynie. Gracza (r.me) nigdy nie ruszamy.
+   ============================================================ */
+function dedupeSquadOvr(name){
+ const all=squadOf(name);
+ if(all.length<2) return;
+ const taken=new Set(all.filter(r=>r.me).map(r=>cl(Math.round(r.ovr),1,99)));
+ all.filter(r=>!r.me).sort((a,b)=>b.ovr-a.ovr).forEach(r=>{
+   let v=cl(Math.round(r.ovr),1,99);
+   if(!taken.has(v)){ taken.add(v); r.ovr=v; return; }
+   let nv=null;
+   for(let d=1; d<=14 && nv===null; d++){
+     if(v-d>=1  && !taken.has(v-d)) nv=v-d;
+     else if(v+d<=99 && !taken.has(v+d)) nv=v+d;
+   }
+   r.ovr = nv===null ? v : nv;
+   taken.add(r.ovr);
+ });
+}
+function dedupeAllSquads(){ allClubs().forEach(c=>{ dedupeSquadOvr(c.name); }); }
+ 
+/* ============================================================
    BALANS SILNIKA — SKALA 1:1
    OVR zawodnika i OVR klubu leżą na tej samej skali. Klub 95 to klub,
    w którym pierwsza piątka kręci się w okolicach 95. Punktem odniesienia
@@ -59,7 +161,13 @@ function newGame(){
   leagues:BASE_LEAGUES(),
   tables:{}, results:{}, playoff:null, promo:[], bankrupts:[], greenTable:[],
   p:null, last:null, history:[], log:[], ev:null, S:null,
-  phase:{}, riders:[], recIMP:[], recMIMP:null, meForm:0
+  phase:{}, riders:[], recIMP:[], recMIMP:null, meForm:0,
+  /* --- SPONSORZY TYTULARNI ---
+     bannedSponsors: firmy z Grupy B, które już raz uciekły z kasą — znikają z gry na zawsze.
+     sponsorRenames: zmiany nazw klubów czekające na wejście w nowym roku (do raportu w UI). */
+  bannedSponsors:[], sponsorRenames:[], renamed:{},
+  /* --- ZDARZENIE MIĘDZYSEZONOWE (przerwa zimowa) --- */
+  wev:null, wevLog:[], wevTitle:null, wevChoice:null, wevAfter:'hub'
  };
 }
  
@@ -69,17 +177,21 @@ function newPlayer(name,clsId){
   name, cls:c.n, clsId,
   age:16, ovr:R(c.ovr[0],c.ovr[1]), pot:R(c.pot[0],c.pot[1]),
   prof:R(c.prof[0],c.prof[1]), med:R(c.med[0],c.med[1]),
-  budget:0, equip:20, mech:25, mechName:'Mechanik klubowy (z łapanki)',
+  budget:(c.budget||0), equip:20, mech:25, mechName:'Mechanik klubowy (z łapanki)', mechCost:0,
   loyalty:0, club:null, lk:null,
   contract:{type:'Amatorski', years:1, rate:R(150,350), bonus:0},
   banSeasons:0, injured:0, retired:false, retireReason:'',
+  /* longInjury — ile PEŁNYCH sezonów wypadasz po zerwaniu więzadeł / złamaniu udu.
+     alimony   — ile jeszcze rat po 45 000 zł zejdzie z budżetu po sezonie. */
+  longInjury:0, longInjuryWhy:'', alimony:0,
   // FORMA: dyspozycja z ostatniego sezonu (-12..+12). Ujemna = dołek.
   // Czytają ją warunki zdarzeń losowych (cond: p.form<0).
   form:0,
   shop:{bought:[],log:[],spent:0,equipGain:0,mechHired:false},
   next:{zeroMatches:false, heatPP:0, betterOffers:false, noRenew:false, rowPen:false, noArg:false,
         injuryPP:0, rateMul:1, noSponsor:false, lockTransfer:0, forceClub:null},
-  career:{seasons:0,matches:0,heats:0,pts:0,bon:0,def:0,exc:0,earned:0,titles:0,best:'—',bestAvg:0}
+  career:{seasons:0,matches:0,heats:0,pts:0,bon:0,def:0,exc:0,earned:0,titles:0,best:'—',bestAvg:0,
+          living:0, service:0, renewals:0}
  };
 }
  
@@ -138,8 +250,15 @@ function startSeason(){
   atm, heatPP:p.next.heatPP, injuryPP:p.next.injuryPP||0, noEarnings:false,
   teamPts:0, teamOvr:0, banMatches:0, equipFit:100,
   extraDefP:0, zeroMatches:p.next.zeroMatches, forcedEnd:false,
-  walkower:false, fines:0, evLog:[], noRenew:p.next.noRenew,
-  rateMul:p.next.rateMul||1, ovrBonus:0,
+  /* WALKOWER: flaga + tryb + kara punktowa. Czyta to simSeasonChrono(),
+     które realnie NIE ROZGRYWA tego spotkania (patrz walkoverRow). */
+  walkower:false, walkMode:null, walkPen:0,
+  /* DŁUGA KONTUZJA Z POPRZEDNIEGO ROKU — cały sezon poza torem. */
+  longInjury:(p.longInjury||0)>0, longInjuryWhy:p.longInjuryWhy||'', longInjuryNew:null, longInjuryDmg:0,
+  fines:0, evLog:[], noRenew:p.next.noRenew,
+  /* STAWKA REALNA = stawka z kontraktu × efekty zdarzeń × mnożnik wieku.
+     Junior dostaje ułamek tego, co ma na papierze (ECON.youngRate). */
+  rateMul:(p.next.rateMul||1)*youngRateMul(p), ageMul:youngRateMul(p), ovrBonus:0,
   /* KONTEKST ZDARZENIA LOSOWEGO — w której kolejce wypada sytuacja z ekranu eventu.
      1-14 = sezon zasadniczy, 15-16 = play-off / baraże. Warunki cond(p,c,S)
      czytają S.round i S.matches, żeby "afera po meczu" nie trafiła się zimą. */
@@ -181,14 +300,63 @@ function rollEvent(){
  if(!pool.length){ evHist=[]; pool = validEvents; }
  // 3) zdarzenia warunkowe mają pierwszeństwo — to one komentują twoją realną sytuację
  const cnd = pool.filter(e=>e.cond), gen = pool.filter(e=>!e.cond);
+ /* WAGA `w` (domyślnie 1): rzadkie sytuacje z wąskim warunkiem — jak zaproszenie
+    do Argentyny czy kuszenie przez rywala — przy 100 zdarzeniach w puli trafiałyby
+    się raz na kilka karier. Waga podnosi im szansę bez ruszania reszty. */
+ const wpick = arr => { const bag=[];
+   arr.forEach(x=>{ const w=cl(Math.round(x.w||1),1,20); for(let i=0;i<w;i++) bag.push(x); });
+   return pick(bag); };
  let e;
- if(cnd.length && (chance(60)||!gen.length)) e=pick(cnd);
- else if(gen.length) e=pick(gen);
- else e=pick(pool);
+ if(cnd.length && (chance(60)||!gen.length)) e=wpick(cnd);
+ else if(gen.length) e=wpick(gen);
+ else e=wpick(pool);
  evHist.push(e.id); if(evHist.length>25) evHist.shift();
  return e;
 }
 const evText = e => typeof e.x==='function' ? e.x() : e.x;
+
+/* ============================================================
+   3-bis. ZDARZENIE MIĘDZYSEZONOWE (PRZERWA ZIMOWA)
+   ------------------------------------------------------------
+   Osobna pula (WINTER_EVENTS w data.js) odpalana MIĘDZY sezonami:
+   po resolveSeason() i PRZED makeOffers(). Dzięki temu skutki decyzji
+   zimowych (OVR, sprzęt, gotówka, alimenty, wymuszony transfer, lepsze
+   oferty) są już widoczne w okienku transferowym.
+
+   Zima nie ma obiektu sezonu, więc podstawiamy pusty kontekst zimowy —
+   warunki cond(p,c,S) czytające S.round dostają 0 i po prostu nie przechodzą,
+   a nie wysypują gry.
+   ============================================================ */
+const WINTER_CHANCE = 62;              // % szans na zdarzenie w danej przerwie zimowej
+let wevHist=[];
+function winterCtx(){ return {winter:true, round:0, matches:0, atm:55, heatPP:0}; }
+function rollWinterEvent(){
+ if(typeof WINTER_EVENTS==='undefined' || !WINTER_EVENTS.length) return null;
+ const p=G.p, c=clubOf(p), S=winterCtx();
+ const valid=WINTER_EVENTS.filter(e=>evOk(e,p,c,S));
+ if(!valid.length) return null;
+ let pool=valid.filter(e=>!wevHist.includes(e.id));
+ if(!pool.length){ wevHist=[]; pool=valid; }
+ const bag=[]; pool.forEach(x=>{ const w=cl(Math.round(x.w||1),1,20); for(let i=0;i<w;i++) bag.push(x); });
+ const e=pick(bag);
+ wevHist.push(e.id); if(wevHist.length>6) wevHist.shift();
+ return e;
+}
+/* Odpalenie wybranej opcji zimowej. Efekty z data.js sięgają do G.S
+   (fxA/fxT/fxOB...), więc na czas zimy podstawiamy atrapę sezonu —
+   nawet gdyby ktoś kiedyś użył takiego helpera w zdarzeniu zimowym,
+   gra się nie wywali, a efekt po prostu przepadnie z atrapą. */
+function applyWinterChoice(e, i){
+ const o=e.o[i];
+ const keep=G.S;
+ G.S=Object.assign(winterCtx(), {teamPts:0, teamOvr:0, ovrBonus:0, injuryPP:0, heatPP:0,
+   extraDefP:0, banMatches:0, fines:0, equipFit:100, rateMul:1, evLog:[], walkower:false});
+ let out=[];
+ try{ out=o.f()||[]; }catch(err){ out=['(zdarzenie zimowe nie doszło do skutku: '+err.message+')']; }
+ G.S=keep;
+ G.wevTitle=e.t; G.wevChoice=o.l; G.wevLog=out;
+ return out;
+}
  
 /* ============================================================
    4. ROZSTRZYGNIĘCIE SEZONU — ŻELAZNA MATEMATYKA
@@ -258,15 +426,31 @@ function resolveSeason(){
  S.banLeft   = S.banMatches;
  S.injLeft   = 0; S.injDone=false; S.injTotal=0; S.injDmg=0;
  S.forcedFrom= R(6,10);
+ /* W której kolejce wypada walkower. Uwaga: to spotkanie NIE zostanie rozegrane
+    (simSeasonChrono wstawia sztywny wynik), więc losujemy je raz i na sztywno. */
  S.walkRound = S.walkower ? R(0,BAL.rounds-1) : -1;
+ S.walkMode  = S.walkMode || 'lose';
  S.striking  = false; S.strikeRounds=0; S.strikeLog=[]; S.payLog=[];
  S.owed=0; S.paid=0; S.roundLog=[];
- const injuryP = cl(6 + (100-p.prof)*0.10 + S.injuryPP, 0, 95);
+ /* --- RYZYKO KONTUZJI ---
+    Stary wzór (6 + brak profesjonalizmu × 0,10) dawał ok. 11% na sezon,
+    czyli jeden uraz na dziewięć lat kariery — w żużlu to fikcja.
+    Teraz liczy się profesjonalizm, wiek i stan sprzętu, a progi siedzą
+    w INJ w data.js. Prawdopodobieństwo sezonowe rozbijamy na kolejki. */
+ const injuryP = cl(INJ.base
+   + (100-p.prof)*INJ.profW
+   + Math.max(0, p.age-INJ.ageFrom)*INJ.ageW
+   + (1-cl(p.equip,1,99)/99)*INJ.equipW
+   + S.injuryPP, 2, 95);
+ S.injuryP = Math.round(injuryP);
  S.injPerRound = (1-Math.pow(1-injuryP/100, 1/BAL.rounds))*100;
  if(S.zeroMatches) notes.push('Efekt decyzji z poprzedniego sezonu: 0 meczów.');
  if(S.forcedEnd)   notes.push('Sezon urwany przez decyzję pozaboiskową (od '+(S.forcedFrom+1)+'. kolejki).');
  if(S.banMatches>0)notes.push('Zawieszenie: -'+S.banMatches+' spotkań.');
- if(S.walkower)    notes.push('Jedno spotkanie zweryfikowane jako walkower.');
+ if(S.longInjury)  notes.push('KONTUZJA DŁUGOTERMINOWA Z POPRZEDNIEGO SEZONU'+
+   (S.longInjuryWhy?' ('+S.longInjuryWhy+')':'')+' — cały ten rok poza torem. 0 meczów, 0 biegów, zero rozwoju.');
+ if(S.walkower)    notes.push('WALKOWER w '+(S.walkRound+1)+'. kolejce — spotkanie nie zostało rozegrane ('+
+   ({lose:'0:75 dla rywala', win:'75:0 dla was', both:'obustronny, 0:0', void:'wynik anulowany'}[S.walkMode]||'0:75')+').');
  
  const ctx={defP, excP, meId:meR.id, bias};
  
@@ -274,7 +458,15 @@ function resolveSeason(){
  simSeasonChrono(ctx, lk, club.name, S.teamPts);
  meR.out=false;
  
- if(S.injDone) notes.push('KONTUZJA w '+(S.injRound||'trakcie sezonu')+'. kolejce. Pauza '+S.injTotal+' spotkań, -'+S.injDmg+' OVR.');
+ if(S.injDone) notes.push((S.injCat?'KONTUZJA WYKLUCZAJĄCA NA ROK':S.injBad?'POWAŻNA KONTUZJA':'KONTUZJA')+
+   ' w '+(S.injRound||'trakcie sezonu')+'. kolejce. '+
+   'Pauza '+S.injTotal+' spotkań, -'+S.injDmg+' OVR.'+
+   (S.injCat?' '+(S.injCatWhy||'Zerwane więzadła.')+' KOLEJNY SEZON MASZ Z GŁOWY — operacja i rehabilitacja.'
+            :S.injBad?' Obojczyk, szpital, sezon praktycznie zamknięty.':''));
+ /* Uraz katastrofalny z EKRANU ZDARZENIA (fxLongInj) — osobny komunikat. */
+ if(S.longInjuryNew) notes.push('ZERWANE WIĘZADŁA / ZŁAMANE UDO: '+S.longInjuryNew+
+   ' (-'+(S.longInjuryDmg||0)+' OVR). CAŁY KOLEJNY SEZON POZA TOREM.');
+ notes.push('Ryzyko kontuzji w tym sezonie wynosiło '+(S.injuryP||0)+'% (profesjonalizm '+S.prof0+', wiek '+p.age+', sprzęt '+S.equip0+').');
  S.strikeLog.forEach(x=>notes.push(x.back
    ? 'Klub uregulował zaległości — od '+x.round+'. kolejki wracasz do składu.'
    : 'Kolejka '+x.round+': zaległości '+zl(x.debt)+' — odmawiasz wyjazdu na tor (ryzyko buntu '+x.ch+'%).'));
@@ -287,7 +479,7 @@ function resolveSeason(){
  let heats=0, defects=0, exclusions=0, pts=0, bonus=0, replaced=0, matches=0;
  const lines=G.myLog.map(L=>{
    const base={round:L.round, home:L.home, opp:L.opp, teamFor:L.teamFor, teamAgn:L.teamAgn,
-               paid:L.paid||0, owed:L.owed||0, debt:L.debt||0};
+               paid:L.paid||0, owed:L.owed||0, debt:L.debt||0, walk:L.walk||null};
    if(!L.rode || !L.me) return {...base, rode:false, why:L.why||'ŁAWKA / POZA SKŁADEM', gap:L.gap, reg:L.reg};
    const M=L.me;
    matches++; heats+=M.starts; pts+=M.pts; bonus+=M.bon;
@@ -316,7 +508,7 @@ function resolveSeason(){
  
  /* --- FAZA PLAY-OFF / PLAY-DOWN WE WSZYSTKICH LIGACH --- */
  G.phase={};
- const canRidePO = matches>0 && !S.striking && p.banSeasons===0 && !S.forcedEnd && !S.zeroMatches;
+ const canRidePO = matches>0 && !S.striking && p.banSeasons===0 && !S.forcedEnd && !S.zeroMatches && !S.longInjury;
  LKEYS.forEach(k=>runPhase(k, k===lk&&canRidePO?ctx:null, k===lk?club.name:null));
  const order=G.phase[lk].order;
  const pos=order.indexOf(club.name)+1;
@@ -331,7 +523,7 @@ function resolveSeason(){
  
  /* --- DMPJ: jedziesz WYŁĄCZNIE do 21. roku życia (twardy warunek) --- */
  const injured=S.injDone, injMissed=S.injTotal;
- const blocked = p.banSeasons>0 || S.zeroMatches || matches===0;
+ const blocked = p.banSeasons>0 || S.zeroMatches || S.longInjury || matches===0;
  const dmpjOk = isJun(p) && !blocked;
  // OCHRONA SPRZĘTU: junior z OVR > 50, który regularnie jeździ w lidze, nie dostaje
  // powołania na eliminacje i ćwierćfinały DMPJ. Dołącza dopiero od półfinału.
@@ -381,10 +573,8 @@ function resolveSeason(){
  const PZM_START=500, PZM_PER_PT=150;
  const pzmEarned = pzmStarts*PZM_START + pzmPts*PZM_PER_PT;
  const overall = tally.h>0 ? tally.p/tally.h : 0;
- let score = overall;
- medals.forEach(m=>{ score += m.pos===1?0.30 : m.pos===2?0.18 : 0.10; });
- if(pos===1) score += 0.12;
- const grade = gradeOf(tally.h>0?score:0, tally.h);
+ /* OCENA SEZONU liczona jest NIŻEJ — dopiero po barażach, awansach i spadkach,
+    bo uratowanie klubu przed spadkiem jest częścią tej oceny (patrz seasonScore). */
  
  /* --- KASA (należność brutto; realne przelewy szły co kolejkę) --- */
  let earned=0, earnedBon=0;
@@ -418,6 +608,20 @@ function resolveSeason(){
  bump('med',-3,'naturalny zanik zainteresowania mediów');
  const profDelta=p.prof-S.prof0, medDelta=p.med-S.med0;
  
+ /* --- LOJALNOŚĆ: KAŻDY SEZON W TYCH SAMYCH BARWACH COŚ ZNACZY ---
+    Wcześniej lojalność rosła wyłącznie przy podpisywaniu przedłużenia (+18),
+    więc próg 70 wymagany do budowania legendy jednego klubu był praktycznie
+    nieosiągalny. Teraz liczy się przesiedziany (i przejeżdżony) rok w tych samych barwach. */
+ if(club){
+   let loy = matches>0 ? R(4,8) : 1;
+   if(pos===1) loy += 3;
+   if(matches>=BAL.rounds-2) loy += 2;
+   if(S.strikeRounds>0) loy -= 4;                      // bunt płacowy to nie jest miłość do herbu
+   const loy0=p.loyalty;
+   p.loyalty = cl(p.loyalty+loy, 0, 100);
+   if(p.loyalty!==loy0) notes.push('Lojalność wobec klubu: '+loy0+' → '+p.loyalty+' (kolejny sezon w tych samych barwach).');
+ }
+ 
  /* --- ROZWÓJ --- */
  let growth = p.age<=21?7.4 : p.age<=24?4.4 : p.age<=28?1.8 : p.age<=32?0.1 : p.age<=36?-2.6 : -5;
  growth += (p.prof-50)/26;
@@ -428,9 +632,28 @@ function resolveSeason(){
  const oldOvr=p.ovr;
  p.ovr = cl(Math.round(p.ovr+growth),1,99);
  
- /* --- ZUŻYCIE SPRZĘTU --- */
- if(p.contract.type==='Zawodowy') p.equip=cl(p.equip-R(5,11),1,99);
- else p.equip = cl(Math.round(20 + club.ovr*0.32 + R(-3,3)),1,99);
+ /* --- ZUŻYCIE SPRZĘTU I SERWIS POSEZONOWY ---
+    Stare -5..-11 na sezon oznaczało, że jeden zakup u dobrego tunera starczał
+    na trzy lata i warsztat przestawał być decyzją. Teraz zużycie zależy od
+    PRZEBIEGU (biegi w lidze + play-off), a po sezonie przychodzi rachunek
+    za rozebranie, umycie i złożenie sprzętu — im lepszy sprzęt, tym droższy
+    serwis. Zawodowiec, który nic nie kupuje, w dwa lata jedzie złomem. */
+ let equipWear=0, serviceCost=0;
+ if(p.contract.type==='Zawodowy'){
+   const run = heats + po.h;                                   // realny przebieg sezonu
+   equipWear = R(8,13) + Math.round(run/8) + (S.injDone?2:0);  // ok. -16..-26 przy pełnym sezonie
+   p.equip = cl(p.equip-equipWear, 1, 99);
+   notes.push('ZUŻYCIE SPRZĘTU: -'+equipWear+' (przebieg: '+run+' biegów'+(S.injDone?' + kraksa':'')+'). Sprzęt: '+p.equip+'/99.');
+   // sezon bez startow to sam magazyn i konserwacja, a nie pelny serwis
+   serviceCost = run>0 ? Math.round(ECON.svcBase + run*ECON.svcPerHeat + p.equip*ECON.svcEquipW)
+                       : Math.round(ECON.svcBase*0.35);
+   p.budget -= serviceCost;
+   p.career.service = (p.career.service||0) + serviceCost;
+   notes.push('SERWIS POSEZONOWY: '+zl(serviceCost)+' (rozbiórka, tłoki, uszczelki, transport do tunera). Nikt tego za ciebie nie zapłaci.');
+ } else {
+   // amator jeździ sprzętem klubowym — dostaje to, na co klub go stać
+   p.equip = cl(Math.round(20 + club.ovr*0.32 + R(-3,3)),1,99);
+ }
  
  /* --- KLUB: dług, atmosfera --- */
  if(club.debt>0){
@@ -466,6 +689,17 @@ function resolveSeason(){
  });
  if(pos===1) notes.push('MISTRZOSTWO '+G.leagues[lk].name+'!');
  
+ /* --- OCENA SEZONU ZE WSZYSTKICH ROZGRYWEK ---
+    Liczona po rozstrzygnięciu baraży, awansów i spadków: gracz, który wrócił
+    z gipsu na cztery mecze i utrzymał klub w lidze, nie ma prawa dostać
+    „BEZNADZIEJNEJ" tylko dlatego, że nie zdążył nabić biegów. */
+ const gradeCalc = seasonScore({
+   overall, heats:tally.h, matches:matches+po.m, pos, avg, po, medals, dmpj,
+   injured:S.injDone, injMissed:S.injTotal||0, bonus, club:seasonClubName, lk,
+   leagueName:G.leagues[lk].name
+ });
+ const grade = gradeOf(gradeCalc.score, tally.h);
+ 
  const res={
   year:G.year, club:seasonClubName, pname:p.name, lk, leagueName:G.leagues[lk].name, league:G.leagues[lk].short, age:p.age,
   bankrupt:myBk, bankruptsAll:G.bankrupts||[], greenTable:G.greenTable||[],
@@ -475,8 +709,23 @@ function resolveSeason(){
   strike, ovrFrom:oldOvr, ovrTo:p.ovr, notes, fines:S.fines, lines, replaced,
   profFrom:S.prof0, profTo:p.prof, profDelta, medFrom:S.med0, medTo:p.med, medDelta, statLog,
   evLog:S.evLog, evTitle:S.evTitle, evChoice:S.evChoice,
-  ban:p.banSeasons>0
+  ban:p.banSeasons>0,
+  /* --- KONTUZJE DŁUGOTERMINOWE (do czerwonego boksu w UI) --- */
+  longInjuryOut : !!S.longInjury,                 // ten sezon przeleciał w gipsie
+  longInjuryWhy : S.longInjuryWhy||'',
+  longInjuryNew : S.longInjuryNew||null,          // ...a TERAZ złapałeś kolejny taki uraz
+  longInjuryDmg : S.longInjuryDmg||0,
+  longInjuryNext: (p.longInjury||0)>0,            // kolejny sezon też masz z głowy
+  injCat        : !!S.injCat,
+  injCatWhy     : S.injCatWhy||'',
+  /* --- KARIERA URWANA PRZEZ ZDARZENIE (fxEnd) --- */
+  careerOver    : !!p.retired,
+  careerOverWhy : p.retireReason||''
  };
+ res.gradeParts = gradeCalc.parts;      // rozpiska oceny do UI: skąd wzięła się ta ocena
+ res.gradeScore = Math.round(gradeCalc.score*100)/100;
+ res.equipWear  = equipWear;
+ res.serviceCost= serviceCost;
  medals.forEach(m=>{
    const t=['','MISTRZOSTWO POLSKI','WICEMISTRZOSTWO','BRĄZOWY MEDAL'][m.pos];
    notes.push(m.name+': '+t+'!');
@@ -531,6 +780,43 @@ function resolveSeason(){
  }
  res.pzmEarned = pzmEarned;   // skrót dla UI, gdyby nie chciało schodzić do settle
  
+ /* --- KOSZTY ŻYCIA ---
+    Druga strona przelewu: bus, paliwo na 40 tysięcy kilometrów, hotele,
+    ubezpieczenie, dom. Amator mieszka u mamy i jeździ sprzętem klubowym,
+    więc płaci połowę. Bez tej rubryki gra była zbierackim symulatorem gotówki. */
+ const living = Math.round(livingCostOf(p, false) * (matches>0 ? 1 : 0.60));
+ p.budget -= living;
+ p.career.living = (p.career.living||0) + living;
+ res.living = living;
+
+ /* --- ALIMENTY DO ARGENTYNY ---
+    Sztywne 45 000 zł co sezon, dopóki licznik p.alimony nie zejdzie do zera.
+    Nie interesuje ich kontuzja, spadek ani to, że klub nie zapłacił.
+    Raport finansowy pokazuje tę rubrykę na czerwono (patrz settleHtml). */
+ const alim = chargeAlimony(p);
+ if(alim){
+   res.alimony     = alim.amount;
+   res.alimonyLeft = alim.left;
+   notes.push('Alimenty do Argentyny: -'+zl(alim.amount)+' (pozostało rat: '+alim.left+').');
+   // rubryka musi się pokazać także wtedy, gdy w tym sezonie nie było żadnych wpływów
+   if(!res.settle) res.settle={owed:0, paid:0, unpaid:0, ratio:100, wiped:0, pzmEarned:pzmEarned};
+ }
+ res.livingTxt = 'Koszty życia i utrzymania busa ('+G.leagues[lk].short+', wiek '+p.age+
+   (p.contract.type==='Amatorski'?', taryfa amatorska':'')+'): '+zl(living)+'.';
+ notes.push(res.livingTxt);
+ if(S.ageMul && S.ageMul<1)
+   notes.push('Stawka młodzieżowa: klub wypłacał ci '+Math.round(S.ageMul*100)+'% stawki z kontraktu ('+
+     zl(Math.round(p.contract.rate*S.ageMul))+' zamiast '+zl(p.contract.rate)+' za punkt). Reszta „poszła na twój rozwój".');
+ 
+ /* --- ODLICZANIE DŁUGIEJ KONTUZJI ---
+    Sezon spędzony w gipsie „zużywa" jedną jednostkę p.longInjury. Jeżeli
+    jednak DOPIERO TERAZ zerwałeś więzadła (S.longInjuryNew), licznik zostaje
+    nietknięty — kolejny rok też masz z głowy. */
+ if(S.longInjury && !S.longInjuryNew){
+   p.longInjury = Math.max(0, (p.longInjury||0)-1);
+   if(!p.longInjury) p.longInjuryWhy='';
+ }
+
  p.career.seasons++; p.career.matches+=matches+po.m; p.career.heats+=heats+po.h;
  p.career.pts+=pts+po.p; p.career.bon=(p.career.bon||0)+bonus+po.b;
  p.career.def+=defects+po.d; p.career.exc+=exclusions+po.w;
@@ -579,6 +865,77 @@ function seasonTalk(r,p){
  // wybierz maks. 4, zawsze z pierwszą pozycją
  const first=A.shift(), rest=A.sort(()=>Math.random()-0.5).slice(0,3);
  return [first,...rest].filter(Boolean);
+}
+ 
+/* ============================================================
+   OCENA SEZONU — CO SIĘ NA NIĄ SKŁADA
+   Wejście: dorobek ze wszystkich rozgrywek + kontekst drużynowy.
+   Wyjście: {score, parts} — parts to gotowa rozpiska dla UI, żeby gracz
+   widział, skąd wzięła się ocena, zamiast kłócić się z literą na ekranie.
+   Wagi siedzą w GRADE (data.js).
+   ============================================================ */
+function seasonScore(o){
+ const parts=[];
+ const push=(d,w)=>{ if(Math.abs(d)>=0.005) parts.push({d:Math.round(d*100)/100, w}); };
+ const h=o.heats||0;
+ if(h===0) return {score:0, parts:[{d:0, w:'zero biegów w całym sezonie — nie ma czego oceniać'}]};
+ 
+ /* 1) PODSTAWA: średnia ze wszystkich rozgrywek, ale ściągnięta w stronę
+       średniej ligowej tym mocniej, im mniejsza próba. 12 biegów po powrocie
+       z gipsu nie może ważyć tyle, co 180 biegów pełnego sezonu. */
+ const W=GRADE.shrinkW;
+ const base=(o.overall*h + GRADE.neutral*W)/(h+W);
+ parts.push({d:Math.round(base*100)/100,
+   w:'średnia '+o.overall.toFixed(2)+' z '+h+' biegów'+
+     (h<W ? ' — mała próba, ocena ciągnięta do średniej ligowej '+GRADE.neutral.toFixed(2) : '')});
+ let s=base;
+ 
+ /* 2) OBJĘTOŚĆ SEZONU: kto odjechał komplet, ten ma prawo do premii; kto
+       przesiedział rok na ławce, ten nie schowa się za jedną dobrą średnią. */
+ const vol=cl((o.matches-6)/16,-0.5,1)*GRADE.volume;
+ s+=vol; push(vol, o.matches+' rozegranych spotkań (liga + play-off)');
+ 
+ /* 3) MEDALE INDYWIDUALNE */
+ (o.medals||[]).forEach(m=>{ const d=GRADE.medal[m.pos]||0; s+=d;
+   push(d, m.name+' — '+['','złoto','srebro','brąz'][m.pos]); });
+ 
+ /* 4) DRUŻYNA: tytuł, podium, awans, utrzymanie, spadek */
+ if(o.pos===1){ s+=GRADE.champ; push(GRADE.champ,'MISTRZOSTWO — '+o.leagueName); }
+ else if(o.pos<=3){ s+=GRADE.podium; push(GRADE.podium, o.pos+'. miejsce w play-off'); }
+ const moves=(G.promo||[]).filter(x=>x.club===o.club);
+ const wentUp=moves.some(x=>String(x.type).startsWith('awans'));
+ const wentDown=moves.some(x=>String(x.type).startsWith('spadek'));
+ if(wentUp){ s+=GRADE.promo; push(GRADE.promo,'AWANS do wyższej ligi'); }
+ /* 8. miejsce to spadek bezpośredni — nawet gdy tabeli awansów nie ma pod ręką.
+    Premię „za utrzymanie" dostaje wyłącznie 7. miejsce: ten, kto wygrał dwumecz
+    o utrzymanie i obronił się w barażu. */
+ if(wentDown || (!wentUp && o.pos===8 && o.lk!=='KL')){
+   s+=GRADE.releg; push(GRADE.releg,'spadek z ligi');
+ } else if(!wentUp && o.pos===7 && o.lk!=='KL' && o.matches>0){
+   s+=GRADE.saved; push(GRADE.saved,'utrzymanie wywalczone w play-downie/barażu — klub został w lidze');
+ }
+ 
+ /* 5) FAZA PLAY-OFF liczy się osobno: tam jedzie się o wszystko */
+ if(o.po && o.po.h>0){
+   const d=cl((o.po.avg-1.30)*0.18, -0.10, 0.22); s+=d;
+   push(d,'faza play-off: średnia '+o.po.avgTxt+' w '+o.po.h+' biegach');
+ }
+ 
+ /* 6) DMPJ */
+ if(o.dmpj && o.dmpj.eligible && o.dmpj.classification && o.dmpj.classification[0]===o.club){
+   s+=GRADE.dmpj; push(GRADE.dmpj,'drużynowe mistrzostwo Polski juniorów');
+ }
+ 
+ /* 7) KONTUZJA — nie liczymy jej przeciwko zawodnikowi */
+ if(o.injured && o.injMissed>0){
+   const d=cl(o.injMissed*GRADE.injW, 0, GRADE.injMax); s+=d;
+   push(d,'kontuzja: '+o.injMissed+' spotkań poza torem, nie twoja wina');
+ }
+ 
+ /* 8) JAZDA NA KOLEGĘ Z PARY */
+ if(o.bonus>=8){ s+=GRADE.bonusPts; push(GRADE.bonusPts, o.bonus+' punktów bonusowych — jeździsz na drużynę'); }
+ 
+ return {score:Math.max(0,s), parts};
 }
  
 function gradeOf(avg,heats){
@@ -957,9 +1314,19 @@ function makeSchedule(names){
  return [...first, ...first.map(rd=>rd.map(([h,a])=>[a,h]))];   // runda rewanżowa
 }
 /* Dostępność gracza w danej kolejce (null = jedzie). */
+/* Katastrofa: zerwane więzadła krzyżowe albo złamana kość udowa.
+   Losowana tabelka opisów, żeby raport nie brzmiał zawsze tak samo. */
+const CAT_INJ=[
+ 'Zerwane więzadła krzyżowe w kolanie — rekonstrukcja z własnego ścięgna.',
+ 'Złamanie kości udowej z przemieszczeniem — gwóźdź śródszpikowy.',
+ 'Wieloodłamowe złamanie udu i zerwane więzadła poboczne.',
+ 'Zerwane więzadła w stawie skokowym i złamanie piszczeli — dwie operacje.'
+];
 function playerRoundStatus(rd){
  const p=G.p, S=G.S;
  if(p.banSeasons>0)                    return 'DYSKWALIFIKACJA';
+ /* CAŁY ROK W GIPSIE — skutek zerwanych więzadeł / złamanego udu z poprzedniego sezonu */
+ if(S.longInjury)                      return 'KONTUZJA DŁUGOTERMINOWA — CAŁY SEZON';
  if(S.zeroMatches)                     return 'KARA PREZESA';
  if(S.forcedEnd && rd>=S.forcedFrom)   return 'DECYZJA POZABOISKOWA';
  if(S.walkRound===rd)                  return 'WALKOWER';
@@ -967,11 +1334,34 @@ function playerRoundStatus(rd){
  if(S.banLeft>0){ S.banLeft--;         return 'ZAWIESZENIE'; }
  if(S.striking)                        return 'ODMOWA JAZDY — KLUB NIE PŁACI';
  if(!S.injDone && chance(S.injPerRound)){
-   S.injDone=true; S.injRound=rd+1; S.injTotal=R(2,6); S.injLeft=S.injTotal-1;
-   S.injDmg=R(1,4);
+   S.injDone=true; S.injRound=rd+1;
+   /* --- TRZY POZIOMY URAZU ---
+      1) katastrofalny (INJ.catP): zerwane więzadła / złamane udo — koniec TEGO
+         sezonu i CAŁY KOLEJNY poza torem (p.longInjury),
+      2) ciężki (INJ.badP): obojczyk, 8-13 spotkań,
+      3) zwykły: 2-7 spotkań. */
+   const cat = chance(INJ.catP);
+   const bad = cat ? true : chance(INJ.badP);
+   S.injCat = cat; S.injBad = bad;
+   if(cat){
+     S.injCatWhy   = pick(CAT_INJ);
+     S.injTotal    = Math.max(1, BAL.rounds-rd);        // reszta sezonu, do ostatniej kolejki
+     S.injLeft     = S.injTotal-1;
+     S.injDmg      = R(INJ.catDmgMin, INJ.catDmgMax);
+     S.forcedEnd   = true;                              // play-off, IMP, DMPJ — wszystko odpada
+     S.forcedFrom  = Math.min(S.forcedFrom, rd);
+     p.longInjury  = Math.max(p.longInjury||0, INJ.catSeasons);
+     p.longInjuryWhy = S.injCatWhy;
+     S.longInjuryNew = S.injCatWhy;
+     S.longInjuryDmg = S.injDmg;
+   } else {
+     S.injTotal = bad ? R(INJ.badMin, INJ.badMax) : R(INJ.outMin, INJ.outMax);
+     S.injLeft  = S.injTotal-1;
+     S.injDmg   = bad ? R(INJ.dmgMin+1, INJ.dmgMax+2) : R(INJ.dmgMin, INJ.dmgMax);
+   }
    p.ovr=cl(p.ovr-S.injDmg,1,99);
    const me=G.riders.find(r=>r.me); if(me) me.ovr=cl(me.ovr-S.injDmg,1,99);
-   return 'KONTUZJA';
+   return cat ? 'ZERWANE WIĘZADŁA / ZŁAMANE UDO' : 'KONTUZJA';
  }
  return null;
 }
@@ -1018,6 +1408,64 @@ function clubsAfterRound(){
    }
  });
 }
+/* ============================================================
+   5b-0. WALKOWER — SPOTKANIE, KTÓRE NIE ZOSTAŁO ROZEGRANE
+   ------------------------------------------------------------
+   NAPRAWA: wcześniej `G.S.walkower=true` powodowało tylko tyle, że Gracz
+   dostawał w jednej kolejce status „WALKOWER" i nie jechał — ale mecz
+   rozgrywał się normalnie, wchodził do tabeli z prawdziwym wynikiem,
+   a rywal zdobywał punkty na torze. Tekst zdarzenia mówił „0:75", tabela
+   pokazywała 44:46. Teraz spotkanie faktycznie się NIE ODBYWA:
+     · 'lose' — twoja drużyna oddaje mecz 0:75, rywal bierze 2 pkt
+     · 'win'  — rywal się nie stawił: 75:0 dla ciebie
+     · 'both' — obustronny walkower: 0:0, NIKT nie dostaje punktów meczowych
+     · 'void' — mecz nierozegrany i nieweryfikowany (nie wchodzi do tabeli)
+   Do tego S.walkPen zabiera punkty w tabeli (przy 'both' obu drużynom).
+   ============================================================ */
+const WALK_SCORE = 75;
+function applyWalkover(box, h, a, myClub, rd){
+ const S=G.S, T=box.T;
+ const hi=T.findIndex(x=>x.name===h), ai=T.findIndex(x=>x.name===a);
+ if(hi<0||ai<0) return;
+ const home = (h===myClub);
+ const mode = S.walkMode||'lose';
+ let hs=0, as=0, counts=true;
+ if(mode==='void')      counts=false;
+ else if(mode==='both'){ hs=0; as=0; }
+ else if(mode==='win')   { hs=home?WALK_SCORE:0; as=home?0:WALK_SCORE; }
+ else                    { hs=home?0:WALK_SCORE; as=home?WALK_SCORE:0; }   // 'lose'
+ if(counts){
+   T[hi].m++; T[ai].m++;
+   T[hi].sf+=hs; T[hi].sa+=as; T[ai].sf+=as; T[ai].sa+=hs;
+   if(mode==='both'){ T[hi].l++; T[ai].l++; }                 // walkower obustronny: zero punktów
+   else if(hs>as){ T[hi].pts+=2; T[hi].w++; T[ai].l++; }
+   else          { T[ai].pts+=2; T[ai].w++; T[hi].l++; }
+   // dwumecz liczy się dalej — walkower to też wynik
+   const key=[h,a].sort().join('||'), A=box.agg;
+   if(!A[key]) A[key]={first:{h,a,hs,as}};
+   else {
+     const f=A[key].first;
+     const g1=(f.h===h)?f.hs+hs:f.hs+as, g2=(f.h===h)?f.as+as:f.as+hs;
+     const rowFH=T.find(x=>x.name===f.h), rowFA=T.find(x=>x.name===f.a);
+     if(rowFH&&rowFA){ if(g1>g2){rowFH.pts++;rowFH.bon++;} else if(g2>g1){rowFA.pts++;rowFA.bon++;} }
+     A[key].done=true;
+   }
+   box.RS.push({round:rd+1, h, a, hs, as, me:null, heats:[], walk:mode});
+ }
+ /* KARA W TABELI (obchod / świstek: „obie drużyny tracą po punkcie") */
+ const pen=S.walkPen||0;
+ if(pen){
+   const mineRow = home?T[hi]:T[ai], oppRow = home?T[ai]:T[hi];
+   if(mineRow) mineRow.pts-=pen;
+   if(mode==='both' && oppRow) oppRow.pts-=pen;
+ }
+ G.myLog.push({round:rd+1, home, opp:home?a:h,
+   teamFor:home?hs:as, teamAgn:home?as:hs,
+   rode:false, me:null, savedIn:false, gap:null, reg:false, walk:mode,
+   why:'WALKOWER — '+({lose:'oddaliście spotkanie 0:75', win:'rywal się nie stawił (75:0)',
+        both:'obustronny, 0:0', void:'mecz nierozegrany'}[mode]||'0:75')});
+}
+
 function simSeasonChrono(ctx, myLk, myClub, ptsPen){
  const meR=G.riders.find(r=>r.me);
  const st={};
@@ -1040,6 +1488,11 @@ function simSeasonChrono(ctx, myLk, myClub, ptsPen){
    LKEYS.forEach(k=>{
      (st[k].sched[rd]||[]).forEach(([h,a])=>{
        const mine = myClub && k===myLk && (h===myClub||a===myClub);
+       /* WALKOWER: to spotkanie w ogóle się nie odbywa — nie symulujemy go. */
+       if(mine && G.S && G.S.walkower && rd===G.S.walkRound){
+         applyWalkover(st[k], h, a, myClub, rd);
+         return;
+       }
        const c = (mine && ctx && !status) ? ctx : null;
        /* OSZCZĘDZANIE NA GWIAZDACH: klub z zaległościami wobec kadry albo
           z pustym kontem przy niespłaconym długu zostawia gwiazdy w domu. */
@@ -1053,15 +1506,26 @@ function simSeasonChrono(ctx, myLk, myClub, ptsPen){
        if(M.hs>M.as){T[hi].pts+=2;T[hi].w++;T[ai].l++;}
        else if(M.hs<M.as){T[ai].pts+=2;T[ai].w++;T[hi].l++;}
        else {T[hi].pts++;T[ai].pts++;T[hi].d++;T[ai].d++;}
-       // punkt bonusowy za wygrany dwumecz — dopisywany po rewanżu
+       /* ------------------------------------------------------------
+          PUNKT BONUSOWY ZA WYGRANY DWUMECZ — POPRAWIONA LOGIKA
+          Stary kod: `if(g1>g2){rowH.pts++;...} else if(g2>g1){rowA.pts++;...}`
+          był ODWRÓCONY. W terminarzu rewanż ma zamienione role (f.h === a),
+          więc g1 = f.hs + M.as to dorobek klubu `f.h`, czyli GOŚCIA tego meczu
+          (rowA), a nie gospodarza. Punkt bonusowy trafiał do przegranego.
+          Teraz liczymy jawnie po NAZWACH klubów z pierwszego meczu — wynik jest
+          poprawny niezależnie od tego, kto był gospodarzem którego spotkania.
+          ------------------------------------------------------------ */
        const key=[h,a].sort().join('||'), A=st[k].agg;
        if(!A[key]) A[key]={first:{h,a,hs:M.hs,as:M.as}};
        else {
          const f=A[key].first;
-         const g1 = f.h===h ? f.hs+M.hs : f.hs+M.as;    // dorobek klubu `h` w dwumeczu
-         const g2 = f.h===h ? f.as+M.as : f.as+M.hs;
-         const rowH=T[hi], rowA=T[ai];
-         if(g1>g2){rowH.pts++;rowH.bon++;} else if(g2>g1){rowA.pts++;rowA.bon++;}
+         const g1 = f.h===h ? f.hs+M.hs : f.hs+M.as;    // dorobek klubu f.h w dwumeczu
+         const g2 = f.h===h ? f.as+M.as : f.as+M.hs;    // dorobek klubu f.a w dwumeczu
+         const rowFH = T.find(x=>x.name===f.h), rowFA = T.find(x=>x.name===f.a);
+         if(rowFH && rowFA){
+           if(g1>g2){ rowFH.pts++; rowFH.bon++; }
+           else if(g2>g1){ rowFA.pts++; rowFA.bon++; }
+         }
          A[key].done=true;
        }
        st[k].RS.push({round:rd+1,h,a,hs:M.hs,as:M.as,me:c?M.me:null,heats:M.heats,lineH:M.lineH,lineA:M.lineA});
@@ -1095,9 +1559,151 @@ function simSeasonChrono(ctx, myLk, myClub, ptsPen){
    ============================================================ */
 function applySquadOvr(c, d){
  if(!d) return;
- squadOf(c.name).forEach(r=>{ if(r.me) return; r.ovr=cl(Math.round(r.ovr+d+gauss(0,1.1)),1,99); });
+ /* Wspólna korekta po sezonie ROZJEŻDŻA się na zawodnikach (gauss), a potem
+    i tak przechodzi anty-klon — bez tego cała kadra dostawała identyczną
+    liczbę i po dwóch sezonach połowa drużyny miała ten sam OVR. */
+ squadOf(c.name).forEach(r=>{ if(r.me) return; r.ovr=cl(Math.round(r.ovr+d+gauss(0,1.4)),1,99); });
+ dedupeSquadOvr(c.name);
  c.ovr=squadStrength(c.name);
 }
+/* ============================================================
+   5b-ter. SPONSORZY TYTULARNI — „ZŁOMREX MOJEKAJMANY META GNIEZNO"
+   ------------------------------------------------------------
+   Klub trzyma listę `c.titles` = [{n, grp:'A'|'B', years, left, cash}] oraz
+   nazwę bazową `c.base` (bez sponsorów). Pełna nazwa to sponsorzy doklejeni
+   PRZED bazą. Zmiana nazwy wchodzi w życie DOPIERO W NOWYM ROKU
+   (applyPendingSponsors() z nextYear/skipYear/mechanicPath) — gdybyśmy
+   przechrzcili klub w trakcie rozliczania sezonu, promotionsRelegations()
+   i tabele z runPhase (trzymające NAZWY, nie referencje) przestałyby się
+   zgadzać i klub wypadłby z awansów/spadków.
+
+   GRUPA A: mały przelew co sezon, zero ryzyka.
+   GRUPA B: ogromne wejście, po 1-2 sezonach ucieczka, dziura w kasie,
+            zaległości wobec kadry i (z dużą szansą) syndyk. Uciekinier
+            ląduje w G.bannedSponsors i nigdy nie wraca do gry.
+   Każdy sponsor powyżej pierwszego to kara do OVR klubu (SPON.ovrPen).
+   ============================================================ */
+function clubTitles(c){ if(!c) return []; if(!Array.isArray(c.titles)) c.titles=[]; return c.titles; }
+function titleCount(c){ return clubTitles(c).length; }
+function clubBaseName(c){ if(!c.base) c.base=c.name; return c.base; }
+function composeClubName(c){
+ const t=clubTitles(c).map(s=>s.n).filter(Boolean);
+ return (t.length ? t.join(' ')+' ' : '') + clubBaseName(c);
+}
+function sponsorPen(n){ return SPON.ovrPen[cl(n,0,SPON.ovrPen.length-1)]||0; }
+function sponsorInUse(name){ return allClubs().some(c=>clubTitles(c).some(s=>s.n===name)); }
+function freeSponsors(pool){
+ const ban=new Set(G.bannedSponsors||[]);
+ return (pool||[]).filter(n=>n && !ban.has(n) && !sponsorInUse(n));
+}
+/* Zmiana nazwy klubu w CAŁEJ grze: kadra, Gracz, mapa starych nazw. */
+function renameClub(c, nn){
+ const old=c.name;
+ if(!nn || nn===old) return null;
+ let uniq=nn, g=2;
+ while(allClubs().some(x=>x!==c && x.name===uniq)) uniq=nn+' '+(g++);
+ c.name=uniq;
+ G.riders.forEach(r=>{ if(r.club===old) r.club=uniq; });
+ if(G.p && G.p.club===old) G.p.club=uniq;
+ G.renamed=G.renamed||{}; G.renamed[old]=uniq;
+ return {old, now:uniq};
+}
+function applyPendingSponsors(){
+ const out=[];
+ G.renamed={};
+ allClubs().forEach(c=>{ const r=renameClub(c, composeClubName(c)); if(r) out.push(r); });
+ G.sponsorRenames=out;
+ return out;
+}
+/* Jeden sezon życia sponsorskiego jednego klubu. Zwraca {d, bkWhy}. */
+function sponsorSeason(c, k, log){
+ let d=0;
+ const titles=clubTitles(c);
+ clubBaseName(c);
+ const before=titles.length;
+ const inc=LEAGUE_INC[k]||LEAGUE_INC.KL;
+
+ /* --- 1) PRZELEWY OD OBECNYCH + TYKAJĄCY ZEGAR GRUPY B --- */
+ const runaways=[];
+ for(let i=titles.length-1;i>=0;i--){
+   const s=titles[i];
+   s.years=(s.years||0)+1;
+   if(s.grp==='A'){
+     const cash=Math.round(inc*RF(SPON.aCash[0],SPON.aCash[1]));
+     c.budget+=cash; s.paid=(s.paid||0)+cash;
+   } else {
+     if(s.left==null) s.left=R(SPON.bLife[0],SPON.bLife[1]);
+     s.left--;
+     if(s.left<=0){ titles.splice(i,1); runaways.push(s); }
+   }
+ }
+
+ /* --- 2) UCIECZKA OSZUSTA: dziura w kasie, zaległości, syndyk --- */
+ let bkWhy=null;
+ runaways.forEach(s=>{
+   /* „Potężny dług i ujemny budżet" musi być POTĘŻNY i musi być UJEMNY —
+      inaczej bogaty klub wchłaniał ucieczkę oszusta bez mrugnięcia okiem
+      i syndyk nigdy nie wchodził. Dziura jest więc nie mniejsza niż to,
+      co potrzebne, żeby zejść pod próg BANKRUPTCY.deepMinus. */
+   const cost=Math.max(1, c.seasonCost||inc);
+   const minHole=Math.max(0,c.budget) + Math.round(Math.max(300000, cost*BANKRUPTCY.deepMinus*1.25));
+   const hole=Math.max(Math.round((s.cash||inc*0.8)*RF(SPON.bHole[0],SPON.bHole[1])), minHole);
+   const arr =Math.round(hole*SPON.bArrShare);
+   c.budget-=hole;
+   c.arr=(c.arr||0)+arr;
+   G.bannedSponsors=G.bannedSponsors||[];
+   if(!G.bannedSponsors.includes(s.n)) G.bannedSponsors.push(s.n);
+   log.push({club:c.name, lk:k, t:'SPONSOR TYTULARNY UCIEKŁ Z KASĄ', d:'−'+zl(hole), good:false,
+     x:s.n+' zniknął po '+s.years+(s.years===1?' sezonie':' sezonach')+': konta wyczyszczone, faktury '+
+       'niezapłacone, prezes dowiedział się z portalu. Dziura '+zl(hole)+', zaległości wobec kadry +'+zl(arr)+
+       '. Od nowego sezonu klub nazywa się '+composeClubName(c)+
+       '. Firma trafia na czarną listę i nigdy już nie pojawi się w tej lidze.'});
+   if(c.budget<0 && chance(BANKRUPTCY.onSponsorRun))
+     bkWhy='Sponsor tytularny '+s.n+' uciekł z kasą i zostawił dziurę '+zl(-c.budget)+'. Wierzyciele nie czekali na wyjaśnienia.';
+ });
+
+ /* --- 3) NOWY SPONSOR TYTULARNY (od 1 do 3 naraz) --- */
+ if(titles.length<SPON.max){
+   let ch=SPON.addBase - titles.length*SPON.addPerHave;
+   if(c.budget<=0 || (c.arr||0)>0) ch+=SPON.addPoor;      // desperacja zarządu
+   if(chance(cl(ch,1,80))){
+     const poolB=freeSponsors(SPONSORS_B), poolA=freeSponsors(SPONSORS_A);
+     const wantB=chance(SPON.bChance);
+     const grp = (wantB && poolB.length) ? 'B' : (poolA.length ? 'A' : null);
+     if(grp==='A'){
+       const n=pick(poolA), cash=Math.round(inc*RF(SPON.aCash[0],SPON.aCash[1]));
+       c.budget+=cash;
+       titles.push({n, grp:'A', years:0, cash, paid:cash});
+       log.push({club:c.name, lk:k, t:'NOWY SPONSOR TYTULARNY', d:'+'+zl(cash), good:true,
+         x:n+' wchodzi do nazwy klubu — od nowego sezonu: '+composeClubName(c)+
+           '. Pieniędzy tyle, co kot napłakał, ale przelew przychodzi na czas i będzie przychodził co roku.'});
+     } else if(grp==='B'){
+       const n=pick(poolB), cash=Math.round(inc*RF(SPON.bCash[0],SPON.bCash[1]));
+       c.budget+=cash;
+       titles.push({n, grp:'B', years:0, left:R(SPON.bLife[0],SPON.bLife[1]), cash});
+       log.push({club:c.name, lk:k, t:'WIELKI SPONSOR TYTULARNY — KASA JAK Z BAJKI', d:'+'+zl(cash), good:true,
+         x:n+' wykłada '+zl(cash)+' i wchodzi do nazwy: '+composeClubName(c)+
+           '. Prezes mówi o przełomie, księgowa o zaliczkach, a nikt nie pytał, skąd te pieniądze.'});
+     }
+   }
+ }
+
+ /* --- 4) KARA ZA BYCIE SŁUPEM OGŁOSZENIOWYM --- */
+ const after=titles.length;
+ const pd=sponsorPen(after)-sponsorPen(before);
+ if(pd){
+   d+=pd;
+   log.push({club:c.name, lk:k, t:(pd<0?'SZATNIA O KOLEJNYM SPONSORZE':'JEDEN SZYLD MNIEJ'),
+     d:(pd>0?'+':'')+pd+' OVR', good:pd>0,
+     x: pd<0
+       ? 'Kevlar wygląda jak tablica ogłoszeń, a nazwa klubu nie mieści się w tabeli. '+after+
+         ' sponsorów tytularnych to łącznie '+sponsorPen(after)+' OVR — szatnia wie, że to nie potęga, tylko desperacja zarządu.'
+       : 'Nazwa znowu mieści się w jednej linijce. Kadra odetchnęła ('+(pd>0?'+':'')+pd+' OVR).'});
+ }
+ c.pendingName=composeClubName(c);
+ return {d, bkWhy};
+}
+
 function clubEconomy(){
  const log=[];
  LKEYS.forEach(k=>{
@@ -1128,7 +1734,11 @@ function clubEconomy(){
    else if(c.budget<0){ d-=Math.min(7, -c.budget/(cost*0.30));
      c.budget=Math.round(c.budget*0.5); why=why||'wyprzedaż kadry na spłatę dziury'; }
    d=Math.round(d);
- 
+
+   /* --- SPONSORZY TYTULARNI: przelewy, ucieczki oszustów, nowe szyldy --- */
+   const spon = sponsorSeason(c, k, log);
+   d += spon.d;
+
    /* --- RZUT KOŚCIĄ: PATO-ZDARZENIA --- */
    const roll=Math.random()*100;
    let bkWhy=null;                                                  // zapalnik upadłości
@@ -1154,7 +1764,10 @@ function clubEconomy(){
      log.push({club:c.name, lk:k, t: d>0?'DOBRY ROK W KSIĘGOWOŚCI':'GOSPODARKA KLUBU LEŻY', d:(d>0?'+':'')+d+' OVR', good:d>0, x:why});
    }
    c.budget=Math.round(c.budget);
- 
+
+   /* --- BOMBA ZEGAROWA SPONSORA Z GRUPY B: ma pierwszeństwo przed resztą --- */
+   if(!bkWhy && spon.bkWhy) bkWhy=spon.bkWhy;
+
    /* --- SYNDYK: dług ponad 3 mln przy ujemnym budżecie to rzut monetą --- */
    if(!bkWhy && (c.debt||0) > BANKRUPTCY.debtLimit && c.budget < 0 && chance(BANKRUPTCY.onDebt))
      bkWhy='Dług '+zl(c.debt)+' przy ujemnej kasie. Wierzyciele złożyli wniosek, sąd go przyjął.';
@@ -1381,10 +1994,19 @@ const isU19 = r => junAge(r) <= 19;   // Brązowy Kask
 const junOvr = (L,age) => L - (22-age)*5.0 - R(0,6);      // 16 lat: ~L-36, 21 lat: ~L-8
 function genSquad(club){
  const L=riderLevel(club), sq=[];
- for(let i=0;i<5;i++) sq.push(makeRider(R(23,36), gauss(L-1,4.2), club.name));     // pierwsza piątka
+ /* PIERWSZA PIĄTKA — DRABINKA, NIE PIĘĆ LOSÓW Z JEDNEGO ROZKŁADU.
+    Wcześniej każdy z piątki losował się z gauss(L-1, 4.2) i był obcinany do 99.
+    W klubie o OVR 93-95 oznaczało to, że dwóch, trzech, a czasem czterech
+    zawodników lądowało dokładnie na tej samej liczbie — stąd wrażenie
+    „zaciętego seeda". Teraz każdy numer ma własny poziom odniesienia
+    (lider, drugi zawodnik, trzeci…), a rozrzut jest węższy, więc kolejność
+    w drużynie ma sens i nie ma zlepków. */
+ const ladder=[3.4, 1.2, -0.7, -2.6, -5.0];
+ ladder.forEach(off=>sq.push(makeRider(R(23,36), gauss(L-1+off, 2.7), club.name)));
  sq.push(makeRider(R(22,24), gauss(L-7,5), club.name));                            // zawodnik U24
  sq.push(makeRider(R(25,34), gauss(L-9,5), club.name));                            // rezerwowy senior
  for(let i=0;i<4;i++){ const a=R(16,21); sq.push(makeRider(a, junOvr(L,a)+gauss(0,3), club.name, gauss(L-2,7))); }
+ dedupeSquadOvr(club.name);
  return sq;
 }
 function allClubs(){const o=[];LKEYS.forEach(k=>G.leagues[k].clubs.forEach(c=>o.push(c)));return o;}
@@ -1404,14 +2026,18 @@ function squadStrength(name){
 function genAllSquads(){
  G.riders=[];
  allClubs().forEach(c=>{ genSquad(c).forEach(r=>G.riders.push(r)); });
- // dostrojenie: przesuwamy kadrę tak, żeby jej siła zgadzała się z OVR klubu
+ // dostrojenie: przesuwamy kadrę tak, żeby jej siła zgadzała się z OVR klubu.
+ // UWAGA: przesunięcie dostaje własny szum na zawodnika — identyczna poprawka
+ // dla wszystkich była drugim źródłem powtarzalnych OVR.
  for(let pass=0;pass<5;pass++){
    allClubs().forEach(c=>{
      const diff=c.ovr-squadStrength(c.name);
      if(Math.abs(diff)<1) return;
-     squadOf(c.name).forEach(r=>r.ovr=cl(Math.round(r.ovr+diff*0.9),1,99));
+     squadOf(c.name).forEach(r=>{ if(r.me) return; r.ovr=cl(Math.round(r.ovr+diff*0.9+gauss(0,0.7)),1,99); });
    });
  }
+ dedupeAllSquads();
+ allClubs().forEach(c=>{ c.ovr=squadStrength(c.name); });
 }
 function ageRiders(){
  G.riders.forEach(r=>{
@@ -1446,6 +2072,7 @@ function ageRiders(){
  }
  // stabilizacja poziomu: liga jako całość nie może się rozjechać w górę ani w dół,
  // ale poszczególne kluby wciąż rosną i podupadają względem siebie (patrz clubEconomy)
+ dedupeAllSquads();
  allClubs().forEach(c=>{ c.ovr=squadStrength(c.name); });
  const TARGET={EL:85.0, E2:65.0, KL:45.0};
  LKEYS.forEach(k=>{
@@ -1453,8 +2080,9 @@ function ageRiders(){
    const avg=cs.reduce((a,c)=>a+c.ovr,0)/cs.length;
    const drift=TARGET[k]-avg;
    if(Math.abs(drift)<3) return;                       // słaba korekta — kluby mają prawo się rozjechać
-   cs.forEach(c=>squadOf(c.name).forEach(r=>{ if(!r.me) r.ovr=cl(Math.round(r.ovr+drift*0.30),1,99); }));
+   cs.forEach(c=>squadOf(c.name).forEach(r=>{ if(!r.me) r.ovr=cl(Math.round(r.ovr+drift*0.30+gauss(0,0.6)),1,99); }));
  });
+ dedupeAllSquads();
  allClubs().forEach(c=>{ c.ovr=squadStrength(c.name); });
 }
 // ranking krajowy — podstawa nominacji GKSŻ
@@ -1718,6 +2346,12 @@ function executeBankruptcies(){
    const city=String(old).trim().split(/\s+/).pop();           // samo miasto: ostatnie słowo
    let nn=pick(BK_PREFIX)+city, g=2;
    while(allClubs().some(x=>x!==c && x.name===nn)) nn=pick(BK_PREFIX)+city+' '+(g++);
+   /* SPONSORZY TYTULARNI IDĄ W ŚLAD ZA PIECZĄTKĄ: nowy byt prawny wchodzi
+      do KLŻ bez ani jednego sponsora w nazwie i bez kary OVR za bycie słupem.
+      Sponsorzy z Grupy A po prostu odchodzą (nie trafiają na czarną listę
+      — nie oni okradli klub). */
+   clubTitles(c).length=0;
+   c.base=nn; c.pendingName=nn;
    // nowy byt prawny
    c.name=nn; c.ovr=40; c.budget=100000; c.debt=0;
    c.seasonCost=null; c.seasonIncome=null; c.incRound=null; c.costRound=null;
@@ -1805,8 +2439,134 @@ function promotionsRelegations(){
 /* ============================================================
    6. KONTRAKTY / OFERTY
    ============================================================ */
+/* ============================================================
+   DLACZEGO STARY KLUB SIĘ NIE ODEZWAŁ
+   W realnym żużlu prezes po prostu przestaje odbierać telefon, a zawodnik
+   dowiaduje się z portalu, że wzięli Szweda. W grze to wyglądało jak bug
+   silnika, więc makeOffers() zapisuje teraz powód odrzucenia do G.noRenew,
+   a UI wywala go graczowi na ekran ofert.
+   ============================================================ */
+function renewRejection(miss, rating, lastAvg){
+ const p=G.p;
+ if(!p.club) return null;
+ let lk=null, c=null;
+ LKEYS.forEach(k=>{ const f=G.leagues[k].clubs.find(x=>x.name===p.club); if(f&&!c){c=f;lk=k;} });
+ const avgTxt=(lastAvg==null?1.4:lastAvg).toFixed(2);
+ if(!c) return {club:p.club, lk:null, code:'gone',
+   t:'TWÓJ KLUB PRZESTAŁ ISTNIEĆ',
+   x:'Szyld, pod którym jeździłeś, zniknął z ewidencji. Nie ma z kim negocjować, nie ma kto podpisać.',
+   quote:'„Numer nieaktualny. Biuro klubu jest zamknięte, a klucze ma syndyk."'};
+ 
+ const gap=Math.round(rating - riderLevel(c));
+ const brokeMoney = c.budget<=0 || (c.arr||0)>100000 || (c.debt||0)>150000;
+ 
+ // 1) ZACHOWANIE POZA TOREM — twarda flaga z sezonu
+ if(miss && miss.code==='behave') return {club:c.name, lk, code:'behave',
+   t:'KLUB ZERWAŁ NEGOCJACJE — POWÓD POZASPORTOWY',
+   x:'To nie kwestia średniej. '+c.name+' zamknął temat twojego kontraktu jeszcze w trakcie sezonu, '+
+     'po tym, co zrobiłeś poza torem. Decyzja zapadła w gabinecie, nie na torze.',
+   quote:'„Sportowo? Sportowo nie mieliśmy zastrzeżeń. Ale są rzeczy, których się w tym klubie nie robi."',
+   tip:'Profesjonalizm i lojalność odbudujesz tylko czasem i spokojnym sezonem.'};
+ 
+ // 1b) SŁUP OGŁOSZENIOWY — TO TY NIE CHCESZ ICH, NIE ODWROTNIE
+ if(miss && miss.code==='billboard') return {club:c.name, lk, code:'billboard',
+   t:'ODMÓWIŁEŚ PRZEDŁUŻENIA — KLUB SPRZEDAŁ WŁASNĄ NAZWĘ',
+   x:c.name+' ma w nazwie '+(miss.titles||2)+' sponsorów tytularnych. Kevlar wygląda jak tablica '+
+     'ogłoszeń, spiker nie wyrabia z przeczytaniem szyldu, a przy twoim profesjonalizmie ('+p.prof+
+     ') nikt z twojego otoczenia nie pozwoliłby ci tam zostać. To nie klub, to slup reklamowy z torem.',
+   quote:'„Panie, my mamy trzech sponsorów w nazwie. TRZECH. Jak pan chce robić karierę, to nie tutaj."',
+   tip:'Kluby z 2-3 sponsorami tytularnymi są zamknięte dla zawodników z profesjonalizmem powyżej '+SPON.profBlock+'.'};
+
+ // 2) SPORTOWO ZA SŁABY NA ICH AMBICJE
+ if(miss && miss.code==='sport') return {club:c.name, lk, code:'sport',
+   t:'JESTEŚ SPORTOWO ZA SŁABY NA ICH AMBICJE',
+   x:c.name+' celuje w poziom OVR '+c.ovr+'. Twoja wartość rynkowa to '+Math.round(rating)+
+     ' (OVR '+p.ovr+', medialność '+p.med+', średnia z zeszłego sezonu '+avgTxt+') — różnica '+gap+
+     ' pkt jest większa, niż ten klub jest w stanie przełknąć w składzie.',
+   quote:'„Szanujemy chłopaka, ale my walczymy o play-off, a nie o to, żeby ktoś nam wypełniał rubrykę."',
+   tip:'Zejdź klasę niżej, odbuduj średnią i wróć — albo szukaj klubu o OVR bliżej '+Math.max(20,Math.round(rating))+'.'};
+ 
+ // 3) KLUBU NA CIEBIE NIE STAĆ
+ if(brokeMoney) return {club:c.name, lk, code:'money',
+   t:'KLUBU PO PROSTU NA CIEBIE NIE STAĆ',
+   x:c.name+' tonie w zobowiązaniach'+((c.debt||0)>0?' (samemu tobie zalega '+zl(c.debt)+')':'')+
+     ((c.arr||0)>0?', a wobec całej kadry ma '+zl(c.arr)+' zaległości':'')+
+     '. Budżet na twój kontrakt nie istnieje — nie w tym roku.',
+   quote:'„Panie, my nie mamy czym zapłacić za prąd na stadionie, a pan przychodzi po kontrakt."',
+   tip:'Kluby z długami biorą tanich zawodników. Twoja stawka była za wysoka jak na ich kasę.'};
+ 
+ // 4) DECYZJA SPORTOWO-KADROWA: junior, Szwed, twoja średnia
+ let why, quote;
+ if(p.age>33){
+   why='Klub przestawia się na młodszą kadrę. Masz '+p.age+' lat i, jak to ujął menedżer, „nie jesteś inwestycją".';
+   quote='„Musimy budować drużynę na trzy lata do przodu. On tych trzech lat już nie ma."';
+ } else if((lastAvg||0)<1.2){
+   why='Twoja średnia '+avgTxt+' nie broni miejsca w składzie. Postawili na juniora z własnego szkolenia — '+
+       'kosztuje mniej i wypełnia rubrykę młodzieżową.';
+   quote='„Przy takiej średniej to my wolimy dać jeździć swojemu chłopakowi. Przynajmniej się nauczy."';
+ } else if(p.prof<35){
+   why='Sportowo się bronisz, ale sztab ma dosyć twojej pracy poza torem (profesjonalizm '+p.prof+
+       '): spóźnienia, sprzęt nieprzygotowany, telefon wyłączony.';
+   quote='„Talent talentem, tylko my nigdy nie wiedzieliśmy, w jakim on przyjedzie stanie."';
+ } else {
+   why='Zwykła decyzja kadrowa: na twoje miejsce wzięli obcokrajowca ze średnią wyżej niż twoja ('+avgTxt+'). '+
+       'Dowiedziałeś się z portalu, jak wszyscy.';
+   quote='„Rozmowy? Były rozmowy. No, mieliśmy zadzwonić."';
+ }
+ return {club:c.name, lk, code:'squad', t:'KLUB NIE ZŁOŻYŁ CI OFERTY PRZEDŁUŻENIA', x:why, quote,
+   tip:'Nic nie jest przesądzone — inne kluby z listy obok wciąż cię chcą.'};
+}
+ 
+/* ============================================================
+   PRZEDŁUŻENIE W TRAKCIE UMOWY — „ONE-CLUB MAN"
+   Jeżeli masz umowę wieloletnią, wysoką lojalność i sezon, który się broni,
+   klub sam wychodzi z nową, dłuższą i lepiej płatną umową — jeszcze zanim
+   stara wygaśnie. To jedyna droga, żeby zbudować karierę w jednych barwach.
+   ============================================================ */
+function makeRenewOffer(){
+ const p=G.p;
+ if(!p || p.retired || !p.club) return null;
+ if(p.contract.years<1) return null;                       // i tak wchodzisz na rynek
+ if(p.loyalty<=70) return null;                            // warunek z założenia: lojalność > 70
+ if(p.next.noRenew) return null;
+ if(p.next.lockTransfer>0) return null;                    // masz już dziesięciolatkę od prezesa
+ if(p.next.forceClub) return null;                         // idziesz gdzie indziej, i to nie z własnej woli
+ const c=clubOf(p); if(!c || c.bankrupt) return null;
+ /* Profesjonalista nie przedłuża z klubem, który sprzedał własną nazwę (2-3 sponsorów). */
+ if(p.prof>SPON.profBlock && titleCount(c)>=SPON.profBlockFrom) return null;
+ const last=G.history.length ? G.history[G.history.length-1] : null;
+ if(!last || last.matches<4) return null;
+ const avg=last.avg||0;
+ if(avg<1.30) return null;                                 // „dobra średnia" — bez tego klub nie ryzykuje
+ if(!chance(cl(45 + (p.loyalty-70)*1.4 + (avg-1.30)*45, 20, 92))) return null;
+ const years=cl(p.contract.years + R(2,3), 2, 6);
+ const mul=RF(1.08,1.32) + cl((avg-1.50)*0.14, 0, 0.22);
+ const rate=Math.round(p.contract.rate*mul);
+ const bonus=Math.round(Math.max(0,c.budget)*RF(0.004,0.020)*cl(p.loyalty/70,0.5,1.6));
+ return {club:c.name, lk:p.lk, ovr:c.ovr, budget:c.budget, debt:c.debt,
+   type:p.contract.type, years, rate, bonus, extend:true, stay:true,
+   oldRate:p.contract.rate, oldYears:p.contract.years, avg,
+   ride:appearanceChance(p, c, 55, null)};
+}
+function acceptRenew(o){
+ const p=G.p;
+ p.contract={type:o.type, years:o.years, rate:o.rate, bonus:o.bonus};
+ p.budget += o.bonus; p.career.earned += o.bonus;
+ p.loyalty = cl(p.loyalty+14, 0, 100);
+ p.prof    = cl(p.prof+2, 0, 99);
+ p.next.noRenew=false;
+ p.career.renewals=(p.career.renewals||0)+1;
+}
+function declineRenew(){
+ const p=G.p;
+ p.loyalty = cl(p.loyalty-8, 0, 100);
+ p.career.declined=(p.career.declined||0)+1;
+}
+ 
 function makeOffers(){
  const p=G.p, cands=[];
+ let oldMiss=null;                 // dlaczego stary klub odpadł z listy
+ G.noRenew=null;
  const lastAvg = G.history.length ? G.history[G.history.length-1].avg : 1.4;
  const rating = p.ovr + p.med*0.08 + (p.next.betterOffers?5:0) + (lastAvg-1.4)*7;
  
@@ -1816,10 +2576,16 @@ function makeOffers(){
    const rate = pro ? Math.round((600 + c.ovr*38 + c.budget/26000) * RF(0.85,1.2) * cl(1+gap*0.02,0.7,1.4))
                     : R(150,400);
    // BRAK OFERT SPONSORSKICH (decyzja „pierdolcie się, śmieszki”) = zero premii za podpis
-   const bon  = (pro && !p.next.noSponsor) ? Math.round(c.budget*RF(0.008,0.05)*cl(rating/70,0.3,1.6)) : 0;
+   // BALANS: premie za podpis ścięte (było RF(0.008,0.05)) — na starcie kariery
+   // nie ma „darmowych" 200 tysięcy za sam podpis pod umową amatorsko-zawodową.
+   const bon  = (pro && !p.next.noSponsor) ? Math.round(c.budget*RF(0.004,0.030)*cl(rating/70,0.25,1.5)) : 0;
    return {club:c.name, lk, ovr:c.ovr, budget:c.budget, debt:c.debt,
      type: pro?'Zawodowy':'Amatorski', years:R(1,3), rate, bonus:bon,
-     stay:c.name===p.club, ride:appearanceChance(p, c, 55, null)};
+     stay:c.name===p.club, ride:appearanceChance(p, c, 55, null),
+     /* ILE SZYLDÓW NA KEVLARZE — UI pokazuje to przy ofercie, a profesjonalista
+        w ogóle takiej oferty nie zobaczy (patrz filtr niżej). */
+     titles: titleCount(c), sponsors: clubTitles(c).map(s=>s.n),
+     titlePen: sponsorPen(titleCount(c))};
  };
  const findClub=name=>{ for(const k of LKEYS){ const f=G.leagues[k].clubs.find(x=>x.name===name || x.name.includes(name)); if(f) return {c:f,lk:k}; } return null; };
  
@@ -1854,29 +2620,55 @@ function makeOffers(){
  
  LKEYS.forEach(lk=>{
   G.leagues[lk].clubs.forEach(c=>{
-   if(p.next.noRenew && c.name===p.club) return;
+   const isOld = c.name===p.club;
+   if(p.next.noRenew && isOld){ oldMiss={code:'behave'}; return; }
+   /* ------------------------------------------------------------
+      SŁUP OGŁOSZENIOWY — BLOKADA DLA PROFESJONALISTÓW
+      Zawodnik z profesjonalizmem powyżej SPON.profBlock nie podpisze
+      z klubem, który ma 2-3 sponsorów tytularnych w nazwie. Kevlar jak
+      tablica ogłoszeń, nazwa na trzy linijki i zarząd, który sprzedaje
+      wszystko, co da się sprzedać — to nie miejsce na poważną karierę.
+      ------------------------------------------------------------ */
+   if(p.prof>SPON.profBlock && titleCount(c)>=SPON.profBlockFrom){
+     if(isOld) oldMiss={code:'billboard', titles:titleCount(c)};
+     return;
+   }
    const gap = rating - riderLevel(c);            // >0 = jesteś ponad poziomem tej drużyny
-   if(gap < floor) return;                        // twarde odcięcie: za słaby, nie zadzwonią
-   let want = 50 + gap*2.2 + (c.name===p.club?p.loyalty*1.1:0) - (p.prof<35?10:0);
+   if(gap < floor){ if(isOld) oldMiss={code:'sport', gap}; return; }
+   let want = 50 + gap*2.2 + (isOld?p.loyalty*1.1:0) - (p.prof<35?10:0);
    // juniora chce każdy — bez niego klub nie wypełni rubryki młodzieżowej
    if(p.age<=21) want = Math.max(want+16, 32); else if(p.age<=24) want += 7;
    if(p.age>33) want -= 18;
-   if(c.debt>150000) want += 14;                  // klub z długami bierze każdego
-   if(c.name.includes('ROW Rybnik') && p.next.rowPen) want -= 25;
-   if(!chance(cl(want,3,96))) return;
+   if(c.debt>150000) want += 14;                  // klub z długami bierze każdego...
+   if(c.budget<=0 && (c.arr||0)>0) want -= 20;    // ...ale bankrut nie ma czym zapłacić nikomu
+   // (poprawka: klub nazywa się „MRÓZ Rybnik", więc stary warunek na 'ROW Rybnik' nigdy nie działał)
+   if(c.name.includes('Rybnik') && p.next.rowPen) want -= 25;
+   if(!chance(cl(want,3,96))){ if(isOld) oldMiss={code:'roll', want:Math.round(want), gap}; return; }
    cands.push({c,lk,gap});
   });
  });
  
  // koło ratunkowe: jak nikt nie chce, czasem odezwie się ktoś z dołu KLŻ
  if(!cands.length && p.banSeasons===0 && chance(60)){
-   const weak=G.leagues.KL.clubs.slice().sort((a,b)=>a.ovr-b.ovr).slice(0,3);
-   const c=pick(weak); cands.push({c, lk:'KL', gap:rating-riderLevel(c), lifeline:true});
+   const weak=G.leagues.KL.clubs.slice()
+     .filter(c=>!(p.prof>SPON.profBlock && titleCount(c)>=SPON.profBlockFrom))
+     .sort((a,b)=>a.ovr-b.ovr).slice(0,3);
+   if(weak.length){ const c=pick(weak); cands.push({c, lk:'KL', gap:rating-riderLevel(c), lifeline:true}); }
  }
  
  // najmocniejsze kluby, które faktycznie cię chcą
  cands.sort((a,b)=> b.c.ovr - a.c.ovr);
- const out = cands.slice(0,maxOffers).map(({c,lk,gap})=>mkOffer(c,lk,gap));
+ let sel = cands.slice(0,maxOffers);
+ /* Klub, w którym jeździsz i który NAPRAWDĘ chce cię zatrzymać, zawsze pokazuje
+    swoją ofertę — wcześniej potrafił wypaść z listy tylko dlatego, że był słabszy
+    od innych chętnych, i wyglądało to jak brak przedłużenia. */
+ const oldIn = cands.find(x=>x.c.name===p.club);
+ if(oldIn && !sel.some(x=>x.c.name===p.club)){
+   if(sel.length) sel[sel.length-1]=oldIn; else sel=[oldIn];
+ }
+ const out = sel.map(({c,lk,gap})=>mkOffer(c,lk,gap));
+ /* POWÓD BRAKU PRZEDŁUŻENIA — do pokazania na ekranie ofert */
+ G.noRenew = (p.club && !out.some(o=>o.stay)) ? renewRejection(oldMiss, rating, lastAvg) : null;
  p.next.noSponsor=false;      // blokada sponsorska obowiązywała na TO okienko
  return out;
 }
@@ -1899,8 +2691,11 @@ function signContract(o){
  if(o.type==='Amatorski'){
    const c=getClub(p);
    // pierwszy kontrakt w karierze: sprzęt startowy = 20 (zgodnie z regulaminem gry)
-   p.equip = p.career.seasons===0 ? 20 : cl(Math.round(20+c.ovr*0.32),1,99);
-   p.mech=25; p.mechName='Mechanik klubowy (z łapanki)';
+   // p.keepEquip — sprzęt wywalczony poza klubem (rok u Nickiego w warsztacie) zostaje twój
+   const clubGear = p.career.seasons===0 ? 20 : cl(Math.round(20+c.ovr*0.32),1,99);
+   p.equip = p.keepEquip ? Math.max(p.equip, clubGear) : clubGear;
+   p.keepEquip=false;
+   p.mech=25; p.mechName='Mechanik klubowy (z łapanki)'; p.mechCost=0;
  }
  G.screen='hub'; render();
 }

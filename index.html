@@ -83,7 +83,10 @@ function render(){
    s==='create'  ? scCreate() :
    s==='sign'    ? scSign()   :
    s==='hub'     ? scHub()    :
+   s==='renew'   ? scRenew()  :
    s==='event'   ? scEvent()  :
+   s==='winter'  ? scWinter() :
+   s==='mech'    ? scMech()   :
    s==='summary' ? scSummary():
    s==='end'     ? scEnd()    : '';
  window.scrollTo({top:0});
@@ -130,11 +133,34 @@ function doCreate(){
  G.screen='sign'; render();
 }
 
+/* ============================================================
+   BOKS: DLACZEGO STARY KLUB NIE ZŁOŻYŁ OFERTY
+   Silnik (makeOffers → renewRejection) zapisuje powód do G.noRenew.
+   Bez tego brak przedłużenia wyglądał jak bug: telefon milczy i tyle.
+   ============================================================ */
+function noRenewBox(){
+ const n=G.noRenew; if(!n) return '';
+ const col={behave:'#dc2626', sport:'#f59e0b', money:'#f59e0b', gone:'#dc2626', squad:'#a1a1aa'}[n.code]||'#a1a1aa';
+ return `<div class="brut mb-3" style="border-color:${col}">
+  <div class="brut-h px-3 py-1.5 text-[11px] font-bold" style="border-color:${col};color:${col}">
+    BEZ PRZEDŁUŻENIA — ${esc(n.club)} ${n.lk?'· '+G.leagues[n.lk].short:''}</div>
+  <div class="p-3">
+   <div class="text-[12px] font-bold mb-1" style="color:${col}">${esc(n.t)}</div>
+   <div class="text-[11px] text-zinc-200 leading-relaxed mb-2">${esc(n.x)}</div>
+   <div class="text-[12px] text-zinc-300 border-l-2 pl-3 italic" style="border-color:${col}">
+     ${esc(n.quote)} <span class="text-[11px] text-zinc-500 not-italic">— były pracodawca</span></div>
+   ${n.tip?`<div class="text-[11px] text-zinc-400 mt-2">› ${esc(n.tip)}</div>`:''}
+  </div></div>`;
+}
+
 /* ---- EKRAN: PODPISANIE KONTRAKTU ---- */
 let _offers=[];
 function scSign(){
  const p=G.p;
- if(!_offers.length) _offers = (p.club===null) ? firstOffers() : makeOffers();
+ if(!_offers.length){
+   if(p.club===null){ G.noRenew=null; _offers=firstOffers(); }
+   else _offers=makeOffers();
+ }
  const offers=_offers;
  if(!offers.length){
    const idle=p.idleYears||0;
@@ -142,6 +168,7 @@ function scSign(){
    <div class="brut-h px-3 py-1.5 text-[11px] text-red-500 font-bold" style="border-color:#7f1d1d">RYNEK TRANSFEROWY ${G.year} // BRAK OFERT</div>
    <div class="p-5">
    <div class="text-zinc-300 mb-3">Żaden klub w Polsce nie chce cię widzieć na torze. Telefon milczy.</div>
+   ${noRenewBox()}
    <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
      ${kpi('WIEK',p.age)}${kpi('OVR',p.ovr)}${kpi('LATA BEZ KLUBU',idle,idle>=2?'text-red-500':'text-zinc-100')}${kpi('BUDŻET',zl(p.budget),'text-orange-400')}
    </div>
@@ -149,13 +176,25 @@ function scSign(){
      <ul class="text-[11px] text-zinc-300 space-y-0.5">${p.idleLog.map(l=>'<li>› '+esc(l)+'</li>').join('')}</ul></div>`:''}
    <div class="text-[11px] text-zinc-400 mb-4">Możesz czekać na telefon i trenować na własną rękę — ale każdy rok bez ścigania zjada twój OVR.
    ${idle>=2?'<b class="text-red-500 blink">Po trzecim roku bez klubu kariera kończy się sama.</b>':''}</div>
+   ${mechanicBox('brak')}
    <div class="flex gap-2 flex-wrap">
      <button onclick="skipYear()" class="btn px-5 py-2.5 font-bold tracking-widest text-orange-500">PRZECZEKAJ ROK ${G.year} &gt;</button>
+     <button onclick="mechanicPath()" class="btn px-5 py-2.5 font-bold tracking-widest" style="color:#eab308">PIERDOLĘ, IDĘ ROBIĆ ZA MECHANIKA</button>
      <button onclick="retire('Nikt już nie dzwonił.')" class="btn-d px-5 py-2.5 font-bold tracking-widest text-red-400">ZAKOŃCZ KARIERĘ</button>
    </div></div></div>`;
  }
+ /* ============================================================
+    ŚCIEŻKA MECHANIKA PRZY SAMYCH OFERTAMI Z KLŻ
+    „Pierdolę, idę robić za mechanika" pokazywało się WYŁĄCZNIE przy zerowej
+    liczbie ofert. Tymczasem najniższa liga bywa gorsza niż etat w warsztacie —
+    jeżeli wszystkie oferty są z KLŻ, gracz musi mieć ten wybór na ekranie.
+    ============================================================ */
+ const onlyKL = offers.every(o=>o.lk==='KL');
  return head()+`<div class="fade">
  ${playerStrip()}
+ ${longInjuryWarnHtml()}
+ ${forcedExitHtml()}
+ ${noRenewBox()}
  <div class="brut"><div class="brut-h px-3 py-1.5 text-[11px] text-orange-500 font-bold">OKIENKO TRANSFEROWE // OFERTY NA SEZON ${G.year}</div>
  <div class="p-3 grid md:grid-cols-2 gap-2">
  ${offers.map((o,i)=>`<div class="brut p-3 ${o.stay?'border-orange-800':''}">
@@ -164,6 +203,10 @@ function scSign(){
      <div class="text-[11px] text-zinc-400 tracking-widest">${G.leagues[o.lk].short} · OVR ${o.ovr} · budżet ${zl(o.budget)}</div></div>
      ${o.stay?'<span class="text-[11px] text-orange-500 border border-orange-800 px-1.5 py-0.5">PRZEDŁUŻENIE</span>':''}
    </div>
+   ${o.titles>=2?`<div class="mt-2 text-[11px] border px-2 py-1" style="border-color:#a16207;color:#eab308">
+     SŁUP OGŁOSZENIOWY: ${o.titles} sponsorów tytularnych w nazwie (${o.sponsors.map(esc).join(', ')})
+     — bazowy OVR klubu obniżony o ${Math.abs(o.titlePen)} pkt. Szatnia wie, że to desperacja zarządu.</div>`
+    :o.titles===1?`<div class="mt-1 text-[11px] text-zinc-400">sponsor tytularny: ${esc(o.sponsors[0])}</div>`:''}
    <div class="mt-2 border border-zinc-700 bg-[rgba(249,115,22,.07)] px-2 py-1.5">
      <span class="text-[11px] text-zinc-300 tracking-widest">DŁUGOŚĆ UMOWY</span>
      <span class="text-[13px] font-extrabold text-orange-400 ml-2">${o.years} ${lataTxt(o.years)}</span>
@@ -183,7 +226,51 @@ function scSign(){
    ${o.debt>0?`<div class="text-[11px] text-red-500 mt-1">UWAGA: klub ma zaległości ${zl(o.debt)} — kadra takiego klubu jeździ wyraźnie słabiej</div>`:''}
    <button onclick="pickOffer(${i})" class="btn w-full mt-2 py-1.5 text-[11px] font-bold tracking-widest">PODPISUJĘ NA ${o.years} ${lataTxt(o.years).toUpperCase()}</button>
  </div>`).join('')}
- </div></div></div>`;
+ </div>
+ ${onlyKL?`<div class="px-3 pb-3">
+   ${mechanicBox('klz')}
+   <div class="flex gap-2 flex-wrap">
+     <button onclick="mechanicPath()" class="btn px-5 py-2.5 font-bold tracking-widest" style="color:#eab308">PIERDOLĘ, IDĘ ROBIĆ ZA MECHANIKA</button>
+     <button onclick="retire('Wolał zostać w parku maszyn niż jeździć w KLŻ.')" class="btn-d px-5 py-2.5 font-bold tracking-widest text-red-400">ZAKOŃCZ KARIERĘ</button>
+   </div></div>`:''}
+ </div></div>`;
+}
+/* ---- BOKS „DRUGA DROGA: PARK MASZYN" (wspólny dla obu wariantów ekranu ofert) ---- */
+function mechanicBox(reason){
+ return `<div class="brut p-3 mb-4" style="border-color:#a16207">
+   <div class="text-[11px] font-bold tracking-widest mb-1" style="color:#eab308">DRUGA DROGA: PARK MASZYN</div>
+   ${reason==='klz'?`<div class="text-[11px] mb-1" style="color:#eab308">
+     WSZYSTKIE OFERTY, JAKIE MASZ, SĄ Z KRAJOWEJ LIGI ŻUŻLOWEJ. Nie musisz tego brać.</div>`:''}
+   <div class="text-[11px] text-zinc-300 leading-relaxed">${reason==='klz'
+     ? 'Zamiast jeździć w najniższej lidze za grosze, możesz przez rok robić za mechanika.'
+     : 'Zamiast czekać na telefon, możesz przez rok robić za mechanika.'}
+   Pensja jest, dach nad głową jest, tor jest — tylko nie twój. <b class="text-zinc-200">5%</b> szans, że trafisz na człowieka,
+   u którego wreszcie zrozumiesz ten sport (OVR +10, sprzęt 99, ale medialność spada do zera — rok cię nie było).
+   <b class="text-zinc-200">95%</b>, że przez rok będziesz myć pancerze, stracisz formę i zostanie ci kontrakt w KLŻ.
+   Wynik zobaczysz na osobnym ekranie, zanim wrócisz na rynek.</div>
+ </div>`;
+}
+/* ---- CZERWONE OSTRZEŻENIE: SEZON MASZ Z GŁOWY ---- */
+function longInjuryWarnHtml(){
+ const p=G.p; if(!(p.longInjury>0)) return '';
+ return `<div class="brut p-3 mb-3 border-2 border-red-700 bg-red-950/20">
+  <div class="text-[12px] text-red-500 font-bold tracking-widest blink mb-1">KONTUZJA DŁUGOTERMINOWA — SEZON ${G.year} MASZ Z GŁOWY</div>
+  <div class="text-[12px] text-red-400 font-bold mb-1">${esc(p.longInjuryWhy||'Zerwane więzadła / złamana kość udowa.')}</div>
+  <div class="text-[11px] text-zinc-200">Operacja, rehabilitacja, powrót na tor najwcześniej w sezonie ${G.year+ (p.longInjury||1)}.
+   Możesz podpisać kontrakt, ale w tym roku nie odjedziesz ANI JEDNEGO biegu: zero meczów, zero punktów, zero rozwoju
+   — a koszty życia, serwis i alimenty lecą dalej.</div>
+ </div>`;
+}
+/* ---- CZERWONE OSTRZEŻENIE: UMOWA ZERWANA PRZEZ SKUTEK ZDARZENIA ---- */
+function forcedExitHtml(){
+ const p=G.p; if(!p.forcedExit) return '';
+ p.forcedExit=false;
+ return `<div class="brut p-3 mb-3" style="border-color:#dc2626">
+  <div class="text-[12px] font-bold tracking-widest mb-1" style="color:#dc2626">UMOWA ZERWANA — MUSISZ ZMIENIĆ KLUB</div>
+  <div class="text-[11px] text-zinc-200">Skutek twojej decyzji z ekranu zdarzenia. Kontrakt miał biec dalej,
+   ale po tym, co się stało, nie ma do czego wracać: rynek otwiera się dla ciebie w trybie awaryjnym
+   i wybór jest taki, jaki jest.</div>
+ </div>`;
 }
 function firstOffers(){
  const p=G.p, out=[], used=new Set();
@@ -207,6 +294,117 @@ function firstOffers(){
  return out.sort((a,b)=>b.ovr-a.ovr);
 }
 function pickOffer(i){ const o=_offers[i]; _offers=[]; signContract(o); }
+
+/* ============================================================
+   „PIERDOLĘ, IDĘ ROBIĆ ZA MECHANIKA"
+   Rok poza torem, ale nie na kanapie: przewijamy sezon (liga żyje dalej),
+   zerujemy lojalność i rzucamy kością 5/95.
+   ============================================================ */
+function mechanicPath(){
+ const p=G.p, y=G.year;
+ // świat leci dalej: budżety, gospodarka klubów, starzenie się kadr
+ allClubs().forEach(clubSeasonBudget);
+ clubEconomy();
+ ageRiders();
+ applyPendingSponsors();                  // nowe szyldy sponsorskie wchodzą i tak
+ // etat mechanika: jakaś pensja jest, koszty życia też
+ const wage=R(38000,62000), live=livingCostOf(p,true);
+ p.budget += wage-live;
+ p.loyalty=0;
+ p.idleLog=p.idleLog||[];
+ /* Rok poza torem to też rok rehabilitacji — długa kontuzja tyka dalej. */
+ if((p.longInjury||0)>0){ p.longInjury--; if(!p.longInjury) p.longInjuryWhy=''; }
+ const alim = chargeAlimony(p);
+ const M={year:y, wage, live, good:false, head:'', rows:[], alimony:alim};
+ if(chance(5)){
+   /* 5% — TRAFIŁEŚ DO WŁAŚCIWEGO WARSZTATU */
+   const o0=p.ovr, e0=p.equip, m0=p.med, f0=p.prof;
+   p.ovr   = cl(p.ovr+10,1,99);
+   p.equip = 99;
+   p.med   = 0;
+   p.prof  = cl(p.prof+6,0,99);
+   p.keepEquip = true;                    // ten sprzęt zabierasz ze sobą do nowego klubu
+   p.mechPath  = 'nicki';
+   M.good=true;
+   M.head='ZROZUMIAŁEŚ ŻUŻEL U NICKIEGO';
+   M.lead='Rok przy stole warsztatowym u człowieka, który silnik składa jak zegarek. Pierwsze trzy miesiące '+
+          'podawałeś klucze. Potem zacząłeś rozumieć, dlaczego to wszystko jedzie — albo nie jedzie.';
+   M.rows=[['OVR (umiejętności)', o0+' → '+p.ovr, '+10', true],
+           ['SPRZĘT', e0+' → '+p.equip, '+'+(p.equip-e0)+' — i ten sprzęt zabierasz ze sobą', true],
+           ['PROFESJONALIZM', f0+' → '+p.prof, '+'+(p.prof-f0), true],
+           ['MEDIALNOŚĆ', m0+' → '+p.med, 'przez rok nikt o tobie nie napisał ani słowa', false]];
+ } else {
+   /* 95% — MYŁEŚ PANCERZE */
+   const o0=p.ovr, e0=p.equip, f0=p.prof;
+   p.ovr   = cl(p.ovr-4,1,99);
+   p.prof  = cl(p.prof-10,0,99);
+   p.equip = cl(p.equip-6,1,99);
+   p.next.forceClub = 'weak';             // zostaje ci najniższa liga
+   p.mechPath = 'pancerze';
+   M.good=false;
+   M.head='MYŁEŚ PANCERZE W KLŻ';
+   M.lead='Myjka, opony, plandeka, powrót do domu o czwartej rano. Kierownik drużyny nie zapamiętał '+
+          'twojego nazwiska, choć wołał cię co weekend.';
+   M.rows=[['OVR (umiejętności)', o0+' → '+p.ovr, '-'+(o0-p.ovr)+' — rok bez motocykla', false],
+           ['PROFESJONALIZM', f0+' → '+p.prof, '-'+(f0-p.prof), false],
+           ['SPRZĘT', e0+' → '+p.equip, '-'+(e0-p.equip)+' — rdzewiał w garażu', false],
+           ['KONTRAKT NA PRZYSZŁY ROK', 'KLŻ', 'zostaje ci wyłącznie najniższa liga', false]];
+ }
+ p.idleLog.unshift(y+': '+M.head+'. Zarobek na etacie: '+zl(wage)+', koszty życia: '+zl(live)+'.');
+ if(p.idleLog.length>4) p.idleLog.pop();
+ p.idleYears=(p.idleYears||0)+1;
+ p.age++; G.year++;
+ syncMeRider();
+ if(p.banSeasons>0) p.banSeasons--;
+ /* Wyrok o końcu kariery ZAPADA TERAZ, ale gracz najpierw musi zobaczyć,
+    co wyszło z roku w warsztacie. Dlatego trzymamy powód i pokazujemy go
+    na ekranie wyniku razem z przyciskiem OK. */
+ M.retire = retireCheck(p) ||
+   (p.idleYears>=3 ? 'Trzy lata poza torem. Zostałeś w parku maszyn na stałe — po drugiej stronie plandeki.' : null);
+ G.mech=M; G.screen='mech'; render();
+}
+/* ---- EKRAN: WYNIK ROKU W WARSZTACIE ---- */
+function scMech(){
+ const M=G.mech;
+ if(!M){ _offers=[]; G.screen='sign'; return scSign(); }
+ const col = M.good ? '#22c55e' : '#eab308';
+ return head()+`<div class="fade">
+ <div class="brut" style="border-color:${col}">
+  <div class="brut-h px-3 py-1.5 text-[11px] font-bold" style="border-color:${col};color:${col}">
+    ROK ${M.year} // ETAT MECHANIKA — CO Z TEGO WYSZŁO</div>
+  <div class="p-5">
+   <div class="font-extrabold tracking-wider text-[17px] mb-2" style="color:${col}">${esc(M.head)}</div>
+   <div class="text-zinc-300 text-[12.5px] leading-relaxed mb-4 border-l-2 pl-4" style="border-color:${col}">${esc(M.lead)}</div>
+   <table class="w-full text-[12px] mb-4">
+    ${M.rows.map(r=>`<tr class="border-b border-zinc-700/60">
+      <td class="text-zinc-400 text-[11px] tracking-widest">${esc(r[0])}</td>
+      <td class="text-right font-bold ${r[3]?'text-emerald-400':'text-red-400'} whitespace-nowrap">${esc(r[1])}</td>
+      <td class="text-[11px] text-zinc-400 pl-3">${esc(r[2])}</td></tr>`).join('')}
+    <tr class="border-b border-zinc-700/60"><td class="text-zinc-400 text-[11px] tracking-widest">PENSJA NA ETACIE</td>
+      <td class="text-right font-bold text-emerald-400 whitespace-nowrap">+${zl(M.wage)}</td>
+      <td class="text-[11px] text-zinc-400 pl-3">umowa o pracę, pierwszy raz w życiu</td></tr>
+    <tr class="border-b border-zinc-700/60"><td class="text-zinc-400 text-[11px] tracking-widest">KOSZTY ŻYCIA</td>
+      <td class="text-right font-bold text-red-400 whitespace-nowrap">−${zl(M.live)}</td>
+      <td class="text-[11px] text-zinc-400 pl-3">taryfa „rok bez klubu”</td></tr>
+    ${M.alimony?`<tr class="border-b border-zinc-700/60"><td class="text-red-500 text-[11px] tracking-widest font-bold">ALIMENTY DO ARGENTYNY</td>
+      <td class="text-right font-bold text-red-500 whitespace-nowrap">−${zl(M.alimony.amount)}</td>
+      <td class="text-[11px] text-zinc-400 pl-3">pozostało rat: ${M.alimony.left}</td></tr>`:''}
+   </table>
+   <div class="text-[11px] text-zinc-400 mb-4">Budżet po tym roku: <b class="${G.p.budget<0?'text-red-500':'text-orange-400'}">${zl(G.p.budget)}</b>
+     · wiek: <b class="text-zinc-200">${G.p.age}</b> · lata poza torem: <b class="${G.p.idleYears>=2?'text-red-500':'text-zinc-200'}">${G.p.idleYears}</b></div>
+   ${M.retire?`<div class="brut p-3 mb-4 border-2 border-red-700 bg-red-950/20">
+     <div class="text-[12px] text-red-500 font-bold tracking-widest blink mb-1">TO JUŻ KONIEC</div>
+     <div class="text-[12px] text-zinc-200">${esc(M.retire)}</div></div>`:''}
+   <button onclick="mechContinue()" class="btn px-8 py-3 font-extrabold tracking-[.2em]" style="color:${col}">
+     OK${M.retire?' — ZAMYKAM KARIERĘ':', SZUKAM KLUBU'} &gt;</button>
+  </div>
+ </div></div>`;
+}
+function mechContinue(){
+ const M=G.mech; G.mech=null;
+ if(M && M.retire){ retire(M.retire); return; }
+ _offers=[]; G.screen='sign'; render();
+}
 
 /* ---- PASEK ZAWODNIKA ---- */
 function playerStrip(){
@@ -237,7 +435,9 @@ function scHub(){
  return head()+`<div class="fade">
  ${playerStrip()}
  ${banInfo}
+ ${longInjuryWarnHtml()}
  ${squadHtml()}
+ ${outlookBox()}
  ${warnings()}
  ${p.contract.type==='Zawodowy'?workshop():amateurNote()}
  ${G.history.length?historyBox():''}
@@ -267,7 +467,7 @@ function syncMeRider(){
  const p=G.p, r=G.riders.find(x=>x.me);
  if(!r) return null;
  r.age=p.age; r.name=p.name; r.ovr=p.ovr;
- if(p.club) r.club=p.club;
+ if(p.club){ r.club=p.club; dedupeSquadOvr(p.club); }   // OVR gracza mógł zająć liczbę kolegi z kadry
  return r;
 }
 /* ---- KADRA KLUBU: z kim realnie walczysz o numer startowy ---- */
@@ -336,6 +536,40 @@ function squadStatsHtml(r){
   FORMA = dyspozycja na koniec sezonu (−12…+12); to ona, razem z OVR, decydowała o numerach startowych w kolejnych meczach.</div>
  </div></div>`;
 }
+/* Szacowane ryzyko kontuzji w nadchodzącym sezonie — ten sam wzór, co w silniku. */
+function injuryPreview(){
+ const p=G.p;
+ return cl(INJ.base + (100-p.prof)*INJ.profW + Math.max(0,p.age-INJ.ageFrom)*INJ.ageW
+   + (1-cl(p.equip,1,99)/99)*INJ.equipW + (p.next.injuryPP||0), 2, 95);
+}
+/* ---- PROGNOZA KARIERY: ile ci jeszcze zostało i ile to kosztuje ---- */
+function outlookBox(){
+ const p=G.p;
+ const lim=retireAgeOf(p), left=Math.max(0,lim-p.age);
+ const inj=injuryPreview();
+ const live=livingCostOf(p,false);
+ const pro=p.contract.type==='Zawodowy';
+ const cell=(l,v,c,x)=>`<div class="brut p-2"><div class="text-[11px] text-zinc-400 tracking-widest leading-tight">${l}</div>
+   <div class="text-lg font-extrabold ${c}">${v}</div><div class="text-[11px] text-zinc-400 leading-tight">${x}</div></div>`;
+ return `<div class="brut mb-3"><div class="brut-h px-3 py-1.5 text-[11px] text-orange-500 font-bold">PROGNOZA — CO CIĘ CZEKA</div>
+ <div class="p-3 grid grid-cols-2 lg:grid-cols-4 gap-2">
+  ${cell('KONIEC KARIERY (SZACUNEK)', lim+' lat', left<=2?'text-red-500':left<=5?'text-yellow-500':'text-zinc-100',
+     'zostało ok. '+left+' sezonów · liczone z profesjonalizmu ('+p.prof+') i OVR ('+p.ovr+')')}
+  ${cell('RYZYKO KONTUZJI W SEZONIE', inj.toFixed(0)+'%', inj>=45?'text-red-500':inj>=30?'text-yellow-500':'text-emerald-400',
+     'profesjonalizm, wiek i stan sprzętu · pauza 2–13 spotkań i utrata OVR, a w '+INJ.catP+
+     '% urazów zerwane więzadła / złamane udo = TEN i CAŁY KOLEJNY sezon poza torem')}
+  ${cell('KOSZTY ŻYCIA / ROK', zl(live), 'text-orange-400',
+     (p.contract.type==='Amatorski'?'taryfa amatorska (mieszkasz u mamy)':'bus, paliwo, hotele, dom')+' · '+G.leagues[p.lk].short)}
+  ${cell(pro?'SERWIS PO SEZONIE':'SPRZĘT KLUBOWY', pro?zl(servicePreview()):'0 zł',
+     pro?'text-red-400':'text-emerald-400',
+     pro?'rachunek przyjdzie niezależnie od wyników':'dopóki jeździsz na kontrakcie amatorskim')}
+ </div>
+ <div class="px-3 pb-3 text-[11px] text-zinc-400">
+  Wiek emerytalny NIE jest sztywny. Zawodowiec z profesjonalizmem 99 dojeżdża do ${RETIRE.max} lat, a zawodnik,
+  który traktuje ten sport jak hobby, kończy zaraz po trzydziestce — chyba że ma OVR, za który kluby wciąż płacą.
+  W ostatnich ${RETIRE.wobbleFrom} latach przed granicą ciało potrafi odmówić wcześniej.
+ </div></div>`;
+}
 function warnings(){
  const p=G.p, c=getClub(p), w=[];
  const th=refusalThreshold(p.age), ch=refusalChance(p.age,c.debt);
@@ -352,6 +586,13 @@ function warnings(){
  if(p.contract.type==='Zawodowy'&&p.equip<25) w.push(['SPRZĘT NA POZIOMIE '+p.equip+'/99','Silniki są zajeżdżone. Bez wizyty u tunera będziesz zbierał defekty.']);
  if(p.contract.type==='Zawodowy'&&p.mech<30) w.push(['MECHANIK JAKOŚCI '+p.mech,'Nawet dobry silnik zepsuje ci się w boksie. Zatrudnij kogoś trzeźwego.']);
  if(p.prof<25) w.push(['PROFESJONALIZM '+p.prof,'Będziesz zbierał taśmy i wykluczenia jak Rempała w młodości.']);
+ if(p.alimony>0) w.push(['ALIMENTY DO ARGENTYNY: '+zl(ECON.alimony)+' PO KAŻDYM SEZONIE (POZOSTAŁO RAT: '+p.alimony+')',
+   'Kwota jest sztywna i schodzi z budżetu niezależnie od wyników, kontuzji i tego, czy klub ci zapłacił. '+
+   'Do końca zobowiązania zostawisz w Argentynie '+zl(ECON.alimony*p.alimony)+'.']);
+ if(titleCount(c)>=2) w.push(['KLUB MA '+titleCount(c)+' SPONSORÓW TYTULARNYCH W NAZWIE — '+Math.abs(sponsorPen(titleCount(c)))+' PKT OVR',
+   'Kevlar wygląda jak tablica ogłoszeń, a szatnia wie, że to nie potęga, tylko desperacja zarządu. '+
+   'Zawodnicy z profesjonalizmem powyżej '+SPON.profBlock+' nie podpisują z takimi klubami — jeśli podniesiesz swój, '+
+   'ten klub przestanie być dla ciebie opcją.']);
  if(!w.length) return '';
  return `<div class="brut border-red-900 mb-3"><div class="brut-h px-3 py-1.5 text-[11px] text-red-500 font-bold" style="border-color:#7f1d1d">OSTRZEŻENIA PRZED SEZONEM</div>
  <div class="p-3 space-y-1.5">${w.map(x=>`<div><div class="text-[11px] text-red-400 font-bold">${esc(x[0])}</div><div class="text-[11px] text-zinc-300">${esc(x[1])}</div></div>`).join('')}</div></div>`;
@@ -400,17 +641,30 @@ function workshop(){
   </div>`;}).join('')}
  </div></div>
  <div class="brut"><div class="brut-h px-3 py-1 text-[11px] text-yellow-400 font-bold flex justify-between gap-2">
-   <span>MECHANIK — JAKOŚĆ OBSŁUGI</span><span class="text-zinc-400">próg = wymagany PROFESJONALIZM</span></div>
+   <span>MECHANIK — JAKOŚĆ OBSŁUGI</span><span class="text-zinc-400">obecny: ${p.mech}/99</span></div>
+ <div class="p-2 text-[11px] text-zinc-400 border-b border-zinc-700">
+   Zatrudniasz JEDNEGO mechanika na sezon. Gorszego od obecnego (${p.mech}) nie da się kliknąć — kasa nie znika
+   za nic. Przy zmianie na lepszego odzyskujesz <b class="text-zinc-300">${Math.round(ECON.mechBuyout*100)}% ceny obecnego</b>
+   (odstępne od klubu, który go przejmie)${p.mechCost?': dziś '+zl(Math.round(p.mechCost*ECON.mechBuyout)):' — mechanik z łapanki nie jest nic wart'}.
+ </div>
  <div class="p-2 space-y-1.5 max-h-[420px] overflow-y-auto">
-  ${MECHS.map((m,i)=>{const cur=p.mechName===m.n, afford=p.budget>=m.c, prof=p.prof>=(m.prof||0);
-   const ok=afford&&prof;
-   return `<div class="flex items-center justify-between gap-2 border-b border-zinc-700 pb-1.5 ${cur?'bg-[rgba(234,179,8,.07)]':''} ${!prof&&!cur?'opacity-60':''}">
-    <div><div class="text-[11px] ${cur?'text-yellow-400 font-bold':prof?'text-zinc-200':'text-zinc-300'}">${cur?'✔ ':''}${!prof&&!cur?'🔒 ':''}${m.n}</div>
+  ${MECHS.map((m,i)=>{
+   const cur=p.mechName===m.n, prof=p.prof>=(m.prof||0);
+   const worse = !cur && m.q<=p.mech;                         // BLOKADA: nie kupujesz sobie gorszego
+   const buyout = mechBuyout();
+   const net = Math.max(0, m.c-buyout);
+   const afford = p.budget>=net;
+   const ok = afford && prof && !cur && !worse;
+   return `<div class="flex items-center justify-between gap-2 border-b border-zinc-700 pb-1.5 ${cur?'bg-[rgba(234,179,8,.07)]':''} ${(!prof||worse)&&!cur?'opacity-60':''}">
+    <div><div class="text-[11px] ${cur?'text-yellow-400 font-bold':worse?'text-zinc-500':prof?'text-zinc-200':'text-zinc-300'}">${cur?'✔ ':''}${worse?'⊘ ':''}${!prof&&!cur&&!worse?'🔒 ':''}${m.n}</div>
     <div class="text-[11px] text-zinc-400">Jakość ${m.q}/99 · na cały sezon${cur?' · ZATRUDNIONY':''}
-    ${m.prof?` · <span class="${prof?'text-lime-600':'text-red-500 font-bold'}">wymaga PROF ${m.prof}</span>`:''}</div>
-    ${!prof&&!cur?`<div class="text-[11px] text-red-500">Nie podpisze się pod zawodnikiem z profesjonalizmem ${p.prof}. Ma nazwisko do stracenia.</div>`
-      :!afford&&!cur?`<div class="text-[11px] text-zinc-400">brakuje ${zl(m.c-p.budget)}</div>`:''}</div>
+    ${m.prof?` · <span class="${prof?'text-lime-600':'text-red-500 font-bold'}">wymaga PROF ${m.prof}</span>`:''}
+    ${(!cur&&!worse&&buyout>0)?` · <span class="text-emerald-500">netto ${zl(net)} po odstępnym</span>`:''}</div>
+    ${worse?`<div class="text-[11px] text-zinc-500">Słabszy od twojego obecnego (${p.mech}/99). Klub nie zwraca różnicy, więc gra na to nie pozwala.</div>`
+      :!prof&&!cur?`<div class="text-[11px] text-red-500">Nie podpisze się pod zawodnikiem z profesjonalizmem ${p.prof}. Ma nazwisko do stracenia.</div>`
+      :!afford&&!cur?`<div class="text-[11px] text-zinc-400">brakuje ${zl(net-p.budget)}</div>`:''}</div>
     ${cur?'<span class="text-[11px] text-yellow-500 border border-yellow-800 px-2 py-1 whitespace-nowrap">TWÓJ</span>'
+        :worse?'<span class="text-[11px] text-zinc-500 border border-zinc-700 px-2 py-1 whitespace-nowrap">GORSZY</span>'
         :`<button onclick="hireMech(${i})" ${ok?'':'disabled'} class="btn px-2 py-1 text-[11px] whitespace-nowrap ${ok?'':'opacity-30 cursor-not-allowed'}">${zl(m.c)}</button>`}
   </div>`;}).join('')}
  </div></div></div>
@@ -418,6 +672,12 @@ function workshop(){
   Górna półka jest zamknięta nie tylko przez cenę: tuner z czterema silnikami i sztab z Anglii patrzą też na to,
   jak pracujesz. <b class="text-zinc-300">Podnieś PROFESJONALIZM</b> (pełne sezony w składzie, brak wykluczeń, trener od startów),
   a odblokujesz sprzęt, którego za same pieniądze nie kupisz.
+  <div class="mt-2 border-t border-zinc-700 pt-2">
+   <b class="text-red-400">SPRZĘT SIĘ ZAJEŻDŻA.</b> Pełny sezon zawodowca to około
+   <b class="text-zinc-300">-16 do -26 pkt sprzętu</b> (zużycie rośnie z liczbą odjechanych biegów, kraksa dokłada swoje),
+   a po sezonie przychodzi rachunek za serwis: <b class="text-zinc-300">${zl(servicePreview())}</b> przy twoim obecnym przebiegu i sprzęcie.
+   Rok bez wizyty u tunera = defekty na prostej.
+  </div>
  </div></div>`;
 }
 function buyTuner(i){const t=TUNERS[i],p=G.p;
@@ -427,11 +687,86 @@ function buyTuner(i){const t=TUNERS[i],p=G.p;
    p.shop.log.push(t.n+' — BUBEL, sprzęt ledwo drgnął ('+(g>=0?'+':'')+g+')');}
  else {p.equip=cl(p.equip+t.e,1,99);p.shop.equipGain+=t.e;p.shop.log.push(t.n+' (+'+t.e+' Sprzęt)');}
  render();}
+/* Ile odzyskasz, oddając obecnego mechanika (odstępne od nowego pracodawcy). */
+function mechBuyout(){ return Math.round((G.p.mechCost||0)*ECON.mechBuyout); }
+/* Szacunkowy rachunek za serwis posezonowy — żeby gracz widział, co go czeka. */
+function servicePreview(){
+ const p=G.p, h=G.history.length?G.history[G.history.length-1]:null;
+ const run=h?(h.heats+((h.po&&h.po.h)||0)):55;
+ return Math.round(ECON.svcBase + run*ECON.svcPerHeat + p.equip*ECON.svcEquipW);
+}
 function hireMech(i){const m=MECHS[i],p=G.p;
- if(p.budget<m.c || p.mechName===m.n || p.prof<(m.prof||0)) return;
- p.budget-=m.c; p.shop.spent+=m.c; p.mech=m.q; p.mechName=m.n;
+ /* BLOKADA NADPISANIA: gorszy (albo równy) mechanik to wyrzucanie pieniędzy —
+    wcześniej kliknięcie tańszej pozycji podmieniało dobrego fachowca bez ostrzeżenia
+    i bez grosza rekompensaty. */
+ if(p.mechName===m.n || m.q<=p.mech) return;
+ if(p.prof<(m.prof||0)) return;
+ const buyout=mechBuyout();
+ const net=Math.max(0,m.c-buyout);
+ if(p.budget<net) return;
+ p.budget-=net; p.shop.spent+=net;
+ const old=p.mechName;
+ p.mech=m.q; p.mechName=m.n; p.mechCost=m.c;
  p.shop.log=p.shop.log.filter(l=>!l.startsWith('Mechanik: '));
- p.shop.log.push('Mechanik: '+m.n+' (jakość '+m.q+')'); p.shop.mechHired=true; render();}
+ p.shop.log.push('Mechanik: '+m.n+' (jakość '+m.q+')'+
+   (buyout>0?' · odstępne za '+old+': +'+zl(buyout)+', koszt netto '+zl(net):''));
+ p.shop.mechHired=true; render();}
+
+/* ============================================================
+   EKRAN: PRZEDŁUŻENIE KONTRAKTU W TRAKCIE UMOWY („ONE-CLUB MAN")
+   Pojawia się PO sezonie, mimo trwającego kontraktu, jeśli lojalność
+   przekroczyła 70, a sezon się obronił. Klub sam wychodzi z dłuższą
+   i lepiej płatną umową — inaczej zbudowanie kariery w jednych barwach
+   było niemożliwe, bo okienko transferowe otwiera się dopiero po wygaśnięciu.
+   ============================================================ */
+let _renew=null;
+function scRenew(){
+ const o=_renew, p=G.p;
+ if(!o){ G.screen='hub'; return scHub(); }
+ const up=Math.round((o.rate/Math.max(1,o.oldRate)-1)*100);
+ return head()+`<div class="fade">
+ ${playerStrip()}
+ <div class="brut border-orange-800">
+  <div class="brut-h px-3 py-1.5 text-[11px] text-orange-500 font-bold">PROPOZYCJA PRZEDŁUŻENIA — ${esc(o.club)} · ${G.leagues[o.lk].short}</div>
+  <div class="p-5">
+   <div class="text-orange-500 font-extrabold tracking-wider text-[15px] mb-3">PREZES CHCE ZWIĄZAĆ CIĘ Z KLUBEM NA DŁUŻEJ</div>
+   <div class="text-zinc-300 text-[12.5px] leading-relaxed mb-4 border-l-2 border-orange-900 pl-4">
+    Umowa biegnie jeszcze <b class="text-zinc-100">${o.oldYears} ${lataTxt(o.oldYears)}</b>, ale po sezonie ze średnią
+    <b class="text-zinc-100">${o.avg.toFixed(2)}</b> i przy twojej lojalności (<b class="text-zinc-100">${p.loyalty}/100</b>)
+    klub nie chce czekać do okienka. Na stole leży nowy papier: dłuższy i lepiej płatny.
+    Sektor B już wie, że rozmawiacie.
+   </div>
+   <div class="grid sm:grid-cols-2 gap-3 mb-4">
+    <div class="brut p-3">
+     <div class="text-[11px] text-zinc-400 tracking-widest mb-1">OBECNA UMOWA</div>
+     <div class="text-[12px] text-zinc-300">${p.contract.type}</div>
+     <div class="text-[12px] text-zinc-300">${zl(o.oldRate)} za punkt</div>
+     <div class="text-[12px] text-zinc-300">jeszcze ${o.oldYears} ${lataTxt(o.oldYears)}</div>
+    </div>
+    <div class="brut p-3 border-orange-800">
+     <div class="text-[11px] text-orange-500 tracking-widest mb-1">NOWA UMOWA</div>
+     <div class="text-[12px] text-zinc-100">${o.type}</div>
+     <div class="text-[12px] text-orange-400 font-bold">${zl(o.rate)} za punkt <span class="text-[11px] ${up>=0?'text-emerald-400':'text-red-400'}">(${up>=0?'+':''}${up}%)</span></div>
+     <div class="text-[12px] text-zinc-100">${o.years} ${lataTxt(o.years)} — do końca sezonu ${G.year+o.years-1}</div>
+     <div class="text-[12px] text-zinc-300">za podpis: ${o.bonus?zl(o.bonus):'—'}</div>
+    </div>
+   </div>
+   <div class="text-[11px] text-zinc-400 mb-4 border border-zinc-700 px-3 py-2 leading-relaxed">
+    PODPISUJĘ: +14 lojalności, +2 profesjonalizmu, premia za podpis od ręki — i zamknięte okienko na
+    ${o.years} ${lataTxt(o.years)}. Kariera w jednych barwach robi się realna, ale rynku nie zobaczysz.<br>
+    ODMAWIAM: -8 lojalności, stara umowa biegnie dalej, a na rynek wyjdziesz dopiero, gdy wygaśnie.
+   </div>
+   <div class="flex gap-2 flex-wrap">
+    <button onclick="doRenew(1)" class="btn px-6 py-3 font-extrabold tracking-widest text-orange-500">PODPISUJĘ NA ${o.years} ${lataTxt(o.years).toUpperCase()} &gt;</button>
+    <button onclick="doRenew(0)" class="btn-d px-6 py-3 font-bold tracking-widest text-red-400">DZIĘKUJĘ, ZOSTAJĘ PRZY STAREJ</button>
+   </div>
+  </div>
+ </div></div>`;
+}
+function doRenew(yes){
+ if(yes && _renew) acceptRenew(_renew); else declineRenew();
+ _renew=null; G.screen='hub'; render();
+}
 
 /* ---- EKRAN: ZDARZENIE ---- */
 function scEvent(){
@@ -513,7 +848,8 @@ function scSummary(){
     <div class="text-[11px] text-zinc-400 tracking-widest mb-1">OCENA SEZONU — WSZYSTKIE ROZGRYWKI</div>
     <div class="text-2xl font-extrabold ${r.grade.c}">${r.grade.t}</div>
     <div class="text-[11px] text-zinc-300 mt-1">Forma: <b class="${r.grade.c}">${r.grade.f}</b></div>
-    <div class="text-[11px] text-zinc-400 mt-1">Łącznie ${r.tally.p} pkt w ${r.tally.h} biegach (liga + play-off + DMPJ + turnieje indywidualne) = średnia <b class="text-zinc-300">${r.tally.h?r.overall.toFixed(2):'—'}</b>${r.medals.length?' + bonus za medale':''}</div>
+    <div class="text-[11px] text-zinc-400 mt-1">Łącznie ${r.tally.p} pkt w ${r.tally.h} biegach (liga + play-off + DMPJ + turnieje indywidualne) = średnia <b class="text-zinc-300">${r.tally.h?r.overall.toFixed(2):'—'}</b></div>
+    ${gradePartsHtml(r)}
     ${r.medals.length?`<div class="mt-1">${r.medals.map(m=>`<div class="text-[11px] ${medalCol(m.pos)}">${medalTxt(m.pos)} — ${esc(m.name)}</div>`).join('')}</div>`:''}
     <div class="text-[11px] text-zinc-300 mt-2">Atmosfera w klubie: <b class="text-zinc-200">${r.atm}/100 (${r.atmTxt})</b></div>
     <div class="text-[11px] text-zinc-300">Rozwój: OVR ${r.ovrFrom} → <b class="${r.ovrTo>=r.ovrFrom?'text-emerald-400':'text-red-400'}">${r.ovrTo}</b></div>
@@ -524,14 +860,31 @@ function scSummary(){
     <ul class="text-[11px] text-zinc-300 space-y-0.5">${(r.evLog||[]).map(l=>'<li>› '+esc(l)+'</li>').join('')}</ul>
    </div>
   </div>
+  ${careerOverHtml(r)}
+  ${longInjuryHtml(r)}
   ${bankruptHtml(r)}
+  ${bankruptcyBoardHtml(r)}
   ${settleHtml(r)}
   ${clubEventsHtml(r)}
+  ${sponsorRenameHtml()}
   ${statsDevHtml(r)}
   ${talkHtml(r)}
   ${r.notes.length?`<div class="brut p-3 mt-3"><div class="text-[11px] text-zinc-400 tracking-widest mb-1">RAPORT SEZONU</div>
    <ul class="text-[11px] text-zinc-300 space-y-0.5">${r.notes.map(n=>'<li>› '+esc(n)+'</li>').join('')}</ul></div>`:''}
  </div></div>`+foot;
+}
+/* ---- SKĄD WZIĘŁA SIĘ TA OCENA ----
+   Ocena to nie sama średnia biegowa: liczy się liczba odjechanych biegów
+   (mała próba ciągnięta jest do średniej ligowej), awans, utrzymanie, medale,
+   play-off i to, ile spotkań zabrała kontuzja. */
+function gradePartsHtml(r){
+ const P=r.gradeParts||[]; if(!P.length) return '';
+ return `<div class="mt-2 border-t border-zinc-700 pt-2">
+  <div class="text-[11px] text-zinc-400 tracking-widest mb-1">SKŁADNIKI OCENY (wynik: ${r.gradeScore})</div>
+  <ul class="text-[11px] space-y-0.5">${P.map(x=>`<li class="flex justify-between gap-2">
+    <span class="text-zinc-300">${esc(x.w)}</span>
+    <span class="font-bold whitespace-nowrap ${x.d>0?'text-emerald-400':x.d<0?'text-red-400':'text-zinc-400'}">${x.d>0?'+':''}${x.d.toFixed(2)}</span></li>`).join('')}</ul>
+ </div>`;
 }
 function ligaView(r){
  return `<div class="grid lg:grid-cols-2 gap-3">
@@ -545,6 +898,52 @@ function ligaView(r){
   ${LKEYS.filter(k=>k!==r.lk).map(k=>`<div><div class="text-[11px] text-zinc-400 tracking-widest mb-1">${G.leagues[k].name}</div>${tableHtml(k)}</div>`).join('')}
  </div></div>
  ${squadStatsHtml(r)}`;
+}
+/* ============================================================
+   BARDZO DŁUGIE KONTUZJE — CZERWONA PLANSZA, KTÓREJ NIE DA SIĘ PRZEOCZYĆ
+   Gracz musi wiedzieć od razu, że sezon (albo dwa) ma z głowy.
+   ============================================================ */
+function longInjuryHtml(r){
+ if(!r.longInjuryNew && !r.longInjuryOut && !r.injCat) return '';
+ const why = r.longInjuryNew || r.injCatWhy || r.longInjuryWhy || 'Zerwane więzadła / złamana kość udowa.';
+ const next = r.longInjuryNext;
+ return `<div class="brut p-3 mt-3 border-2 border-red-700 bg-red-950/20">
+  <div class="text-[12px] text-red-500 font-bold tracking-widest blink mb-1">
+    ${r.longInjuryOut && !r.longInjuryNew ? 'CAŁY SEZON POZA TOREM — KONTUZJA DŁUGOTERMINOWA'
+                                          : 'ZERWANE WIĘZADŁA / ZŁAMANA KOŚĆ UDOWA'}</div>
+  <div class="text-[13px] text-red-400 font-bold mb-2">${esc(why)}</div>
+  <ul class="text-[11px] text-red-400 space-y-0.5 font-bold">
+   ${r.longInjuryDmg?`<li>› Uraz zabrał ${r.longInjuryDmg} pkt OVR. Tego nie odrobisz w rehabilitacji.</li>`:''}
+   ${r.longInjuryOut?`<li>› TEN sezon przeleciał obok ciebie: 0 meczów, 0 biegów, brak rozwoju, kary za brak startów w profesjonalizmie i medialności.</li>`:''}
+   ${r.longInjuryNew?`<li>› Sezon urwany od razu: play-off, DMPJ i turnieje indywidualne odpadają w całości.</li>`:''}
+   ${next?`<li class="blink">› KOLEJNY SEZON (${G.year+1}) MASZ Z GŁOWY. Operacja, śruby, rehabilitacja — wracasz najwcześniej w ${G.year+2}.</li>`:''}
+   <li>› Koszty życia, serwis sprzętu${G.p.alimony>0?' i alimenty':''} lecą dalej. Kontuzja nie zawiesza rachunków.</li>
+  </ul>
+ </div>`;
+}
+/* ---- KARIERA URWANA PRZEZ ZDARZENIE (fxEnd) ---- */
+function careerOverHtml(r){
+ if(!r.careerOver) return '';
+ return `<div class="brut p-3 mt-3 border-2 border-red-700 bg-red-950/20">
+  <div class="text-[12px] text-red-500 font-bold tracking-widest blink mb-1">KONIEC KARIERY — DECYZJA ZAPADŁA POZA TOREM</div>
+  <div class="text-[13px] text-red-400 font-bold">${esc(r.careerOverWhy||'—')}</div>
+  <div class="text-[11px] text-zinc-200 mt-1">To był twój ostatni sezon. Kliknięcie „DALEJ" zamknie karierę
+   i przeniesie cię na ekran podsumowania z kartą statystyk.</div>
+ </div>`;
+}
+/* ---- NOWE SZYLDY SPONSORSKIE, KTÓRE WEJDĄ W ŻYCIE OD NOWEGO ROKU ---- */
+function sponsorRenameHtml(){
+ const L=allClubs().filter(c=>c.pendingName && c.pendingName!==c.name)
+   .map(c=>({old:c.name, now:c.pendingName, lk:leagueOfClub(c.name), n:titleCount(c)}));
+ if(!L.length) return '';
+ return `<div class="brut p-3 mt-3" style="border-color:#a16207">
+  <div class="text-[11px] tracking-widest mb-2" style="color:#eab308">ZMIANY NAZW KLUBÓW OD SEZONU ${G.year+1} (SPONSORZY TYTULARNI)</div>
+  <div class="space-y-1">${L.map(x=>`<div class="text-[11px]">
+    <span class="text-zinc-400">${G.leagues[x.lk]?G.leagues[x.lk].short:''}</span>
+    <span class="text-zinc-300 line-through">${esc(x.old)}</span>
+    <span class="text-zinc-500">→</span> <b style="color:#eab308">${esc(x.now)}</b>
+    ${x.n>=2?`<span class="text-red-500"> · ${x.n} sponsorów tytularnych: ${sponsorPen(x.n)} OVR</span>`:''}</div>`).join('')}</div>
+ </div>`;
 }
 /* ---- UPADŁOŚĆ TWOJEGO KLUBU: gruba czerwona notatka ---- */
 function bankruptHtml(r){
@@ -578,7 +977,17 @@ function settleHtml(r){
   ${s.unpaid?row('Klub NIE przelał — nowa zaległość', '−'+zl(s.unpaid),'text-red-500'):''}
   ${s.pzmEarned?row('Startowe i kilometrówka PZM (DMPJ / Indywidualne)', '+'+zl(s.pzmEarned),'text-emerald-400'):''}
   ${r.fines?row('Kary i grzywny', '−'+zl(r.fines),'text-red-500'):''}
+  ${r.serviceCost?row('Serwis posezonowy sprzętu'+(r.equipWear?' (zużycie -'+r.equipWear+' pkt)':''), '−'+zl(r.serviceCost),'text-red-500'):''}
+  ${r.living?row('Koszty życia i utrzymania busa', '−'+zl(r.living),'text-red-500'):''}
+  ${r.alimony?`<tr class="border-b border-zinc-700/60" style="background:rgba(220,38,38,.10)">
+     <td class="text-red-500 font-bold">Alimenty do Argentyny${r.alimonyLeft!=null?' <span class="text-[11px] text-zinc-400 font-normal">(pozostało rat: '+r.alimonyLeft+')</span>':''}</td>
+     <td class="text-right text-red-500 font-bold whitespace-nowrap blink">−${zl(r.alimony)}</td></tr>`:''}
+  ${row('BILANS ROKU (do kieszeni)',
+     ((s.paid+(s.pzmEarned||0)-(r.fines||0)-(r.serviceCost||0)-(r.living||0)-(r.alimony||0))>=0?'+':'')+
+     zl(s.paid+(s.pzmEarned||0)-(r.fines||0)-(r.serviceCost||0)-(r.living||0)-(r.alimony||0)),
+     (s.paid+(s.pzmEarned||0)-(r.fines||0)-(r.serviceCost||0)-(r.living||0)-(r.alimony||0))>=0?'text-emerald-400':'text-red-500')}
  </table>
+ ${r.alimony?`<div class="text-[11px] text-red-500 font-bold mt-1">Alimenty do Argentyny: −${zl(r.alimony)}${r.alimonyLeft?' — do zapłaty jeszcze '+zl(r.alimony*r.alimonyLeft)+' w '+r.alimonyLeft+' ratach.':' — to była ostatnia rata.'}</div>`:''}
  ${s.pzmEarned?`<div class="text-[11px] text-zinc-400 mt-1">PZM płaci od ręki, niezależnie od kondycji klubu: ${s.pzmStarts||0} × ${zl(500)} startowego + ${s.pzmPts||0} pkt × ${zl(150)}.</div>`:''}
  ${(r.payLog&&r.payLog.length)?`<div class="mt-2"><div class="text-[11px] text-zinc-400 tracking-widest mb-0.5">SPŁATY ZALEGŁOŚCI W TRAKCIE SEZONU</div>
    ${r.payLog.map(x=>`<div class="text-[11px] text-emerald-400">kolejka ${x.round}: +${zl(x.amount)}${x.left?' (zostaje '+zl(x.left)+')':' — czysto'}</div>`).join('')}</div>`:''}
@@ -656,11 +1065,11 @@ function myResultsHtml(r){
     : `<span class="text-zinc-400">— ${m.why}${m.gap!=null?` <span class="text-zinc-400">(zabrakło ${m.gap.toFixed(1)} pkt do ostatniego numeru)</span>`
         :m.reg?' <span class="text-sky-400">(byłeś lepszy — wypchnęła cię rubryka U24)</span>':''}</span>`;
   const cash = m.rode&&m.owed ? `<span class="${m.paid>=m.owed?'text-emerald-500':m.paid>0?'text-yellow-600':'text-red-500'}">${zl(m.paid)}${m.paid<m.owed?' / '+zl(m.owed):''}</span>` : '';
-  return `<tr class="border-b border-zinc-700/60 ${m.rode?'':'opacity-60'}">
+  return `<tr class="border-b border-zinc-700/60 ${m.rode?'':'opacity-60'}${m.walk?' bg-red-950/30':''}">
    <td class="text-zinc-400 text-[11px] whitespace-nowrap">K${m.round||i+1}</td>
    <td class="text-zinc-400 text-[11px]">${m.home?'DOM':'WYJ'}</td>
    <td class="truncate max-w-[150px] text-zinc-300">${esc(m.opp)}</td>
-   <td class="text-right font-bold ${w} whitespace-nowrap">${m.teamFor}:${m.teamAgn}</td>
+   <td class="text-right font-bold ${m.walk?'text-red-500':w} whitespace-nowrap">${m.walk==='void'?'—':m.teamFor+':'+m.teamAgn}</td>
    <td class="text-right whitespace-nowrap pl-2">${line}</td>
    <td class="text-[11px] text-zinc-400 text-right whitespace-nowrap">${m.rode&&m.num?'nr '+m.num:''}</td>
    <td class="text-[11px] text-right whitespace-nowrap pl-2">${cash}</td></tr>`;}).join('');
@@ -671,7 +1080,9 @@ function myResultsHtml(r){
  <span class="text-zinc-300">3/2/1/0</span> = zdobyte punkty (0 = ostatnie miejsce, ale bieg objechany) ·
  <span class="text-red-400">w</span> = wykluczenie · <span class="text-red-500">d</span> = defekt
  — jedno i drugie liczy się jako start (art. 720 ust. 4) ·
- <span class="text-zinc-300">-</span> = zmieniony przez rezerwę, <b class="text-zinc-300">nie liczy się jako objechany bieg</b></div>`;
+ <span class="text-zinc-300">-</span> = zmieniony przez rezerwę, <b class="text-zinc-300">nie liczy się jako objechany bieg</b> ·
+ <span class="text-red-500">wiersz na czerwono</span> = <b class="text-zinc-300">WALKOWER</b>: spotkanie w ogóle się nie odbyło,
+ a do tabeli wpisano wynik administracyjny (0:75, 75:0 albo 0:0 przy walkowerze obustronnym)</div>`;
 }
 /* ---- FAZA PLAY-OFF / PLAY-DOWN ---- */
 function tieBox(t,club){
@@ -818,10 +1229,19 @@ function dmpjHtml(r){
  </div></div></div>`;
 }
 
-function bankruptcyBoardHtml(){
- const B=G.bankrupts||[], GT=G.greenTable||[];
+/* ============================================================
+   UPADŁOŚCI I ZIELONY STOLIK
+   NAPRAWA: ta plansza wisiała wyłącznie w zakładce PLAY-OFF (playoffHtml),
+   więc informacja o zmianie nazwy klubu po bankructwie nie pojawiała się
+   na głównym ekranie podsumowania i wyglądała na zgubioną. Poza tym
+   funkcja czytała ŻYWE G.bankrupts, które w kolejnym roku jest nadpisywane
+   — dlatego bierzemy teraz snapshot z wyniku sezonu (r.bankruptsAll /
+   r.greenTable ustawiane w resolveSeason po promotionsRelegations).
+   ============================================================ */
+function bankruptcyBoardHtml(r){
+ const B=(r&&r.bankruptsAll)||G.bankrupts||[], GT=(r&&r.greenTable)||G.greenTable||[];
  if(!B.length && !GT.length) return '';
- return `<div class="brut mt-3 border-red-900"><div class="brut-h px-3 py-1.5 text-[11px] text-red-500 font-bold">UPADŁOŚCI I ZIELONY STOLIK</div>
+ return `<div class="brut mt-3 border-red-900"><div class="brut-h px-3 py-1.5 text-[11px] text-red-500 font-bold">UPADŁOŚCI I ZIELONY STOLIK${r&&r.year?' — PO SEZONIE '+r.year:''}</div>
  <div class="p-3 space-y-1">
  ${B.map(b=>`<div class="border-l-2 border-red-800 pl-3 py-0.5">
    <div class="text-[11px] text-red-500 tracking-widest">SYNDYK · ${G.leagues[b.from]?G.leagues[b.from].short:''} → KLŻ</div>
@@ -834,8 +1254,9 @@ function bankruptcyBoardHtml(){
  </div></div>`;
 }
 function playoffHtml(){
- if(!G.playoff||!G.playoff.length) return bankruptcyBoardHtml();
- return bankruptcyBoardHtml()+`<div class="brut mt-3"><div class="brut-h px-3 py-1.5 text-[11px] text-yellow-500 font-bold">BARAŻE O AWANS/UTRZYMANIE + RUCH MIĘDZY LIGAMI</div>
+ const r=G.last;
+ if(!G.playoff||!G.playoff.length) return bankruptcyBoardHtml(r);
+ return bankruptcyBoardHtml(r)+`<div class="brut mt-3"><div class="brut-h px-3 py-1.5 text-[11px] text-yellow-500 font-bold">BARAŻE O AWANS/UTRZYMANIE + RUCH MIĘDZY LIGAMI</div>
  <div class="p-3 grid md:grid-cols-2 gap-3">
  ${G.playoff.map(b=>`<div class="brut p-3">
    <div class="text-[11px] text-zinc-400 tracking-widest mb-1">${G.leagues[b.hi].short} (7.) vs ${G.leagues[b.lo].short} (2.)</div>
@@ -863,22 +1284,104 @@ function historyBox(){
 /* ---- PRZEJŚCIE DO KOLEJNEGO ROKU ---- */
 function nextYear(){
  const p=G.p;
+ /* KARIERA URWANA PRZEZ ZDARZENIE (fxEnd: wiatrówka, katastrofa awionetki,
+    uraz kręgosłupa na crossie, gigantyczny przypał). Wcześniej fxEnd ustawiał
+    p.retired=true i NIKT tego nie sprawdzał — gracz spokojnie jechał dalej. */
+ if(p.retired){ retire(p.retireReason||'Zdarzenie zamknęło karierę.'); return; }
  if(G.nextIMP){G.recIMP=G.nextIMP;G.nextIMP=null;}
  if(G.nextMimpChamp){G.recMIMP=G.nextMimpChamp;G.nextMimpChamp=null;}
  ageRiders();
+ /* NOWE SZYLDY SPONSORÓW TYTULARNYCH wchodzą w życie z nowym rokiem —
+    dopiero teraz klub realnie zmienia nazwę (kadra, Gracz, tabele). */
+ applyPendingSponsors();
  p.age++; G.year++;
  syncMeRider();                       // Gracz też się starzeje — także w oczach trenera
  if(p.banSeasons>0) p.banSeasons--;
  p.contract.years--;
  // rozwój klubów
  LKEYS.forEach(k=>G.leagues[k].clubs.forEach(c=>{c.mood=R(20,90);}));
- if(p.age>=40){ retire('Wiek. Ciało powiedziało dość.'); return; }
+ /* KONIEC KARIERY LICZONY, NIE SZTYWNY: granicę wyznaczają profesjonalizm i OVR
+    (retireAgeOf/retireCheck w engine.js), a nie stałe „40 lat". */
+ const why=retireCheck(p);
+ if(why){ retire(why); return; }
+ /* ============================================================
+    PRZERWA ZIMOWA — OSOBNA PULA ZDARZEŃ (WINTER_EVENTS)
+    Odpalana MIĘDZY resolveSeason() a makeOffers(): skutki decyzji
+    zimowych (OVR, sprzęt, kasa, alimenty, wymuszony transfer, lepsze
+    oferty) są widoczne już w okienku transferowym.
+    ============================================================ */
+ G.wev=null; G.wevLog=[]; G.wevDone=false; G.wevTitle=null; G.wevChoice=null;
+ if(chance(WINTER_CHANCE)){
+   const e=rollWinterEvent();
+   if(e){ G.wev=e; G.screen='winter'; render(); return; }
+ }
+ afterWinter();
+}
+/* Routing PO przerwie zimowej: okienko transferowe / przedłużenie / hub. */
+function afterWinter(){
+ const p=G.p;
  const noRenew = G.S ? G.S.noRenew : false;
- if(p.contract.years<=0 || noRenew){
+ /* ============================================================
+    WYMUSZONY TRANSFER MUSI OTWORZYĆ OKIENKO
+    Zdarzenia ustawiają p.next.forceClub (świstek, niezapięty kask juniora,
+    wejście na lewo dla dziadka, Słowacja, wypłata w diamentach, kuszenie
+    przez rywala, rok mycia pancerzy). Konsumuje tę flagę WYŁĄCZNIE
+    makeOffers() — a ten był wołany tylko wtedy, gdy umowa wygasła. Przy
+    kontrakcie na 2-3 lata skutek zdarzenia po prostu przepadał.
+    Teraz wymuszony transfer zrywa umowę i otwiera rynek.
+    ============================================================ */
+ if(p.next.forceClub && p.contract.years>0){
+   p.contract.years=0;
+   p.forcedExit=true;
+ }
+ if(p.contract.years<=0 || noRenew || p.next.forceClub){
    if(noRenew) p.next.noRenew=true;
    _offers=[]; G.screen='sign'; render(); return;
  }
+ /* PRZEDŁUŻENIE W TRAKCIE UMOWY — droga do kariery w jednym klubie */
+ _renew = makeRenewOffer();
+ if(_renew){ G.screen='renew'; render(); return; }
  G.screen='hub'; render();
+}
+
+/* ---- EKRAN: ZDARZENIE MIĘDZYSEZONOWE (ZIMA) ---- */
+function scWinter(){
+ const e=G.wev;
+ if(!e){ afterWinter(); return ''; }
+ const box = (inner)=>head()+`<div class="fade">
+  <div class="brut" style="border-color:#0369a1">
+   <div class="brut-h px-3 py-1.5 text-[11px] font-bold" style="border-color:#0369a1;color:#38bdf8">
+     PRZERWA ZIMOWA ${G.year-1}/${G.year} // MIĘDZYSEZONIE — PRZED OKIENKIEM TRANSFEROWYM</div>
+   <div class="p-5">${inner}</div>
+  </div></div>`;
+ if(!G.wevDone){
+  return box(`
+   <div class="font-extrabold tracking-wider text-[15px] mb-3" style="color:#38bdf8">${e.t}</div>
+   <div class="text-zinc-300 text-[12.5px] leading-relaxed mb-5 border-l-2 pl-4" style="border-color:#0c4a6e">${evText(e)}</div>
+   <div class="space-y-2">
+   ${e.o.map((o,i)=>`<button onclick="chooseWev(${i})" class="btn w-full text-left px-4 py-3 text-[12px]"><span class="font-bold mr-2" style="color:#0ea5e9">${i+1}.</span>${o.l}</button>`).join('')}
+   </div>
+   <div class="text-[11px] text-zinc-400 mt-4">To zdarzenie dzieje się ZIMĄ — jego skutki zobaczysz jeszcze przed ofertami kontraktowymi.</div>`);
+ }
+ const alimNew = (G.p.alimony||0)>0;
+ return box(`
+  <div class="font-extrabold tracking-wider text-[15px] mb-1" style="color:#38bdf8">${esc(G.wevTitle||e.t)}</div>
+  <div class="text-[11px] text-zinc-400 mb-3">Twoja decyzja: „${esc(G.wevChoice||'—')}”</div>
+  <div class="brut p-3 mb-3">
+   <div class="text-[11px] text-zinc-400 tracking-widest mb-1">SKUTKI</div>
+   <ul class="text-[12px] text-zinc-200 space-y-0.5">${(G.wevLog||[]).map(l=>'<li>› '+esc(l)+'</li>').join('')||'<li class="text-zinc-400">Bez skutków.</li>'}</ul>
+  </div>
+  ${alimNew?`<div class="brut p-3 mb-3 border-2 border-red-700 bg-red-950/20">
+    <div class="text-[12px] text-red-500 font-bold tracking-widest mb-1">ALIMENTY DO ARGENTYNY</div>
+    <div class="text-[12px] text-red-400 font-bold">${zl(ECON.alimony)} co sezon · pozostało rat: ${G.p.alimony}</div>
+    <div class="text-[11px] text-zinc-300 mt-1">Kwota schodzi z budżetu po każdym sezonie, niezależnie od tego,
+    czy jeździłeś, czy leżałeś w gipsie, i czy klub w ogóle ci zapłacił.</div></div>`:''}
+  <button onclick="afterWinter()" class="btn px-7 py-3 font-extrabold tracking-[.2em]" style="color:#38bdf8">OK, IDĘ DO OFERT &gt;</button>`);
+}
+function chooseWev(i){
+ applyWinterChoice(G.wev, i);
+ G.wevDone=true;
+ render();
 }
 function skipYear(){
  const p=G.p, y=G.year;
@@ -886,20 +1389,30 @@ function skipYear(){
  allClubs().forEach(clubSeasonBudget);
  clubEconomy();
  ageRiders();
+ applyPendingSponsors();
+ /* Rok poza torem to też rok rehabilitacji. */
+ if((p.longInjury||0)>0){ p.longInjury--; if(!p.longInjury) p.longInjuryWhy=''; }
+ const alim = chargeAlimony(p);
  const loss=R(1,4);
  p.ovr=cl(p.ovr-loss,1,99);
  p.med=cl(p.med-R(5,12),0,99);
  p.equip=cl(p.equip-R(3,8),1,99);
  p.loyalty=0;
+ // rok bez klubu też kosztuje — jeść trzeba, rata za busa leci dalej
+ const live=livingCostOf(p,true);
+ p.budget-=live;
+ p.career.living=(p.career.living||0)+live;
  p.idleYears=(p.idleYears||0)+1;
  p.idleLog=p.idleLog||[];
- p.idleLog.unshift(y+': cały rok bez klubu — OVR -'+loss+', medialność w dół, sprzęt rdzewieje w garażu'+
+ p.idleLog.unshift(y+': cały rok bez klubu — OVR -'+loss+', medialność w dół, sprzęt rdzewieje w garażu, '+
+   'koszty życia '+zl(live)+(alim?', alimenty do Argentyny '+zl(alim.amount)+' (rat: '+alim.left+')':'')+
    (p.banSeasons>0?' (trwa zawieszenie)':''));
  if(p.idleLog.length>4) p.idleLog.pop();
  p.age++; G.year++;
  syncMeRider();
  if(p.banSeasons>0) p.banSeasons--;
- if(p.age>=40){retire('Wiek i brak klubu.');return;}
+ const why=retireCheck(p);
+ if(why){retire(why);return;}
  if(p.idleYears>=3){retire('Trzy lata bez klubu. Kariera skończyła się bez ogłoszenia.');return;}
  _offers=[]; G.screen='sign'; render();
 }
@@ -1122,34 +1635,157 @@ function careerCardHtml(){
  </div></div>`;
 }
 
-/* Zrzut karty do PNG. Kontener stoi poza ekranem, więc w klonie dokumentu
-   przestawiamy go na pozycję normalną — inaczej html2canvas fotografuje pustkę. */
+/* ============================================================
+   ZRZUT KARTY DO PNG — WERSJA ODPORNA NA BŁĘDY
+   ------------------------------------------------------------
+   DLACZEGO WCZEŚNIEJ NIE POBIERAŁO SIĘ NIC:
+   1) #smCardWrap stoi na `position:fixed; left:-14000px`. html2canvas
+      klonuje REALNY dokument i liczy pozycje z getBoundingClientRect()
+      — element 14 000 px poza ekranem daje pusty (albo obcięty) obrazek.
+      Poprawianie tego w `onclone` jest zawodne: rozmiary bierze się
+      z ORYGINAŁU (offsetWidth/Height) jeszcze przed klonowaniem, a przy
+      `position:fixed` w klonie i tak zostaje przesunięty kontekst.
+   2) `el.offsetHeight` na elemencie z ujemnym z-index i długą tabelą
+      potrafi zwrócić mniej niż realna wysokość treści (scrollHeight).
+   3) `scale:2` przy karcie 1240 px i kilkunastu sezonach przekraczało
+      limit powierzchni canvasa w Safari/iOS — toDataURL zwracał wtedy
+      pusty ciąg albo rzucał wyjątkiem, a stary kod ustawiał go jako href
+      i „pobierał" plik 0-bajtowy.
+   4) Brakowało obsługi błędu: `.catch(e=>alert(...))` pokazywał surowy
+      obiekt, a przycisk zostawał zablokowany, gdy coś poszło nie tak
+      przed wejściem w Promise.
+
+   CO ROBI TERAZ:
+   · na czas zrzutu wyciąga kontener na `position:absolute; left:0; top:0`
+     (i zawsze go odkłada z powrotem — również przy wyjątku),
+   · czeka na layout (2 × requestAnimationFrame) i na fonty,
+   · liczy realną szerokość/wysokość i DOBIERA `scale` do limitu canvasa,
+   · zapis: toBlob → (fallback) toDataURL → (fallback) otwarcie karty
+     w nowym oknie do ręcznego zrzutu,
+   · wszystko w try/catch/finally z czytelnym komunikatem po polsku.
+   ============================================================ */
+const PNG_MAX_PX = 12000;          // bezpieczny limit dłuższej krawędzi canvasa
+
+function careerSlug(){
+ return ((G.p&&G.p.name)||'zawodnik').toLowerCase()
+   .replace(/ą/g,'a').replace(/ć/g,'c').replace(/ę/g,'e').replace(/ł/g,'l').replace(/ń/g,'n')
+   .replace(/ó/g,'o').replace(/ś/g,'s').replace(/[żź]/g,'z')
+   .replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'') || 'zawodnik';
+}
+/* Zapis canvasa na dysk. Zwraca true, jeśli plik faktycznie poszedł do pobrania. */
+function saveCanvasAsPNG(canvas, filename){
+ return new Promise(resolve=>{
+   const viaUrl=url=>{ try{
+       const a=document.createElement('a');
+       a.download=filename; a.href=url; a.rel='noopener';
+       document.body.appendChild(a); a.click(); a.remove();
+       return true;
+     }catch(_){ return false; } };
+   // 1) najpewniejsza droga: Blob + ObjectURL (nie ma limitu długości URL-a)
+   if(typeof canvas.toBlob==='function'){
+     let done=false;
+     const guard=setTimeout(()=>{ if(!done){ done=true; resolve(fallbackDataUrl()); } }, 8000);
+     canvas.toBlob(blob=>{
+       if(done) return; done=true; clearTimeout(guard);
+       if(!blob || !blob.size){ resolve(fallbackDataUrl()); return; }
+       const url=URL.createObjectURL(blob);
+       const ok=viaUrl(url);
+       setTimeout(()=>URL.revokeObjectURL(url), 30000);
+       resolve(ok);
+     },'image/png');
+     return;
+   }
+   resolve(fallbackDataUrl());
+   // 2) awaryjnie: data URL
+   function fallbackDataUrl(){
+     let data='';
+     try{ data=canvas.toDataURL('image/png'); }catch(_){ return false; }
+     if(!data || data.length<2000) return false;         // pusty/uszkodzony zrzut
+     return viaUrl(data);
+   }
+ });
+}
+/* Ostatnia linia obrony: pokazujemy kartę w nowym oknie, żeby dało się
+   zrobić zrzut ekranu albo wydrukować do PDF-a. */
+function openCareerCardWindow(){
+ try{
+   const el=document.getElementById('smCard');
+   if(!el) return false;
+   const w=window.open('','_blank');
+   if(!w) return false;
+   w.document.write('<!DOCTYPE html><html lang="pl"><head><meta charset="utf-8">'+
+     '<title>Karta statystyk — '+esc((G.p&&G.p.name)||'')+'</title>'+
+     '<style>body{margin:0;background:#fff}#smCard,#smCard *{font-family:Arial,Helvetica,sans-serif;box-sizing:border-box}'+
+     '#smCard table{border-collapse:collapse}#smCard td,#smCard th{padding:0}</style></head><body>'+
+     el.outerHTML+'</body></html>');
+   w.document.close();
+   return true;
+ }catch(_){ return false; }
+}
+
 function downloadCareerPNG(btn){
- const el=document.getElementById('smCard');
- if(!el) return;
- if(typeof html2canvas!=='function'){
-   alert('Nie udało się wczytać biblioteki html2canvas (brak połączenia z CDN). Karta nie zostanie wygenerowana.');
-   return;
- }
- const old = btn ? btn.innerHTML : null;
- if(btn){ btn.innerHTML='GENERUJĘ KARTĘ...'; btn.disabled=true; }
- html2canvas(el,{
-   backgroundColor:'#ffffff', scale:2, logging:false, useCORS:true,
-   width:el.offsetWidth, height:el.offsetHeight, windowWidth:1400,
-   onclone:doc=>{ const w=doc.getElementById('smCardWrap');
-     if(w){ w.style.position='static'; w.style.left='0'; w.style.top='0'; w.style.zIndex='0'; } }
- }).then(canvas=>{
-   const slug = (G.p.name||'zawodnik').toLowerCase()
-     .replace(/ą/g,'a').replace(/ć/g,'c').replace(/ę/g,'e').replace(/ł/g,'l').replace(/ń/g,'n')
-     .replace(/ó/g,'o').replace(/ś/g,'s').replace(/[żź]/g,'z')
-     .replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
-   const a=document.createElement('a');
-   a.download='sportowemity-'+(slug||'zawodnik')+'-kariera.png';
-   a.href=canvas.toDataURL('image/png');
-   document.body.appendChild(a); a.click(); a.remove();
- }).catch(e=>{
-   alert('Nie udało się wygenerować karty: '+e);
- }).then(()=>{ if(btn){ btn.innerHTML=old; btn.disabled=false; } });
+ const oldLabel = btn ? btn.innerHTML : null;
+ const wrap = document.getElementById('smCardWrap');
+ const el   = document.getElementById('smCard');
+ const restore = () => { if(btn){ btn.innerHTML=oldLabel; btn.disabled=false; } };
+
+ (async()=>{
+  let prevStyle=null;
+  try{
+   if(!wrap || !el)
+     throw new Error('Nie znalazłem karty statystyk w dokumencie (#smCard). Odśwież stronę i spróbuj ponownie.');
+   if(typeof html2canvas!=='function')
+     throw new Error('Biblioteka html2canvas nie została wczytana — najczęściej blokuje ją brak internetu, '+
+                     'wtyczka typu uBlock albo firmowy proxy. Karta nie może zostać wygenerowana.');
+   if(btn){ btn.innerHTML='GENERUJĘ KARTĘ...'; btn.disabled=true; }
+
+   /* --- 1) WYCIĄGAMY KONTENER Z OFFSCREENU --- */
+   prevStyle = wrap.getAttribute('style');
+   wrap.setAttribute('style','position:absolute;left:0;top:0;z-index:-1;opacity:1;'+
+                             'pointer-events:none;background:#ffffff');
+   /* --- 2) CZEKAMY NA LAYOUT I FONTY --- */
+   await new Promise(res=>requestAnimationFrame(()=>requestAnimationFrame(res)));
+   if(document.fonts && document.fonts.ready){ try{ await document.fonts.ready; }catch(_){} }
+
+   /* --- 3) REALNE WYMIARY + BEZPIECZNA SKALA --- */
+   const w = Math.max(el.scrollWidth,  el.offsetWidth,  1240);
+   const h = Math.max(el.scrollHeight, el.offsetHeight, 400);
+   const scale = Math.max(1, Math.min(2, PNG_MAX_PX/Math.max(w,h)));
+
+   let canvas=null;
+   try{
+     canvas = await html2canvas(el, {
+       backgroundColor:'#ffffff', scale, logging:false,
+       useCORS:true, allowTaint:false, foreignObjectRendering:false, imageTimeout:4000,
+       width:w, height:h, windowWidth:w+40, windowHeight:h+40, scrollX:0, scrollY:0,
+       /* w klonie nie ma po co trzymać animacji ani offscreenu */
+       onclone:doc=>{ const cw=doc.getElementById('smCardWrap');
+         if(cw) cw.setAttribute('style','position:static;left:0;top:0;z-index:0;opacity:1;background:#ffffff');
+         doc.querySelectorAll('.blink').forEach(n=>n.classList.remove('blink')); }
+     });
+   } finally {
+     /* kontener wraca poza ekran ZAWSZE — także gdy html2canvas rzuci wyjątkiem */
+     if(prevStyle===null) wrap.removeAttribute('style'); else wrap.setAttribute('style',prevStyle);
+     prevStyle=null;
+   }
+   if(!canvas || !canvas.width || !canvas.height)
+     throw new Error('html2canvas zwrócił pusty obrazek (0 × 0 px).');
+
+   /* --- 4) ZAPIS --- */
+   const ok = await saveCanvasAsPNG(canvas, 'sportowemity-'+careerSlug()+'-kariera.png');
+   if(!ok) throw new Error('Przeglądarka nie pozwoliła zapisać pliku PNG (zablokowane pobieranie '+
+                           'albo przekroczony limit rozmiaru obrazka: '+canvas.width+' × '+canvas.height+' px).');
+  }catch(err){
+   if(prevStyle!==null){ wrap.setAttribute('style',prevStyle); }
+   const msg=(err&&err.message)?err.message:String(err);
+   const opened = openCareerCardWindow();
+   alert('NIE UDAŁO SIĘ POBRAĆ KARTY STATYSTYK.\n\n'+msg+'\n\n'+
+     (opened ? 'Otworzyłem kartę w nowej karcie przeglądarki — zrób zrzut ekranu albo wydrukuj ją do PDF (Ctrl+P).'
+             : 'Spróbuj wyłączyć blokowanie skryptów dla tej strony i kliknąć jeszcze raz.'));
+  }finally{
+   restore();
+  }
+ })();
 }
 
 /* ---- EKRAN KOŃCA KARIERY ---- */
@@ -1186,6 +1822,17 @@ function scEnd(){
   ${c.dmpjStarts?`<div class="text-[11px] text-zinc-300 mb-3">DMPJ: ${c.dmpjStarts} turniejów, ${c.dmpjPts||0} punktów${c.dmpjTitles?`, <b class="text-pink-400">${c.dmpjTitles}× drużynowe mistrzostwo Polski juniorów</b>`:''}.</div>`:''}
   ${c.pzmEarned?`<div class="text-[11px] text-zinc-300 mb-3">Startowe i kilometrówka PZM przez całą karierę: <b class="text-emerald-400">${zl(c.pzmEarned)}</b>.</div>`:''}
   <div class="brut p-4 text-[13px] text-zinc-200 border-l-2 border-orange-700">${verdict}</div>
+  ${oneClubHtml()}
+  ${(c.living||c.service)?`<div class="text-[11px] text-zinc-400 mt-3">Przez całą karierę zostawiłeś
+   <b class="text-red-400">${zl(c.living||0)}</b> na kosztach życia i <b class="text-red-400">${zl(c.service||0)}</b>
+   na serwisie sprzętu. To są pieniądze, których nie widać w rubryce „zarobione".</div>`:''}
+  ${c.alimony?`<div class="brut p-3 mt-3 border-2 border-red-700 bg-red-950/20">
+   <div class="text-[11px] text-red-500 font-bold tracking-widest mb-1">ALIMENTY DO ARGENTYNY</div>
+   <div class="text-[12px] text-red-400 font-bold">Wysłane przez całą karierę: ${zl(c.alimony)}</div>
+   ${G.p.alimony>0?`<div class="text-[11px] text-zinc-300 mt-1">Do zapłaty zostało jeszcze ${G.p.alimony} rat
+     (${zl(ECON.alimony*G.p.alimony)}). Koniec kariery nic tu nie zmienia — sąd nie interesuje się emeryturą.</div>`
+    :`<div class="text-[11px] text-zinc-300 mt-1">Zobowiązanie spłacone w całości. Jedna zima w Argentynie, osiemnaście lat przelewów.</div>`}
+  </div>`:''}
  </div></div>
 
  <div class="brut mb-3" style="border-color:#14532d">
@@ -1207,7 +1854,23 @@ function scEnd(){
  </div>`;
 }
 const unpaidCareerTotal = () => G.history.reduce((a,h)=>a+smUnpaid(h),0);
-function restart(){G=newGame();evHist=[];render();}
+/* ---- ONE-CLUB MAN: nagroda za karierę w jednych barwach ---- */
+function oneClubHtml(){
+ const p=G.p, c=p.career, clubs=smClubs();
+ if(!G.history.length) return '';
+ if(clubs.length===1 && c.seasons>=6){
+  return `<div class="brut p-4 mt-3" style="border-color:#a16207">
+   <div class="text-[12px] font-bold tracking-widest mb-1" style="color:#eab308">ONE-CLUB MAN</div>
+   <div class="text-[12px] text-zinc-200">Całe ${c.seasons} sezonów w jednym klubie: <b class="text-orange-400">${esc(clubs[0].club)}</b>
+   (${clubs[0].from}–${clubs[0].to})${c.renewals?`, ${c.renewals}× przedłużenie umowy jeszcze w trakcie jej trwania`:''}.
+   Sektor B pamięta takich dłużej niż mistrzów, którzy zmieniali barwy co dwa lata.</div></div>`;
+ }
+ if(clubs.length>=6) return `<div class="brut p-4 mt-3">
+   <div class="text-[12px] text-zinc-300 tracking-widest mb-1">WĘDROWNY GRAJEK</div>
+   <div class="text-[12px] text-zinc-300">${clubs.length} klubów w ${c.seasons} sezonów. Bus znał drogę wszędzie, kibice nigdzie.</div></div>`;
+ return '';
+}
+function restart(){G=newGame();evHist=[];wevHist=[];_offers=[];_renew=null;render();}
 
 /* ---- BOOT ---- */
 G=newGame(); render();

@@ -4,6 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>PATO-ŻUŻEL :: SYMULATOR KARIERY</title>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-BKLPXYCK2M"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-BKLPXYCK2M');
+</script>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
@@ -33,6 +42,32 @@ select,input{background:#131316;border:1px solid #71717a;color:#f4f4f5;padding:6
 select:focus,input:focus{border-color:#fb923c;box-shadow:0 0 0 2px rgba(251,146,60,.35)}
 .fade{animation:fi .18s ease-out}
 @keyframes fi{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+/* ---- ROZWIJANE SEKCJE (accordion) ----
+   .acc  = samodzielny boks (własna ramka, jak .brut) na drugorzędne dane.
+   .acc-lite = lżejsza wersja, do wpięcia WEWNĄTRZ istniejącego .brut
+   (bez własnej ramki — tylko górna linia), np. akapit z wyjaśnieniem
+   pod tabelą. Obie wersje jasno pokazują "ROZWIŃ ▸" / "ZWIŃ ▾", więc
+   nic nie chowa się bez śladu. */
+.acc{border:1px solid #71717a;background:#0e0e0e;margin-top:.65rem}
+.acc>summary{cursor:pointer;list-style:none;padding:6px 12px;background:#1c1c1f;display:flex;justify-content:space-between;align-items:center;gap:10px;user-select:none}
+.acc>summary::-webkit-details-marker{display:none}
+.acc>summary:hover{background:#27272a}
+.acc>.acc-body{padding:10px 12px}
+.acc-ind{font-size:10px;color:#a1a1aa;white-space:nowrap;flex-shrink:0;border:1px solid #52525b;padding:2px 7px;letter-spacing:.08em}
+.acc:not([open])>summary .acc-ind::before{content:'▸ ROZWIŃ'}
+.acc[open]>summary .acc-ind::before{content:'▾ ZWIŃ'}
+.acc>summary:hover .acc-ind{border-color:#fb923c;color:#fdba74}
+
+.acc-lite{border-top:1px dashed #3f3f46;margin-top:10px}
+.acc-lite>summary{cursor:pointer;list-style:none;padding-top:7px;display:flex;justify-content:space-between;align-items:center;gap:10px;user-select:none}
+.acc-lite>summary::-webkit-details-marker{display:none}
+.acc-lite>.acc-lite-body{padding-top:7px}
+.acc-lite-ind{font-size:10px;color:#71717a;white-space:nowrap;flex-shrink:0}
+.acc-lite:not([open])>summary .acc-lite-ind::before{content:'▸ rozwiń szczegóły'}
+.acc-lite[open]>summary .acc-lite-ind::before{content:'▾ zwiń'}
+.acc-lite>summary:hover .acc-lite-ind{color:#fdba74}
+.acc-lite>summary:hover .acc-lite-t{color:#fb923c}
 
 /* ---- PAMIĄTKOWA KARTA "SportoweMity.pl" ----
    Kontener stoi poza ekranem (nie display:none — html2canvas musi go wyrenderować).
@@ -65,6 +100,36 @@ const lataTxt = n => n===1 ? 'rok'
 const catOf    = r => isJun(r) ? 'JUNIOR (U21)' : isU24(r) ? 'U24' : 'SENIOR';
 const catShort = r => isJun(r) ? 'U21' : isU24(r) ? 'U24' : 'SENIOR';
 const catCol   = r => isJun(r) ? 'text-pink-400' : isU24(r) ? 'text-sky-400' : 'text-zinc-300';
+const sezTxt = n => n===1 ? 'sezon'
+  : (n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20)) ? 'sezony' : 'sezonów';
+
+/* ---- ROZWIJANE SEKCJE: dwie odmiany tego samego wzorca ----
+   Zamiast piętrzyć osobne ".brut" boksy jeden pod drugim (stąd skarga
+   graczy — "za dużo małych okienek, wszystko się zlewa"), drugorzędne
+   dane (wyjaśnienia, wyliczenia, "co jeszcze się wydarzyło") chowamy
+   za jawnym, podpisanym przełącznikiem. Domyślnie ZAMKNIĘTE, chyba że
+   opts.open=true — najważniejsze liczby i tak zostają widoczne bez klikania,
+   bo trafiają do wywołania spoza acc()/accLite().
+   acc()     — samodzielny boks z własną ramką (używaj między innymi boksami).
+   accLite() — lekka wersja BEZ ramki, do wpięcia wewnątrz istniejącego boksu. */
+function acc(title, body, opts={}){
+ if(!body) return '';
+ const {open=false, badge='', tone='text-orange-600'} = opts;
+ return `<details class="acc"${open?' open':''}>
+  <summary><span class="${tone} font-bold tracking-widest text-[11px]">${title}${badge?` <span class="text-zinc-500 font-normal normal-case tracking-normal">— ${esc(badge)}</span>`:''}</span>
+  <span class="acc-ind"></span></summary>
+  <div class="acc-body">${body}</div>
+ </details>`;
+}
+function accLite(title, body, opts={}){
+ if(!body) return '';
+ const {open=false, badge='', tone='text-zinc-400'} = opts;
+ return `<details class="acc-lite"${open?' open':''}>
+  <summary><span class="acc-lite-t ${tone} tracking-widest text-[11px]">${title}${badge?` <span class="text-zinc-500 normal-case tracking-normal">— ${esc(badge)}</span>`:''}</span>
+  <span class="acc-lite-ind"></span></summary>
+  <div class="acc-lite-body">${body}</div>
+ </details>`;
+}
 
 function codesHtml(codes){
  return codes.map(c=> c==='d'?'<span class="text-red-500">d</span>'
@@ -85,6 +150,7 @@ function render(){
    s==='hub'     ? scHub()    :
    s==='renew'   ? scRenew()  :
    s==='event'   ? scEvent()  :
+   s==='evsum'   ? scEvSum()  :
    s==='winter'  ? scWinter() :
    s==='mech'    ? scMech()   :
    s==='summary' ? scSummary():
@@ -94,7 +160,7 @@ function render(){
 
 function head(){
  return `<div class="mb-4 border-b border-zinc-700 pb-2 flex items-end justify-between flex-wrap gap-2">
-  <div><div class="text-orange-500 font-extrabold tracking-[.3em] text-lg glow">PATO-ŻUŻEL</div>
+  <div><div class="text-orange-500 font-extrabold tracking-[.3em] text-lg glow">POLSKI ŻUŻLOWIEC SIMULATOR</div>
   <div class="text-[11px] text-zinc-400 tracking-[.25em]">SYMULATOR KARIERY // ROK ${G.year}</div></div>
   <div class="text-[11px] text-zinc-400 text-right">jedno kliknięcie = jeden sezon</div></div>`;
 }
@@ -139,6 +205,7 @@ function infoBox(){
   <div class="p-4 space-y-2 text-[12px] text-zinc-200 leading-relaxed">
    <div><b style="color:#eab308">Wszelkie bugi proszę zgłaszać, oznaczając profil twórcy
      <span class="text-zinc-100">${GAME_X}</span> na X.</b></div>
+<div><b style="color:#eab308">Gra jest w wersji beta. Brakuje wiele ważnych turniejów, takich jak Turniej Szkoleniowy, reprezentacji narodowej, czy choćby Indywidualnych Mistrzostw Świata. Wszystko będzie dodawane sukcesywnie w updateach.
    <div class="text-zinc-300">Podobieństwo do wszelkich wydarzeń, nazwisk i klubów do rzeczywistości jest przypadkowe.</div>
    <div class="text-[11px] text-zinc-400">Ostatni update: <b class="text-zinc-300">${GAME_UPDATE}</b></div>
   </div></div>`;
@@ -533,7 +600,11 @@ function playerStrip(){
  return `<div class="brut mb-3">
  <div class="brut-h px-3 py-1.5 flex justify-between items-center flex-wrap gap-1">
   <div class="text-[12px] font-bold text-zinc-100">${esc(p.name)} <span class="text-zinc-400 font-normal">· ${p.age} lat · ${esc(p.cls)}</span></div>
-  <div class="text-[11px] text-orange-500 font-bold">${zl(p.budget)}</div>
+  <div class="text-right">
+   <div class="text-[11px] text-orange-500 font-bold">${zl(p.budget)}</div>
+   ${p.lastDecisionBudgetDelta?`<div class="text-[9px] ${p.lastDecisionBudgetDelta>0?'text-emerald-400':'text-red-400'}" title="${esc(p.lastDecisionLabel||'')}">
+     wynik decyzji: ${p.lastDecisionBudgetDelta>0?'+':''}${zl(p.lastDecisionBudgetDelta)}</div>`:''}
+  </div>
  </div>
  <div class="p-3 grid sm:grid-cols-2 md:grid-cols-4 gap-x-5 gap-y-1">
   <div>${statBar('OVR (UMIEJĘTNOŚCI)',p.ovr)}${statBar('SPRZĘT',p.equip,'#0ea5e9')}</div>
@@ -624,7 +695,8 @@ function squadHtml(){
    <td class="text-center text-[11px] ${fm>0.5?'text-emerald-400':fm<-0.5?'text-red-400':'text-zinc-400'}">${fm>0?'+':''}${fm}</td>
    <td class="text-center font-bold ${n?'text-orange-400':'text-zinc-300'}">${val}</td>
    <td class="text-[11px] ${n?'text-zinc-300':'text-zinc-400'}">${st}</td></tr>`;}).join('')}</tbody></table>
- <div class="text-[11px] text-zinc-400 mt-2 tracking-wide leading-relaxed">
+ ${accLite('JAK DZIAŁA USTAWIANIE SKŁADU I NUMERY STARTOWE', `
+  <div class="text-[11px] text-zinc-400 tracking-wide leading-relaxed">
   <b class="text-zinc-300">O numerze NIE decyduje sam OVR.</b> Trener patrzy na WARTOŚĆ = OVR + forma × ${LINEUP_FORM_W}
   (forma chodzi od −12 do +12, więc potrafi przestawić zawodnika o ok. 20 punktów). Dlatego czwarty OVR w drużynie
   po dwóch słabych meczach ląduje poza składem, a rozkręcony rezerwowy wskakuje na jego miejsce.<br>
@@ -633,7 +705,7 @@ function squadHtml(){
   nawet gdy jest wyżej w rankingu wartości. Skład układany jest od nowa PRZED KAŻDĄ KOLEJKĄ.<br>
   <b class="text-zinc-300">NUMERY STARTOWE:</b> kolumna POZ. to pozycja w składzie (1–5 = pierwsza piątka, 6–7 = młodzież).
   Numer w programie zależy od tego, gdzie jedziecie: <b class="text-zinc-300">gospodarz startuje z numerami 9–15</b>,
-  <b class="text-zinc-300">gość z numerami 1–7</b> — pozycja 1 to nr 9 u siebie i nr 1 na wyjeździe.</div>
+  <b class="text-zinc-300">gość z numerami 1–7</b> — pozycja 1 to nr 9 u siebie i nr 1 na wyjeździe.</div>`)}
  </div></div>`;
 }
 /* ---- ŚREDNIE ZAWODNIKÓW KADRY ZA SEZON ---- */
@@ -688,11 +760,12 @@ function outlookBox(){
      pro?'text-red-400':'text-emerald-400',
      pro?'rachunek przyjdzie niezależnie od wyników':'dopóki jeździsz na kontrakcie amatorskim')}
  </div>
- <div class="px-3 pb-3 text-[11px] text-zinc-400">
+ <div class="px-3 pb-3">${accLite('SKĄD BIERZE SIĘ WIEK EMERYTALNY', `
+  <div class="text-[11px] text-zinc-400">
   Wiek emerytalny NIE jest sztywny. Zawodowiec z profesjonalizmem 99 dojeżdża do ${RETIRE.max} lat, a zawodnik,
   który traktuje ten sport jak hobby, kończy zaraz po trzydziestce — chyba że ma OVR, za który kluby wciąż płacą.
   W ostatnich ${RETIRE.wobbleFrom} latach przed granicą ciało potrafi odmówić wcześniej.
- </div></div>`;
+ </div>`)}</div></div>`;
 }
 function warnings(){
  const p=G.p, c=getClub(p), w=[];
@@ -792,7 +865,8 @@ function workshop(){
         :`<button onclick="hireMech(${i})" ${ok?'':'disabled'} class="btn px-2 py-1 text-[11px] whitespace-nowrap ${ok?'':'opacity-30 cursor-not-allowed'}">${zl(m.c)}</button>`}
   </div>`;}).join('')}
  </div></div></div>
- <div class="px-3 pb-3 text-[11px] text-zinc-400 leading-relaxed">
+ <div class="px-3 pb-3">${accLite('DLACZEGO NIEKTÓRY SPRZĘT JEST ZABLOKOWANY I ILE KOSZTUJE ZUŻYCIE', `
+  <div class="text-[11px] text-zinc-400 leading-relaxed">
   Górna półka jest zamknięta nie tylko przez cenę: tuner z czterema silnikami i sztab z Anglii patrzą też na to,
   jak pracujesz. <b class="text-zinc-300">Podnieś PROFESJONALIZM</b> (pełne sezony w składzie, brak wykluczeń, trener od startów),
   a odblokujesz sprzęt, którego za same pieniądze nie kupisz.
@@ -802,7 +876,7 @@ function workshop(){
    a po sezonie przychodzi rachunek za serwis: <b class="text-zinc-300">${zl(servicePreview())}</b> przy twoim obecnym przebiegu i sprzęcie.
    Rok bez wizyty u tunera = defekty na prostej.
   </div>
- </div></div>`;
+ </div>`)}</div></div>`;
 }
 function buyTuner(i){const t=TUNERS[i],p=G.p;
  if(p.budget<t.c || p.prof<(t.prof||0)) return;
@@ -913,17 +987,69 @@ function scEvent(){
   </div>
  </div></div>`;
 }
+/* ============================================================
+   WYBÓR OPCJI W ZDARZENIU → PULPIT PODSUMOWANIA → DOPIERO POTEM SEZON
+   ------------------------------------------------------------
+   Gracze zgłaszali brak feedbacku narracyjnego: klikasz opcję i lądujesz
+   od razu w raporcie sezonu, nie wiedząc, co się właściwie stało.
+   Teraz opcja może dostarczyć tekst na osobny, mały pulpit:
+     · statycznie:  {l:'...', sum:'Tekst na ekran', f:()=>[...]}
+     · dynamicznie: f:()=>[fxSum('Tekst zależny od losowania'), fxP(-5)]
+   Jeżeli bufor podsumowań (EV_SUM w data.js) jest pusty, zachowujemy stare
+   zachowanie i lecimy prosto do rozstrzygnięcia sezonu.
+   ============================================================ */
 function chooseEv(i){
  const e=G.ev, o=e.o[i];
  G.S.evTitle=e.t; G.S.evChoice=o.l;
+ evSumClear();                                    // czyścimy bufor przed odpaleniem efektów
+ /* RUBRYKA BUDŻETOWA DECYZJI: gracze pytali, czy zdarzenia z hajsem w opcji
+    faktycznie ruszają budżet, czy to tylko tekst. Łapiemy stan konta PRZED
+    i PO efekcie i pokazujemy różnicę w pasku gracza (playerStrip), dopóki
+    nie zapadnie kolejna decyzja budżetowa. */
+ const budgetBefore = G.p.budget;
  /* fxApply() zamienia cokolwiek zwróci zdarzenie na listę czytelnych linijek
     i odpala odroczone efekty z deskryptorów { t, f } — bez tego w rubryce
     EFEKTY lądowało „[object Object]", a sam efekt nigdy się nie wykonywał.
     try/catch, bo pojedyncze zdarzenie nie ma prawa zawiesić całego sezonu. */
  try{ G.S.evLog=fxApply(o.f()); }
  catch(err){ G.S.evLog=['(zdarzenie nie doszło do skutku: '+err.message+')']; }
+ const budgetDelta = Math.round(G.p.budget - budgetBefore);
+ if(budgetDelta!==0){ G.p.lastDecisionBudgetDelta=budgetDelta; G.p.lastDecisionLabel=e.t; }
+ let sum = evSumTake();                           // to, co wrzuciło fxSum() wewnątrz f()
+ if(o.sum) sum = [o.sum].concat(sum);             // + statyczny tekst opcji
+ if(sum.length){
+   G.evSum = sum;
+   G.screen='evsum'; render(); return;            // sezon czeka na kliknięcie OK
+ }
+ finishEv();
+}
+/* Zamknięcie zdarzenia: dopiero tutaj rozstrzygamy sezon. */
+function finishEv(){
+ G.evSum=null;
  resolveSeason();
  G.screen='summary'; render();
+}
+/* ---- EKRAN: PULPIT PODSUMOWANIA ZDARZENIA (modal nad tłem zdarzenia) ---- */
+function scEvSum(){
+ const e=G.ev, lines=G.evSum||[];
+ return head()+`<div class="fade">
+ <div class="brut border-orange-900 relative">
+  <div class="brut-h px-3 py-1.5 text-[11px] text-orange-500 font-bold">ŚRODEK SEZONU ${G.year} // ZDARZENIE</div>
+  <div class="p-5 opacity-30 pointer-events-none select-none">
+   <div class="text-orange-500 font-extrabold tracking-wider text-[15px] mb-3">${e?e.t:''}</div>
+   <div class="text-zinc-300 text-[12.5px] leading-relaxed mb-5 border-l-2 border-orange-900 pl-4">${e?evText(e):''}</div>
+  </div>
+ </div>
+ <div class="fixed inset-0 z-50 flex items-center justify-center p-4" style="position:fixed;top:0;right:0;bottom:0;left:0;z-index:50;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,.82)">
+  <div class="brut border-orange-600 w-full" style="max-width:560px;box-shadow:0 0 0 3px #000, 0 12px 40px rgba(0,0,0,.9)">
+   <div class="brut-h px-3 py-1.5 text-[11px] text-orange-500 font-bold">CO Z TEGO WYSZŁO</div>
+   <div class="p-5">
+    <div class="text-[11px] text-zinc-400 tracking-widest mb-2">${esc(G.S&&G.S.evChoice?G.S.evChoice:'—')}</div>
+    ${lines.map(l=>`<div class="text-zinc-100 text-[13.5px] leading-relaxed mb-3 border-l-2 border-orange-600 pl-4">${esc(l)}</div>`).join('')}
+    <button onclick="finishEv()" class="btn px-8 py-3 font-extrabold tracking-[.25em] text-orange-500 w-full sm:w-auto">OK</button>
+   </div>
+  </div>
+ </div></div>`;
 }
 
 /* ---- EKRAN: PODSUMOWANIE SEZONU ---- */
@@ -982,13 +1108,14 @@ function scSummary(){
    punkty ${r.pts} + ${r.po.p} = <b class="text-zinc-300">${r.ptsAll}</b> ·
    średnia łączna = <b class="text-emerald-400">${r.avgAllTxt}</b>
   </div>` : ''}
-  <div class="text-[11px] text-zinc-400 mb-4 border border-zinc-700 px-3 py-2">
-   KONTROLA MATEMATYCZNA: biegi ukończone = ${r.heats} − (${r.defects} + ${r.exclusions}) = <b class="text-zinc-300">${r.completed}</b> ·
+  <div class="mb-4">${accLite('KONTROLA MATEMATYCZNA — SKĄD BIORĄ SIĘ TE LICZBY', `
+   <div class="text-[11px] text-zinc-400 border border-zinc-700 px-3 py-2">
+   biegi ukończone = ${r.heats} − (${r.defects} + ${r.exclusions}) = <b class="text-zinc-300">${r.completed}</b> ·
    maks. możliwe punkty = ${r.completed}×3 = <b class="text-zinc-300">${r.completed*3}</b> ·
    średnia = ${r.pts} ÷ ${r.heats} = <b class="text-zinc-300">${r.avgTxt}</b>
    ${r.replaced?` · byłeś zmieniany przez rezerwę <b class="text-zinc-300">${r.replaced}×</b> — te biegi nie wchodzą do liczby startów`:''} ·
    punkty bonusowe (${r.bonus}) nie wchodzą do dorobku drużyny ani do średniej — <b class="text-sky-400">wchodzą do twojego portfela</b>
-  </div>
+  </div>`)}</div>
   <div class="grid md:grid-cols-2 gap-3">
    <div class="brut p-3">
     <div class="text-[11px] text-zinc-400 tracking-widest mb-1">OCENA SEZONU — WSZYSTKIE ROZGRYWKI</div>
@@ -1012,12 +1139,7 @@ function scSummary(){
   ${bankruptHtml(r)}
   ${bankruptcyBoardHtml(r)}
   ${settleHtml(r)}
-  ${clubEventsHtml(r)}
-  ${sponsorRenameHtml()}
-  ${statsDevHtml(r)}
-  ${talkHtml(r)}
-  ${r.notes.length?`<div class="brut p-3 mt-3"><div class="text-[11px] text-zinc-400 tracking-widest mb-1">RAPORT SEZONU</div>
-   <ul class="text-[11px] text-zinc-300 space-y-0.5">${r.notes.map(n=>'<li>› '+esc(n)+'</li>').join('')}</ul></div>`:''}
+  ${moreFromSeasonHtml(r)}
  </div></div>`+foot;
 }
 /* ============================================================
@@ -1062,13 +1184,12 @@ function evEffectsHtml(r){
  if(N.rowPen)       NX.push('mniejsza szansa na ofertę z Rybnika');
  if(N.longInjury)   NX.push('kolejny sezon poza torem (kontuzja długoterminowa)');
  if(N.alimony)      NX.push('alimenty: pozostało rat '+N.alimony);
- if(!L.length && !NX.length) return `<div class="text-[11px] text-zinc-400 mt-2 border-t border-zinc-700 pt-2">
-   KONTROLA WYKONANIA: ten wybór nie miał skutków mechanicznych — poza tym, co przeczytałeś wyżej.</div>`;
- return `<div class="mt-2 border-t border-zinc-700 pt-2">
-  <div class="text-[11px] text-zinc-400 tracking-widest mb-1">KONTROLA WYKONANIA — CO SILNIK REALNIE POLICZYŁ</div>
-  <ul class="text-[11px] space-y-0.5">${L.map(x=>`<li class="${x.c}">✓ ${esc(x.t)}</li>`).join('')}</ul>
-  ${NX.length?`<div class="text-[11px] mt-1" style="color:#38bdf8">PRZECHODZI NA KOLEJNY ROK: ${esc(NX.join(' · '))}</div>`:''}
- </div>`;
+ if(!L.length && !NX.length) return accLite('KONTROLA WYKONANIA',
+   `<div class="text-[11px] text-zinc-400">Ten wybór nie miał skutków mechanicznych — poza tym, co przeczytałeś wyżej.</div>`);
+ const body = `<ul class="text-[11px] space-y-0.5">${L.map(x=>`<li class="${x.c}">✓ ${esc(x.t)}</li>`).join('')}</ul>
+  ${NX.length?`<div class="text-[11px] mt-1" style="color:#38bdf8">PRZECHODZI NA KOLEJNY ROK: ${esc(NX.join(' · '))}</div>`:''}`;
+ return accLite('KONTROLA WYKONANIA — CO SILNIK REALNIE POLICZYŁ', body,
+   {badge:L.length+(NX.length?' + '+NX.length+' na przyszłość':'')});
 }
 
 /* ---- SKĄD WZIĘŁA SIĘ TA OCENA ----
@@ -1077,12 +1198,10 @@ function evEffectsHtml(r){
    play-off i to, ile spotkań zabrała kontuzja. */
 function gradePartsHtml(r){
  const P=r.gradeParts||[]; if(!P.length) return '';
- return `<div class="mt-2 border-t border-zinc-700 pt-2">
-  <div class="text-[11px] text-zinc-400 tracking-widest mb-1">SKŁADNIKI OCENY (wynik: ${r.gradeScore})</div>
-  <ul class="text-[11px] space-y-0.5">${P.map(x=>`<li class="flex justify-between gap-2">
+ const body = `<ul class="text-[11px] space-y-0.5">${P.map(x=>`<li class="flex justify-between gap-2">
     <span class="text-zinc-300">${esc(x.w)}</span>
-    <span class="font-bold whitespace-nowrap ${x.d>0?'text-emerald-400':x.d<0?'text-red-400':'text-zinc-400'}">${x.d>0?'+':''}${x.d.toFixed(2)}</span></li>`).join('')}</ul>
- </div>`;
+    <span class="font-bold whitespace-nowrap ${x.d>0?'text-emerald-400':x.d<0?'text-red-400':'text-zinc-400'}">${x.d>0?'+':''}${x.d.toFixed(2)}</span></li>`).join('')}</ul>`;
+ return accLite('SKĄD WZIĘŁA SIĘ TA OCENA', body, {badge:'wynik '+r.gradeScore});
 }
 function ligaView(r){
  return `<div class="grid lg:grid-cols-2 gap-3">
@@ -1231,6 +1350,20 @@ function talkHtml(r){
  <div class="space-y-2">${r.talk.map(t=>`<div class="border-l-2 border-zinc-700 pl-3">
    <div class="text-[11px] text-orange-500 tracking-widest">${esc(t.who)}</div>
    <div class="text-[12px] text-zinc-200">${esc(t.txt)}</div></div>`).join('')}</div></div>`;
+}
+/* ---- WSZYSTKO, CO DRUGORZĘDNE Z TEGO SEZONU, POD JEDNYM PRZEŁĄCZNIKIEM ----
+   Wcześniej to było 4-5 osobnych boksów jeden pod drugim (pato-zdarzenia
+   w klubach, zmiany szyldów, rozwój profesjonalizmu/medialności, głosy po
+   sezonie, raport) — stąd skarga graczy, że się zlewa. Rdzeń sezonu
+   (KPI, ocena, zdarzenie, rozliczenie z klubem, alerty) zostaje widoczny
+   od razu; to tutaj chowa się za jednym, wyraźnie podpisanym "ROZWIŃ". */
+function moreFromSeasonHtml(r){
+ const parts=[clubEventsHtml(r), sponsorRenameHtml(), statsDevHtml(r), talkHtml(r)].filter(Boolean);
+ if(r.notes.length) parts.push(`<div class="mt-3"><div class="text-[11px] text-zinc-400 tracking-widest mb-1">RAPORT SEZONU</div>
+   <ul class="text-[11px] text-zinc-300 space-y-0.5">${r.notes.map(n=>'<li>› '+esc(n)+'</li>').join('')}</ul></div>`);
+ if(!parts.length) return '';
+ return acc('WIĘCEJ Z TEGO SEZONU', parts.join(''),
+   {badge:parts.length+' '+(parts.length===1?'sekcja':parts.length<5?'sekcje':'sekcji'), tone:'text-orange-600'});
 }
 function kpi(l,v,c='text-zinc-100'){
  return `<div class="brut p-2.5"><div class="text-[11px] text-zinc-400 tracking-widest leading-tight">${l}</div><div class="text-xl font-extrabold ${c}">${v}</div></div>`;
@@ -1482,8 +1615,8 @@ function playoffHtml(){
  </div></div>`;
 }
 function historyBox(){
- return `<div class="brut mb-3"><div class="brut-h px-3 py-1.5 text-[11px] text-zinc-300 font-bold">HISTORIA KARIERY</div>
- <div class="p-2 overflow-x-auto"><table class="w-full text-[11px]">
+ const n=G.history.length;
+ const body = `<div class="overflow-x-auto"><table class="w-full text-[11px]">
  <thead><tr class="text-[11px] text-zinc-400 tracking-widest border-b border-zinc-700">
  <th class="text-left">ROK</th><th class="text-left">KLUB</th><th>WIEK</th><th>M</th><th>BIEGI</th><th>PKT</th><th>BON</th><th>DEF</th><th>WYK</th><th>ŚR.</th><th>POZ.</th><th class="text-left">OCENA</th></tr></thead><tbody>
  ${G.history.slice().reverse().map(h=>`<tr class="border-b border-zinc-700/60">
@@ -1492,7 +1625,8 @@ function historyBox(){
   <td class="text-center text-orange-400 font-bold">${smP(h)}</td><td class="text-center text-sky-400">${smBon(h)}</td><td class="text-center text-red-500">${h.defectsAll!=null?h.defectsAll:h.defects}</td><td class="text-center text-red-400">${h.exclAll!=null?h.exclAll:h.exclusions}</td>
   <td class="text-center text-emerald-400">${smAvg(h)}</td><td class="text-center">${h.pos}.</td><td class="${h.grade.c} text-[11px]">${h.grade.t}</td></tr>`).join('')}
  </tbody></table></div>
- <div class="px-3 pb-2 text-[10px] text-zinc-500">Liczby obejmują rundę zasadniczą razem z fazą play-off — tak samo jak kafelki kariery.</div></div>`;
+ <div class="pt-2 text-[10px] text-zinc-500">Liczby obejmują rundę zasadniczą razem z fazą play-off — tak samo jak kafelki kariery.</div>`;
+ return `<div class="mb-3">${acc('HISTORIA KARIERY', body, {badge:n+' '+sezTxt(n), tone:'text-zinc-300'})}</div>`;
 }
 
 /* ---- PRZEJŚCIE DO KOLEJNEGO ROKU ---- */
@@ -1524,7 +1658,7 @@ function nextYear(){
     zimowych (OVR, sprzęt, kasa, alimenty, wymuszony transfer, lepsze
     oferty) są widoczne już w okienku transferowym.
     ============================================================ */
- G.wev=null; G.wevLog=[]; G.wevDone=false; G.wevTitle=null; G.wevChoice=null;
+ G.wev=null; G.wevLog=[]; G.wevDone=false; G.wevTitle=null; G.wevChoice=null; G.wevSum=[];
  if(chance(WINTER_CHANCE)){
    const e=rollWinterEvent();
    if(e){ G.wev=e; G.screen='winter'; render(); return; }
@@ -1534,6 +1668,12 @@ function nextYear(){
 /* Routing PO przerwie zimowej: okienko transferowe / przedłużenie / hub. */
 function afterWinter(){
  const p=G.p;
+ /* KARIERA URWANA PRZEZ ZDARZENIE ZIMOWE (fxEnd: wiatrówka, lód pod motocyklem,
+    petarda, próba przekupienia straży granicznej). nextYear() sprawdza p.retired
+    tylko na WEJŚCIU, czyli PRZED przerwą zimową — bez tej linijki gracz
+    „po zakończonej karierze" spokojnie podpisywał kontrakt i jechał kolejny sezon,
+    a koniec kariery wchodził dopiero rok później. */
+ if(p.retired){ retire(p.retireReason||'Zdarzenie zimowe zamknęło karierę.'); return; }
  const noRenew = G.S ? G.S.noRenew : false;
  /* ============================================================
     WYMUSZONY TRANSFER MUSI OTWORZYĆ OKIENKO
@@ -1581,6 +1721,9 @@ function scWinter(){
  return box(`
   <div class="font-extrabold tracking-wider text-[15px] mb-1" style="color:#38bdf8">${esc(G.wevTitle||e.t)}</div>
   <div class="text-[11px] text-zinc-400 mb-3">Twoja decyzja: „${esc(G.wevChoice||'—')}”</div>
+  ${(G.wevSum||[]).length?`<div class="brut p-4 mb-3" style="border-color:#0ea5e9">
+    ${(G.wevSum||[]).map(l=>`<div class="text-zinc-100 text-[13.5px] leading-relaxed mb-2 border-l-2 pl-4" style="border-color:#0ea5e9">${esc(l)}</div>`).join('')}
+   </div>`:''}
   <div class="brut p-3 mb-3">
    <div class="text-[11px] text-zinc-400 tracking-widest mb-1">SKUTKI</div>
    <ul class="text-[12px] text-zinc-200 space-y-0.5">${(G.wevLog||[]).map(l=>'<li>› '+esc(l)+'</li>').join('')||'<li class="text-zinc-400">Bez skutków.</li>'}</ul>
@@ -1711,8 +1854,17 @@ function smTrophies(){
  const rows = SM_TROPHY.map(d=>Object.assign(mk(d.n,d.s), {k:d.k, gold:d.gold}));
  const dmpj = Object.assign(mk('DMPJ — DRUŻYNOWE MP JUNIORÓW','DMPJ'),
                             {gold:'Drużynowy Mistrz Polski Juniorów'});
- const dmp  = Object.assign(mk('DMP — DRUŻYNOWE MISTRZOSTWA POLSKI','DMP'),
+ /* DMP — DRUŻYNOWE MISTRZOSTWA POLSKI: to miano należy się WYŁĄCZNIE tytułowi
+    z Ekstraligi. Wcześniej ten sam napis „Drużynowy Mistrz Polski” i wspólna
+    rubryka DMP zbierały też mistrzostwo 2. Ekstraligi i Krajowej Ligi
+    Żużlowej — w karcie kariery wyglądało to tak, jakby awans z KLŻ był
+    mistrzostwem kraju. Teraz każda klasa rozgrywkowa ma swoją, osobną gablotę. */
+ const dmp  = Object.assign(mk('DMP — DRUŻYNOWE MISTRZOSTWA POLSKI (EKSTRALIGA)','DMP'),
                             {gold:'Drużynowy Mistrz Polski'});
+ const dmp2 = Object.assign(mk('MISTRZOSTWO 2. EKSTRALIGI','2.EL'),
+                            {gold:'Mistrz 2. Ekstraligi'});
+ const dmpKl= Object.assign(mk('MISTRZOSTWO KRAJOWEJ LIGI ŻUŻLOWEJ','KLŻ'),
+                            {gold:'Mistrz Krajowej Ligi Żużlowej'});
  const note = (r,pos,year)=>{
    if(pos===1) r.g.push(year); else if(pos===2) r.si.push(year); else if(pos===3) r.b.push(year);
    if(pos>0 && (!r.best || pos<r.best)){ r.best=pos; r.bestYear=year; }
@@ -1723,10 +1875,14 @@ function smTrophies(){
      r.starts++; note(r, c.mePos||0, h.year); });
    const dp=smDmpjPos(h);
    if(dp!==null){ dmpj.starts++; note(dmpj, dp, h.year); }
-   /* Liga: 1-3 miejsce w play-off to komplet medali DMP danej klasy rozgrywkowej. */
-   if(h.matches>0 && h.pos>0){ dmp.starts++; note(dmp, h.pos<=3?h.pos:0, h.year); }
+   /* Liga: 1-3 miejsce w play-off to komplet medali DMP danej klasy rozgrywkowej —
+      ale liczone do WŁAŚCIWEJ tabeli, wg tego, w której lidze (h.lk) faktycznie grałeś. */
+   if(h.matches>0 && h.pos>0){
+     const target = h.lk==='EL' ? dmp : h.lk==='E2' ? dmp2 : dmpKl;
+     target.starts++; note(target, h.pos<=3?h.pos:0, h.year);
+   }
  });
- return [...rows, dmpj, dmp];
+ return [...rows, dmpj, dmp, dmp2, dmpKl];
 }
 /* "1 klub", "2 kluby", "7 klubów" — portal ma wyglądać poważnie. */
 const smKlub = n => n===1 ? 'klub'

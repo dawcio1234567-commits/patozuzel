@@ -9,9 +9,16 @@
    Wyświetlane na ekranie tytułowym (scCreate w index.html).
    Najnowszy wpis na górze.
    ============================================================ */
-const GAME_UPDATE='17.08.2026';
+const GAME_UPDATE='19.08.2026';
 const GAME_X='@polskizuzlowiec';
 const CHANGELOG=[
+ {v:'19.08.2026', t:'PATCH: PORZĄDKI W INTERFEJSIE — MNIEJ OKIENEK NA RAZ', l:[
+  'Feedback graczy: "za dużo małych okienek, kilka rzeczy zlewa się na raz". Racja — ekran między sezonami i podsumowanie sezonu piętrzyły nawet dziesięć osobnych boksów jeden pod drugim.',
+  'NOWE: drugorzędne dane (jak działa ustawianie składu, skąd bierze się wiek emerytalny, jak działa warsztat, kontrola matematyczna, składniki oceny, kontrola wykonania zdarzenia) chowają się teraz za wyraźnym przełącznikiem "▸ ROZWIŃ" — jednym kliknięciem widzisz wszystko, ale nie musisz na to patrzeć za każdym razem.',
+  'HISTORIA KARIERY na hubie i na ekranie końca kariery jest teraz zwinięta domyślnie, z licznikiem sezonów w nagłówku.',
+  'Pięć osobnych boksów w podsumowaniu sezonu (wydarzenia klubowe, zmiany szyldów, rozwój profesjonalizmu/medialności, plotki po sezonie, raport) połączono w jedno "WIĘCEJ Z TEGO SEZONU" z jednym przełącznikiem zamiast pięciu.',
+  'Bez zmian: liczby, ostrzeżenia i rozliczenie finansowe zostają widoczne od razu — zwijaniu podlega tylko to, co jest wyjaśnieniem albo dodatkiem, nie samo mięso sezonu.'
+ ]},
  {v:'17.08.2026', t:'PATCH: NUMERY, WYNIKI, OFERTY I NIEOCZEKIWANE ZDARZENIA', l:[
    'NAPRAWA: numery startowe były odwrócone. Zgodnie z regulaminem gospodarz jedzie z numerami 9–15, a gość z numerami 1–7. Do tej pory silnik robił dokładnie odwrotnie i w meczu u siebie dostawałeś numer gościa.',
    'NAPRAWA: mecz potrafił skończyć się wynikiem, którego nie da się zdobyć na torze (np. 76:14 albo 16:74). Winna była rezerwa taktyczna: wjeżdżała do biegu pod ujemnym numerem wewnętrznym, a silnik czytał z tej liczby stronę meczu — każda liczba ujemna wychodziła mu jako gospodarz. Punkty rezerwy taktycznej gości lądowały więc na koncie gospodarzy. Stąd „zdobyłeś dwa punkty" przy wyniku, w którym twoja drużyna ich nie miała.',
@@ -132,7 +139,13 @@ const SURPRISE={
 const ECON={
  liveBase   : 46000,                        // roczny koszt życia na starcie
  liveAge    : 3200,                         // każdy rok powyżej 18 lat
- liveLeague : {EL:1.40, E2:1.12, KL:0.90},  // w Ekstralidze wszystko jest droższe
+ /* KL Z 0.90 NA 0.72, E2 Z 1.12 NA 1.05: przy analizie budżetu okazało się,
+    że nawet DOROSŁY zawodnik dopasowany poziomem do klubu KLŻ kończył sezon
+    kilkadziesiąt tysięcy złotych pod kreską — różnica w kosztach życia
+    między ligami (1.56:1.24:1) była dużo mniejsza niż różnica w stawce za
+    punkt (5:2,4:1), więc dolne ligi strukturalnie nie miały szans wyjść na
+    zero. Mniejsze miasteczko KLŻ to i tańszy wynajem, i krótsze wyjazdy. */
+ liveLeague : {EL:1.40, E2:1.05, KL:0.72},  // w Ekstralidze wszystko jest droższe
  liveIdle   : 0.55,                         // rok bez klubu = tańsze życie, ale wciąż koszt
  liveAmat   : 0.50,                         // amator mieszka u mamy i jeździ klubowym sprzętem
  /* Mnożnik stawki za punkt wg wieku: junior dostaje ułamek tego, co ma na papierze. */
@@ -141,6 +154,14 @@ const ECON={
  svcBase    : 12000,
  svcPerHeat : 1200,
  svcEquipW  : 140,                          // im lepszy sprzęt, tym droższy serwis
+ /* SERWIS WEDŁUG LIGI: rachunek za tuning był do tej pory SZTYWNY, niezależny
+    od klasy rozgrywkowej — podczas gdy stawka za punkt (rateBase) różni się
+    między ligami prawie pięciokrotnie (EL 2400 / E2 1150 / KL 480 zł/pkt).
+    Efekt: w KLŻ, przy pełnym sezonie (ok. 70-90 biegów), serwis sam w sobie
+    potrafił przekroczyć CAŁE zarobki z ligi — zawodnik przegrywał finansowo
+    każdy sezon niezależnie od formy. Lokalny warsztat w Krajowej Lidze nie
+    kosztuje tyle, co fabryczny serwis w Ekstralidze — teraz to widać w cenie. */
+ svcLeague  : {EL:1.30, E2:0.80, KL:0.42},
  /* Odstępne za mechanika: tyle procent ceny odzyskujesz, oddając go dalej. */
  mechBuyout : 0.35,
  /* ALIMENTY — jedna zima w Argentynie, osiemnaście lat przelewów.
@@ -200,23 +221,23 @@ const BASE_LEAGUES=()=>({
  ]},
  E2:{name:'2. EKSTRALIGA', short:'2. EL', clubs:[
    C('BOLONIA Bydgoszcz',72,3000000),
-   C('NADMORZE Gdańsk',70,2600000),
-   C('MOSIĄDZ Rzeszów',68,2400000),
-   C('SCHEISSE Landshut',66,2000000),
-   C('OSTRO OSTRÓW',64,1800000),
-   C('KSM Krosno',62,1600000),
+   C('PASAŻ Poznań',48,800000),      // Wakat po PSŻ Poznań załatany przy zielonym stoliku
    C('MRÓZ Rybnik',60,1500000),
-   C('CMENTARZ Łódź',57,1200000)
+   C('CMENTARZ Łódź',57,1200000),
+   C('MOSIĄDZ Rzeszów',68,2400000),
+   C('BOLONIA Piła',40,550000),      // Awans do 2. EL
+   C('OSTRO OSTRÓW',64,1800000),
+   C('KSM Krosno',62,1600000)
  ]},
  KL:{name:'KRAJOWA LIGA ŻUŻLOWA', short:'KLŻ', clubs:[
+   C('NADMORZE Gdańsk',70,2600000),  // Bolesny spadek
+   C('SCHEISSE Landshut',66,2000000),// Bolesny spadek
    C('META Gniezno',52,900000),
    C('MOTORNICZY Opole',50,850000),
-   C('ŁUNIA Tarnów',48,800000),
    C('LOKOMOTYWA Daugavpils',46,750000),
-   C('MOTORNICZY Rawicz',44,700000),
    C('BANDA Kraków',42,600000),
-   C('BOLONIA Piła',40,550000),
-   C('GERMANIA Świętochłowice',38,500000)
+   C('GERMANIA Świętochłowice',38,500000),
+   C('FUNIA TARNÓW',44,700000)   // Dopełnienie do 8 drużyn dla parzystości terminarza
  ]}
 });
  
@@ -295,6 +316,39 @@ const fxFit = d => { G.S.equipFit = cl(G.S.equipFit-d,0,100); return 'Dopasowani
 const fxRate= m => { G.S.rateMul *= m; return 'Stawka za punkt w tym sezonie '+(m>=1?'+':'')+Math.round((m-1)*100)+'%'; };
 const fxRateN=m => { G.p.next.rateMul = m; return 'Stawka za punkt w kolejnym sezonie '+(m>=1?'+':'')+Math.round((m-1)*100)+'%'; };
 const fxEnd = why => { G.p.retired=true; G.p.retireReason=why; G.S.forcedEnd=true; return 'KONIEC KARIERY: '+why; };
+
+/* --- fxSum: PULPIT PODSUMOWANIA PO WYBORZE OPCJI ---
+   Gracze zgłaszali brak feedbacku narracyjnego: klikasz opcję i gra od razu
+   leci do raportu sezonu. fxSum() wrzuca tekst do bufora, a chooseEv()
+   (index.html) po zastosowaniu efektów sprawdza bufor i — jeśli coś w nim
+   jest — pokazuje mały pulpit z przyciskiem OK. Dopiero OK zamyka zdarzenie.
+   Dwa sposoby użycia:
+     · dynamicznie, wewnatrz f():   f:()=>[fxP(-5), fxSum('Tekst na ekran')]
+     · statycznie, polem opcji:     {l:'...', sum:'Tekst na ekran', f:()=>[...]}
+   fxSum zwraca null, więc NIE trafia do rubryki EFEKTY (fxApply pomija null). */
+let EV_SUM=[];
+const fxSum = t => { if(t!=null && String(t).trim()) EV_SUM.push(String(t).trim()); return null; };
+function evSumClear(){ EV_SUM=[]; }
+function evSumTake(){ const a=EV_SUM.slice(); EV_SUM=[]; return a; }
+
+/* --- KTÓRY SĘDZIA PROWADZI ZAWODY ---
+   Ten sam problem, co przy `temptClub()` w engine.js: opis zdarzenia (x)
+   renderuje się PRZED kliknięciem, a skutek (f) liczy się PO. Gdyby nazwisko
+   losowało się dwa razy, gracz czytałby o Pałce, a dostawał walkower Wojaczka.
+   Wybór zapada raz na sezon i siedzi w G.S. */
+const JUDGES = {
+ palka:   {n:'PAŁKA',    d:'służbista, który na gówno torach czyta regulamin literka po literce'},
+ wojaczek:{n:'WOJACZEK', d:'ten od obustronnego walkowera w GNIOŚCIE'},
+ kobak:   {n:'KOBAK',    d:'niesłuszne czerwone i źle włączone dwie minuty w Gnieźnie'}
+};
+function judgeDraw(){
+ try{
+  if(G.S && G.S.judgeCase && JUDGES[G.S.judgeCase]) return G.S.judgeCase;
+  const k = pick(Object.keys(JUDGES));
+  if(G.S) G.S.judgeCase = k;
+  return k;
+ }catch(_){ return 'palka'; }
+}
 
 /* --- fxS: GENERYCZNY SETTER POLA STANU SEZONU ---
    Część zdarzeń w data.js była pisana skrótem `fxS('banMatches', 14)`, ale
@@ -401,11 +455,16 @@ const EVENTS=[
  
 /* ===== MEDIA, INTERNET I INNE PATOLOGIE ===== */
 {id:'zmarzl', t:'AFERA „ZMARZŁEŚ”',
- x:'Miałeś wypadek, po którym trafiłeś do szpitala. Grupa śmieszków żartowała, że zmarzłeś. Potem poszła fama, że to przez ciebie zablokowano im konto z memami.',
+ x:'Miałeś wypadek, po którym trafiłeś do szpitala. Profil „Awangarda Metanolu” zrobił z tego cały cykl memów. Potem poszła fama, że to przez ciebie zablokowano im konto.',
  o:[
-  {l:'Dementuję wszystko, ale przyznaję, że było zabawne.', f:()=>[fxP(-2), fxA(1), 'Pół parku maszyn i tak myśli, że to ty zgłosiłeś.']},
-  {l:'Nie robię nic — potem tłumaczę ludziom, że to nie moja wina.', f:()=>[fxM(-5), 'Tydzień odpowiadania na komentarze. Nikt nie uwierzył.']},
-  {l:'Udostępniam i robię z tego bekę.', f:()=>[fxP(-5), fxM(5), 'Prezes dzwonił. Nie odebrałeś.']}
+  {l:'Dementuję wszystko, ale przyznaję, że było zabawne.',
+   f:()=>[fxP(-8), fxO(-2), fxFine(15000)+' od klubu za „nieuzgodnione stanowisko”', fxA(1),
+          'Pół parku maszyn i tak myśli, że to ty zgłosiłeś.']},
+  {l:'Nie robię nic — potem tłumaczę ludziom, że to nie moja wina.',
+   sum:'Tydzień odpowiadania. Nikt nie uwierzył.',
+   f:()=>[fxM(-15), fxO(-3), fxK(-12000)+' na prawnika, który nic nie wskórał']},
+  {l:'Udostępniam i robię z tego bekę.',
+   f:()=>[fxP(-15), fxM(5), fxO(-3), fxFine(25000)+' za szkodzenie wizerunkowi klubu', 'Prezes dzwonił. Nie odebrałeś.']}
  ]},
 {id:'karetka', t:'ZMARZŁEŚ W KARETCE',
  x:'Po wypadku jeden z profili tematycznych pisze, że „zmarzłeś w karetce”. Screen leci dalej, twoja mama znowu komentuje.',
@@ -421,10 +480,10 @@ const EVENTS=[
   {l:'Usuwajcie to natychmiast!', f:()=>[fxP(7), fxM(-7), fxA(-15), 'Szatnia uznała, że przesadziłeś.']}
  ]},
 {id:'lech', t:'PYTANIE ZE STADIONU LECHA',
- x:'Odjechałeś zawody w Poznaniu. Internetowy śmieszek pyta na wizji: „kurwy i śmiecie z Poznania nie wyjedziecie — wolałbyś być kurwą czy śmieciem?”.',
+ x:'Odjechałeś zawody w Poznaniu. Internetowy śmieszek podstawia ci mikrofon: „jest taka popularna przyśpiewka — kurwy i śmiecie z Poznania nie wyjedziecie — wolałbyś być kurwą czy śmieciem?”.',
  o:[
-  {l:'Kurwą.',  f:()=>[fxP(2), fxM(-2)]},
-  {l:'Śmieciem.', f:()=>[fxM(2), fxP(-2)]},
+  {l:'Kurwą.',  f:()=>[fxM(-15), fxP(-15), fxA(-5)+' — szatnia oglądała to sto razy']},
+  {l:'Śmieciem.', f:()=>[fxM(-15), fxP(-15), fxA(-5)+' — kierownik drużyny złapał się za głowę']},
   {l:'Oddaję głos do studia i wracam malować sufit.', f:()=>['Nic się nie dzieje. Sufit wyszedł równo.']}
  ]},
 {id:'opowiadanie', t:'DZIENNIKARZ I OPOWIADANIE',
@@ -440,7 +499,7 @@ const EVENTS=[
   {l:'„Staram się nie wymiotować, jak patrzę na pana”.', f:()=>{const b=R(1,2);return [fxM(15), fxP(-15), fxBan(b), 'Regulamin ligi zna słowo „wizerunek”.'];}}
  ]},
 {id:'podcast', t:'PODCAST „GADA SIĘ RZURZEL”',
- x:'Dacek Jreczka nalewa ci piwo już w piętnastej minucie i pyta, co naprawdę myślisz o prezesach w tej lidze. Kamera się nagrywa.',
+ x:'„Podcast żużlawki” nalewa ci piwo już w piętnastej minucie i pyta, co naprawdę myślisz o prezesach w tej lidze. Kamera się nagrywa, a w tle stoi roll-up Awangardy Metanolu.',
  o:[
   {l:'Mówię wszystko. Nazwiska, kwoty, daty.', f:()=>[fxM(15), fxP(-10), fxFine(15000)+' z PZM za „naruszenie dobrego imienia”']},
   {l:'Mówię o świetnej atmosferze w zespole.', f:()=>[fxM(3), fxP(3), 'Nudno, ale bezpiecznie.']}
@@ -479,8 +538,8 @@ const EVENTS=[
  x:'Produkcja dzwoni w środku okresu startowego. Mówią, że żużel „jest teraz modny” i że potrzebują kogoś z charakterem. Honorarium jest większe niż twój kontrakt.',
  cond:(p)=>p.med>30,
  o:[
-  {l:'Idę tańczyć.', f:()=>[fxM(15), fxP(-15), fxK(100000), fxH(-10)+' (treningi odpadły)']},
-  {l:'Odmawiam, mam sezon.', f:()=>[fxP(5), fxM(-5)]}
+  {l:'Idę tańczyć.', f:()=>[fxM(15), fxP(-15), fxK(100000), fxH(-30)+' (treningi odpadły, trener wpisał cię do rezerwy)', fxOB(-2)]},
+  {l:'Odmawiam, mam sezon.', f:()=>[fxP(10), fxM(-5), fxO(2)+' (cały luty na torze zamiast na parkiecie)', fxOB(2)+' — forma życia']}
  ]},
 {id:'tiktok', t:'PREZES ZAKAZUJE ZAWODNIKOM TIKTOKA',
  x:'Regulamin wewnętrzny 14b: „zakaz publikowania treści z parku maszyn”. Powodem jest filmik kolegi, który pokazał, ile klub mu zalega.',
@@ -511,8 +570,8 @@ const EVENTS=[
 {id:'pies', t:'PIES ZE SCHRONISKA',
  x:'Lokalne schronisko prosi, żebyś wziął od nich psa. Zdjęcie już wisi na ich fanpage’u, podpisane twoim nazwiskiem.',
  o:[
-  {l:'No pewnie, kochany zwierzak.', f:()=>[fxO(1)+' (spacery to też trening)', fxM(10)]},
-  {l:'Jebać tego kundla.',           f:()=>[fxO(-1), fxM(-15)]}
+  {l:'Czas wytresować Psa.', f:()=>[fxO(1)+' (spacery to też trening)', fxM(10)]},
+  {l:'Won z tym kundlem.',   f:()=>[fxO(-1), fxM(-15)]}
  ]},
 {id:'wejscie', t:'WEJŚCIE NA LEWO',
  x:'Starszy pan prosi cię o załatwienie wejścia na lewo na lokalną rundę SGP. Mówi coś o rekordzie obejrzanych rund i pokazuje zeszyt.',
@@ -526,10 +585,14 @@ const EVENTS=[
  x:'Grupa kibiców prosi cię o pomoc w przemyceniu twoim busem specyficznej oprawy na mecz. W kartonie coś się rusza.',
  cond:(p,c,S)=>S.round>0 && !!c,
  o:[
-  {l:'Pomagam i patrzę, jak świnia w szaliku rywali biega po torze.', f:()=>{const l=[fxA(3), fxT(1)];
+  {l:'Pomagam kibicom.',
+   sum:'Patrzę jak świnia w szaliku rywali biega po torze.',
+   f:()=>{const l=[fxA(3), fxT(1)];
      if(chance(10)) l.push(fxBan(1)+' — wydział regulaminowy obejrzał nagrania'); else l.push('Nikt niczego nie udowodnił.');
      return l;}},
-  {l:'Odmawiam.', f:()=>[fxP(3)]}
+  {l:'Odmawiam.',
+   sum:'Nie ma oprawy w busie, są kamienie.',
+   f:()=>[fxP(3), fxK(-10000)+' na naprawę busa (szyby, lakier, jedna felga)', fxA(-5)]}
  ]},
 {id:'przyczepny', t:'PRZYCZEPNY TOR I BUNT',
  x:'Przyjeżdżasz na mecz, na którym gospodarz przygotował tor tak przyczepny, że koledzy z drużyny wywracają się już na próbie toru.',
@@ -585,15 +648,16 @@ const EVENTS=[
  x:'Twój junior traci pozycje na trasie i wraca do parku maszyn ze spuszczoną głową. Patrzy na ciebie jak na wyrocznię.',
  cond:(p,c,S)=>p.age>21 && S.round>0,
  o:[
-  {l:'Mówię mu, że mencele go jebią.', f:()=>[fxP(-2), fxA(-2)]},
-  {l:'Mówię, że nic się nie stało.',   f:()=>[fxP(2)]}
+  {l:'Mówię mu, że mencele go jebią.', f:()=>[fxP(-10), fxA(-10), fxM(12)+' — nagranie z parku maszyn poszło w świat']},
+  {l:'Mówię, że nic się nie stało.',   f:()=>[fxP(10), fxA(12)+' — szatnia widziała, jak podnosisz dzieciaka', fxL(5)]}
  ]},
 {id:'kaskjuniora', t:'KASK JUNIORA',
  x:'Widzisz, że utalentowany junior jadący z tobą w biegu nie zapiął kasku. Taśma za dziesięć sekund.',
  cond:(p,c,S)=>S.round>0,
  o:[
   {l:'Zwracam mu uwagę.', f:()=>[fxP(10)]},
-  {l:'Zlewam, co będzie, to będzie.', f:()=>{G.p.next.forceClub='weak';return [fxP(-10), 'Karma działa wolno, ale skutecznie: po sezonie zostaje ci transfer do słabego klubu.'];}}
+  {l:'Zlewam, co będzie, to będzie.', f:()=>{G.p.next.forceClub='weak_medium';
+     return [fxP(-10), 'Karma działa wolno, ale skutecznie: po sezonie zmieniasz klub — na słaby albo średni, jak padnie.'];}}
  ]},
 {id:'licencjaz', t:'NOWY TALENT Z LICENCJĄ Ż',
  x:'Junior klubu zdał licencję Ż. W parku maszyn mówi się, że ma taki talent, że za rok zabierze ci miejsce w składzie.',
@@ -621,25 +685,30 @@ const EVENTS=[
  x:'Spodobałeś się najbardziej urokliwej podprowadzającej twojego klubu. Ma pomysł, jak ci się odwdzięczyć przed domowym meczem.',
  cond:(p,c,S)=>S.round>0,
  o:[
-  {l:'Pierdolę, mam swoją godność.', f:()=>[fxP(2), fxM(-3)]},
-  {l:'Mrugam okiem, żeby jej koleżanki pojebały pola startowe.', f:()=>{const l=[fxOB(1)+' (jeden bieg masz w kieszeni)', fxP(-5)];
+  {l:'Nie, dzięki, mam swoją godność.', f:()=>[fxP(2), fxM(-3)]},
+  {l:'Mrugam okiem, żeby jej koleżanki pomyliły pola startowe.', f:()=>{const l=[fxOB(1)+' (jeden bieg masz w kieszeni)', fxP(-5)];
      if(chance(35)) l.push(fxBan(R(2,3))+' — komisja obejrzała nagranie z pól startowych'); return l;}}
  ]},
 {id:'ksiazeczka', t:'BRAK KSIĄŻECZKI Z BADANIAMI',
  x:'Zapomniałeś książeczki z badaniami lekarskimi, a kierownik zawodów stoi przy stoliku i przegląda dokumenty jednego zawodnika po drugim.',
  cond:(p,c,S)=>S.round>0,
  o:[
-  {l:'Wkładam 50 zł w dowód rejestracyjny busa i podaję sędziemu.', f:()=>{
-     if(chance(50)) return ['Sędzia oddał dowód bez słowa. Jedziesz w meczu.'];
-     return [fxBan(2), fxP(-10), 'Sprawa poszła do wydziału regulaminowego.'];}},
+  {l:'Wkładam 500 zł w dowód rejestracyjny busa i podaję sędziemu.', f:()=>{
+     G.p.budget -= 500;                                   // koperta wychodzi z kieszeni ZAWSZE
+     if(chance(50)) return ['Sędzia oddał dowód bez słowa. Jedziesz w meczu.', '-'+zl(500)+' (koperta w dowodzie)'];
+     return [fxBan(2), fxP(-10), '-'+zl(500)+' (koperty nikt nie oddał)', 'Sprawa poszła do wydziału regulaminowego.'];}},
   {l:'Przyznaję się do błędu.', f:()=>[fxBan(1), fxP(5)]}
  ]},
 {id:'obiad', t:'OBIAD DLA OSÓB FUNKCYJNYCH',
- x:'Twój stary znowu wchodzi na catering i wpierdala porcję przeznaczoną dla osób funkcyjnych. Kierownik toru patrzy, ale nic nie mówi.',
+ x:'Twój stary znowu wchodzi na catering i pałaszuje porcję przeznaczoną dla osób funkcyjnych. Kierownik toru patrzy, ale nic nie mówi.',
  cond:(p,c,S)=>S.round>0,
  o:[
-  {l:'Porcja była nieświeża — stary ma sraczkę, ty tracisz mechanika na ten mecz.', f:()=>[fxFit(20), fxP(-5)]},
-  {l:'Nic nie robię.', f:()=>[fxK(50*BAL.rounds)+' (oszczędność na obiadach)']}
+  {l:'Niech je, w końcu przyjechał.',
+   sum:'Porcja była nieświeża, stary ma sraczkę.',
+   f:()=>[fxFit(20), fxP(-5), 'Mechanika w tym meczu nie ma — siedzi z ojcem pod toaletą.']},
+  {l:'Wyciągam go za rękaw i sam biorę tacę.',
+   sum:'W końcu coś innego niż mielone.',
+   f:()=>[fxK(50*BAL.rounds)+' (oszczędność na obiadach)', fxP(3)]}
  ]},
  
 /* ===== IMPREZY, KOBIETY, ŻYCIE POZA TOREM ===== */
@@ -676,7 +745,7 @@ const EVENTS=[
   {l:'Zakuwam ją w kajdanki i przymocowuję do kaloryfera.', f:()=>[fxM(12), fxA(-7), fxBan(1)+' — musisz się tłumaczyć na komisariacie']}
  ]},
 {id:'podryw', t:'PODRYW NA IMPREZIE KLUBOWEJ',
- x:'Podczas imprezy klubowej podrywają cię piękne panie. Prezes patrzy z drugiego końca sali i nie wygląda na zachwyconego.',
+ x:'Podczas imprezy klubowej podrywają cię piękne panie. Na barze stoją „jogurty topless” od sponsora, prezes patrzy z drugiego końca sali i nie wygląda na zachwyconego.',
  o:[
   {l:'Wybieram reporterkę z telewizji.', f:()=>[fxA(1)]},
   {l:'Wybieram nieznaną szarą myszkę.', f:()=>{const r=R(1,100);
@@ -688,14 +757,6 @@ const EVENTS=[
      return [fxM(-3), fxA(2), fxO(1)];}},
   {l:'Pytam kolegi, gdzie poznał żonę, i idę do tego przybytku.', f:()=>[fxP(3), fxI(-5), fxA(-3)]},
   {l:'Mówię im, że preferuję stringi mojej babci.', f:()=>[fxM(3), fxP(3), fxA(1)]}
- ]},
-{id:'schabowe', t:'SCHABOWE Z ŻONĄ',
- x:'Wchodzisz do kuchni, a twoja żona trzyma w ręku nóż. Radio gra „Nie ma mocnych na Mariolę”.',
- o:[
-  {l:'Wchodzę do kuchni.', f:()=>{ if(chance(95)) return ['Robi schabowe. Same płaty, panierka jak trzeba.', fxOB(2)+' na najbliższe mecze'];
-     G.S.forcedEnd=true;
-     return ['Odcinasz sobie palec przy krojeniu.', fxO(-2), 'Koniec sezonu — ręka w gipsie i powolna utrata formy.'];}},
-  {l:'Wracam do salonu i udaję, że nic nie widziałem.', f:()=>['Kolacja była o 22:00. Zimna.']}
  ]},
 {id:'weranda', t:'WERANDA Z LEGENDĄ',
  x:'Masz wolny weekend. Mechanik proponuje dodatkową sesję treningową, ale Marek Cieślak dzwoni, że wieczorem zbiera się ekipa w Werandzie i raczej nie planują wracać wcześnie.',
@@ -718,13 +779,6 @@ const EVENTS=[
                             fxLongInj('złamana kość udowa — sztyft, sześć miesięcy o kulach')];
      G.S.forcedEnd=true;return ['Widzisz klamkę. Potem szpital.','Koniec sezonu.'];}},
   {l:'Nigdzie nie jadę.', f:()=>['Zostajesz w domu. Nic się nie dzieje.']}
- ]},
-{id:'wiatrowka', t:'ZNALEZIONA WIATRÓWKA',
- x:'Znajdujesz w domu wiatrówkę po dziadku. Obok leży puszka śrutu i stara tarcza z korka.',
- o:[
-  {l:'Czas się zabawić.', f:()=>{ if(chance(95)) return ['Kilka strzałów do puszki i tyle. Sąsiad nawet nie wyszedł.'];
-     return [fxEnd('niekontrolowany odpał na podwórku')];}},
-  {l:'Zostawiam ją w spokoju.', f:()=>[fxP(5)]}
  ]},
 {id:'hel', t:'OFERTA OD MISTRZA',
  x:'Bartek Zmarzlik proponuje ci wspólne wciąganie helu na zapleczu parku maszyn. Balony ma własne.',
@@ -787,13 +841,13 @@ const EVENTS=[
      else { if(c) c.debt+=R(10000,30000); l.push('Nic nie wróciło, a dług klubu urósł.');}
      return l;}}
  ]},
-{id:'skrzydlo', t:'WITOLD SKRZYDŁO DOWALA CI KARĘ 100 000 ZŁ',
+{id:'skrzydlo', t:'WALENTY SKRZYDŁO DOWALA CI KARĘ 100 000 ZŁ',
  x:'Powód: brak czapki klubowej na wywiadzie. W tym samym czasie klub zalega ci wielkie pieniądze. Nikt w tym budynku nie widzi w tym sprzeczności.',
  cond:(p,c)=>!!c && c.debt>=60000,
  o:[
   {l:'Płacę z pokorą.', f:()=>{const c=clubOf(G.p); if(c) c.debt=0;
      return [fxM(-10), fxP(10), 'Dług klubu wobec ciebie wyzerowany (kompensata).'];}},
-  {l:'Pierdolę, idę do Ostafińskiego.', f:()=>{const c=clubOf(G.p);G.S.forcedEnd=true;G.S.noRenew=true;
+  {l:'Pierdolę, idę do Taflińskiego.', f:()=>{const c=clubOf(G.p);G.S.forcedEnd=true;G.S.noRenew=true;
      const l=[fxM(15), fxP(-10), 'Do końca sezonu nie jedziesz ani jednego spotkania.'];
      if(chance(40)){ if(c) c.debt=0; l.push('PZM zwrócił dług z gwarancji.'); } else l.push('Trybunał PZM rozłożył ręce. Dług zostaje.');
      return l;}}
@@ -802,10 +856,10 @@ const EVENTS=[
  x:'Jeden radny zatrzasnął się w windzie i nie dotarł na głosowanie. Twój klub nie dostał dotacji ratującej finanse, a ty ostatnią wypłatę pamiętasz jak przez mgłę.',
  cond:(p,c)=>!!c && c.debt>0,
  o:[
-  {l:'Siedzę cicho, muszę się pokazać.', f:()=>[fxO(-1)+' (sprzęt stoi u tunera i czeka na przelew)']},
-  {l:'Idę płakać w ramię Julii Pożarlik podczas kolejnego meczu.', f:()=>[fxM(4), fxP(-2), fxO(-1)]},
+  {l:'Siedzę cicho, muszę się pokazać.', f:()=>[fxP(20)+' — zarząd docenił, że nie robisz szumu', fxM(-15)+' — zniknąłeś z anten', fxO(-1)+' (sprzęt stoi u tunera i czeka na przelew)']},
+  {l:'Idę płakać w ramię Julii Pożarlik podczas kolejnego meczu.', f:()=>[fxM(25), fxP(-25), fxO(-1)]},
   {l:'Urządzam protest, zaczynam głodówkę i przykuwam się do kaloryfera w biurze klubu.', f:()=>{
-     const c=clubOf(G.p);const l=[fxM(15), fxP(2)];
+     const c=clubOf(G.p);const l=[fxM(25), fxP(-18)];
      if(chance(25)){const k=Math.round((c?c.debt:0)*0.6); if(c) c.debt-=k; G.p.budget+=k; l.push('Klub znalazł pieniądze: '+zl(k)+'.');}
      if(chance(25)){G.S.noRenew=true;G.p.next.betterOffers=true;l.push('Sprawa poszła szeroko — po sezonie możesz wybrać nowy klub.');}
      return l;}}
@@ -815,10 +869,10 @@ const EVENTS=[
  cond:(p,c)=>!!c && c.debt>0,
  o:[
   {l:'Głęboko je analizuję.', f:()=>{const r=R(1,3);
-     if(r===1) return [fxO(2), fxT(1), fxP(3)];
-     if(r===2) return ['Popatrzyłeś, pokiwałeś głową, nic z tego nie wynikło.'];
-     return [fxO(-1), fxT(-1)+' — zaraziłeś szatnię defetyzmem'];}},
-  {l:'Piszę tweeta, że większym kłamstwem jest terminowość wypłat.', f:()=>[fxM(4), fxBan(1)+' — klub ukarał cię regulaminowo']}
+     if(r===1) return [fxO(2), fxT(1), fxP(22)+' — zacząłeś prowadzić własny zeszyt ustawień'];
+     if(r===2) return ['Popatrzyłeś, pokiwałeś głową, nic z tego nie wynikło.', fxP(5)];
+     return [fxO(-1), fxT(-1)+' — zaraziłeś szatnię defetyzmem', fxP(-12)];}},
+  {l:'Piszę tweeta, że większym kłamstwem jest terminowość wypłat.', f:()=>[fxM(25), fxP(-20), fxBan(1)+' — klub ukarał cię regulaminowo']}
  ]},
 {id:'brakkasy', t:'BRAK KASY Z KLUBU',
  x:'Klub nie płacił od wiosny, a ty naprawdę potrzebujesz pieniędzy na życie. Rata za busa nie czeka.',
@@ -850,7 +904,7 @@ const EVENTS=[
   {l:'Zgadzam się i lajkuję fanpage.', f:()=>{const l=[];
      if(chance(15)) l.push(fxK(8000)+' ze zbiórki'); else l.push('Zbiórka utknęła na 340 zł.');
      l.push(fxM(R(-4,4))); l.push(fxP(-2)); return l;}},
-  {l:'Pierdolcie się, śmieszki.', f:()=>{G.p.next.noSponsor=true;
+  {l:'Wy jesteście normalnie nienormalni.', f:()=>{G.p.next.noSponsor=true;
      return [fxP(3), 'Żadnych ofert sponsorskich w najbliższym okienku.'];}}
  ]},
 {id:'windykacja', t:'WINDYKACJA DZWONI DO CIEBIE',
@@ -884,19 +938,6 @@ const EVENTS=[
   {l:'Kupuję auto.',        f:()=>{const k=Math.round(G.p.budget*0.3);return [fxK(-k), fxM(10)+' (story z salonu)', fxP(-10)];}},
   {l:'Pakuję w silniki.',   f:()=>[fxK(-200000), fxE(20), fxP(5)]}
  ]},
-{id:'zima', t:'PRZYGOTOWANIA ZIMOWE: HISZPANIA CZY SIŁOWNIA W ZABRZU',
- x:'Grupa zawodników leci na trzy tygodnie do Almerii. Alternatywa to siłownia na osiedlu, gdzie pan Mietek każe robić przysiady na czas.',
- cond:(p)=>p.budget>=80000,
- o:[
-  {l:'Lecę do Hiszpanii.', f:()=>[fxK(-80000), fxO(3), fxP(5)]},
-  {l:'Siłownia u Mietka.', f:()=>[fxO(1), fxM(-5)+' — inni wrzucali story z plaży']}
- ]},
-{id:'ojciec', t:'OJCIEC-MENEDŻER CHCE NEGOCJOWAĆ',
- x:'Ma teczkę, koszulę i przekonanie, że wszyscy w tej lidze to złodzieje. W sumie ma rację, ale prezesi już się o nim między sobą pisali.',
- o:[
-  {l:'Niech negocjuje.',     f:()=>[fxRate(1.2), fxM(-10), fxH(-10)+' — trener nie znosi „tatusiów”']},
-  {l:'Sam sobie załatwiam.', f:()=>[fxP(5)]}
- ]},
 {id:'mrozek', t:'PORADA KRZYSZTOFA M.',
  x:'Klub chce podpisać z tobą dziesięcioletni kontrakt. Prezes zainspirował się Krzysztofem Mrozkiem i kładzie na stole umowę dłuższą niż niejedna kariera.',
  cond:(p,c)=>!!c,
@@ -911,13 +952,6 @@ const EVENTS=[
   {l:'Zrzekam się.', f:()=>[fxT(2), fxL(15), fxM(5), fxRate(0.5)]},
   {l:'Mam kredyt, nie zrzekam się.', f:()=>[fxL(-15), fxM(-10), fxT(-1)+' — szatnia się sypie']}
  ]},
-{id:'bogaty_klub', t:'PREZES POKAZUJE NOWĄ HALĘ',
- x:()=>'Klub ma budżet '+zl((clubOf(G.p)||{budget:0}).budget)+' i właśnie otworzył centrum treningowe z sauną i salą do wideo-analiz. Prezes pyta, czy chcesz swój klucz.',
- cond:(p,c)=>!!c && c.budget>=8000000,
- o:[
-  {l:'Wprowadzam się tam na stałe.', f:()=>[fxO(2), fxP(10), fxM(-5)+' — znikasz z życia towarzyskiego']},
-  {l:'Wolę swój brudny warsztat.',   f:()=>[fxL(-10), fxE(4)]}
- ]},
  
 /* ===== SPRZĘT, MECHANICY, TUNERZY ===== */
 {id:'tuninggor', t:'WIZYTA U LOKALNEGO „TUNING-GÓRA” W STODOLE',
@@ -925,7 +959,7 @@ const EVENTS=[
  o:[
   {l:'Zgadzam się.', f:()=>{ if(chance(80)) return ['Na drugim kółku silnik zrobił dziurę w karterze.', fxE(-20), fxDef(10)];
      return ['CUD. Silnik wytrzymał i jedzie jak nowy.', fxE(10)];}},
-  {l:'Dziękuję, postoję.', f:()=>['Wychodzisz ze stodoły z całym karterem.']}
+  {l:'Pozostaję przy silnikach od babci.', f:()=>['Wychodzisz ze stodoły z całym karterem.']}
  ]},
 {id:'zlom', t:'TWÓJ SILNIK TO JUŻ EKSPONAT',
  x:()=>'Sprzęt na poziomie '+G.p.equip+'/99. Mechanik rywala zagląda pod plandekę, robi zdjęcie i wysyła na grupę z podpisem: „on tym jeździ w tym roku?”.',
@@ -960,7 +994,7 @@ const EVENTS=[
  x:'Skrzynia biegów wysiadła pod Debreczynem, a mecz o trzecie miejsce jest za 14 godzin. Janusz Ślączka podjeżdża lawetą: „wskakuj na pakę, ale motocykli nie zabieramy”.',
  o:[
   {l:'Dawaj na pakę.',      f:()=>[fxP(10), fxM(5), fxFit(30)+' (pożyczony sprzęt)', fxI(10)]},
-  {l:'Pierdolę, nie jadę.', f:()=>[fxFine(20000)+' regulaminowej', fxM(-10)]}
+  {l:'Dziękuję, postoję na poboczu.', f:()=>[fxFine(20000)+' regulaminowej', fxM(-10)]}
  ]},
 {id:'forma_zycia', t:'NAJLEPSZA FORMA W KARIERZE',
  x:()=>'Zeszły sezon skończyłeś ze średnią '+(G.history[G.history.length-1]||{avgTxt:'—'}).avgTxt+'. Trzy kluby dzwonią, tunerzy dają sprzęt za darmo w zamian za bycie słupem reklamowym.',
@@ -968,12 +1002,6 @@ const EVENTS=[
  o:[
   {l:'Biorę darmowy sprzęt za obklejenie kevlaru.', f:()=>[fxE(20), fxM(-5)+' — wyglądasz jak choinka']},
   {l:'Płacę za swoje i nic nikomu nie wiszę.',      f:()=>[fxK(-100000), fxE(20), fxP(8)]}
- ]},
-{id:'argentyna', t:'ARGENTYŃCZYK CHCE KUPIĆ TWÓJ MOTOCYKL',
- x:'Pisze po hiszpańsku przez tłumacza, że to start jego pięknej kariery w Europie. Ma odłożone oszczędności całej rodziny.',
- o:[
-  {l:'Jestem uczciwy.',              f:()=>[fxK(20000), fxM(5), fxP(5)]},
-  {l:'Sprzedaję mu oklejony złom.',  f:()=>{G.p.next.noArg=true;return [fxK(50000), fxM(-10), fxP(-10)];}}
  ]},
 {id:'masc', t:'MAŚĆ Z NORWEGII',
  x:'Rune z Norwegii proponuje ci specjalną maść na mięśnie. Etykieta jest po norwesku, a zapach czuć przez zamknięty słoik.',
@@ -1002,7 +1030,7 @@ const EVENTS=[
   {l:'Jadę na zastrzykach.',        f:()=>{
      const l=[fxM(10), fxP(10), fxOB(-3)+' (jedziesz jedną ręką)', fxI(30)];
      if(chance(14)) l.push('Ręka puściła kierownicę w pierwszym łuku barażu.',
-                           fxLongInj('zerwane więzadła w kolanie i otwarte złamanie udu po upadku z niedoleczoną ręką'));
+                           fxLongInj('zerwane więzadła w kolanie i otwarte złamanie uda po upadku z niedoleczoną ręką'));
      return l;}},
   {l:'Leczę się jak dorosły człowiek.', f:()=>[fxBan(3), fxM(-5), fxO(2)+' — ciało wreszcie odpoczęło']}
  ]},
@@ -1011,20 +1039,6 @@ const EVENTS=[
  o:[
   {l:'Robię cut przed rewanżami.', f:()=>[fxO(2), fxP(-10)+' (osłabienie organizmu)', fxI(15)]},
   {l:'Jem schabowego u mamy.',     f:()=>[fxO(-1), fxP(5)]}
- ]},
-{id:'cross', t:'CROSS I MELDONIUM',
- x:'Uważasz, że masz za mało jazdy. Dostajesz zaproszenie na treningi motocrossowe, a przy okazji ktoś podsuwa ci „coś na regenerację”.',
- cond:(p)=>p.form<0,
- o:[
-  {l:'Jadę, bo co może się złego wydarzyć.', f:()=>{const r=R(1,100);
-     if(r<=30) return [fxO(2), fxH(5), fxA(1)];
-     if(r<=58) return ['Trzy weekendy w błocie. Zero efektu.'];
-     if(r<=86){G.S.forcedEnd=true;return ['Wpadka dopingowa — zawieszenie do końca sezonu.'];}
-     if(r<=92) return ['Otarcia, siniaki i nic więcej.'];
-     if(r<=99) return ['Zeskok z hopy, kolano zostaje w koleinie.',
-                       fxLongInj('zerwane więzadła krzyżowe w kolanie na treningu crossowym')];
-     return [fxEnd('poważny uraz kręgosłupa na crossie — renta')];}},
-  {l:'Nie będę się rozpraszać bzdurami.', f:()=>[fxP(3)]}
  ]},
 {id:'doping', t:'KONTROLA ANTYDOPINGOWA W BIRMINGHAM',
  x:'Szwagier miał urodziny i przez cały weekend imprezowałeś. Wyrywkowa kontrola przed meczem w Anglii każe ci oddać mocz do badania.',
@@ -1069,15 +1083,17 @@ const EVENTS=[
  cond:(p,c,S)=>S.round>0,
  o:[
   {l:'Daję mu telefon, żeby wpisał miejscowość w Maps, i idę spać.', f:()=>{
-     if(chance(50)) return ['Pomylił miasta o tej samej nazwie.', fxBan(1), fxM(-15)];
-     return ['Zdążyliście na czas.', fxP(5), fxK(20000)+' premii'];}},
-  {l:'Jadę sam z mechanikami.', f:()=>{ if(chance(80)) return ['Nie zdążyłeś.', fxBan(1), fxP(5)];
+     if(chance(50)) return [fxSum('Tylko debil by źle wklepał adres, mój kolega ogarnia.'),
+                            'Zdążyliście na czas.', fxP(5), fxK(20000)+' premii'];
+     return [fxSum('Tylko debil by pomylił wiochę pod Pcimiem z miastem - i nim był.'),
+             'Pomylił miasta o tej samej nazwie.', fxBan(1), fxM(-15)];}},
+  {l:'Życie na walizkach, ale co to za życie.', f:()=>{ if(chance(80)) return ['Nie zdążyłeś.', fxBan(1), fxP(5)];
      return ['Zdążyłeś, ale ledwo trzymasz kierownicę.', fxI(20)];}}
  ]},
  
 /* ===== WIELKIE MECZE, TURNIEJE, PRESJA ===== */
 {id:'rzeszow', t:'PREZESKA: „TOR JEST NIEBEZPIECZNY”',
- x:'Prezeska mówi, że tor przypomina tarkę do sera, a lider właśnie wrócił z kontuzji. Zespół patrzy na ciebie — od twojego głosu zależy, czy jedziemy, czy pakujemy bus.',
+ x:'Prezeska wykopała z toru kilogram ziemniaków, położyła je na stoliku sędziowskim i mówi, że nawierzchnia przypomina tarkę do sera. Lider właśnie wrócił z kontuzji. Zespół patrzy na ciebie — od twojego głosu zależy, czy jedziemy, czy pakujemy bus.',
  cond:(p,c,S)=>S.round>0,
  o:[
   {l:'To wielka szansa — jedziemy.', f:()=>{G.S.noRenew=true;
@@ -1090,8 +1106,11 @@ const EVENTS=[
  x:'Drużyna jedzie fatalny mecz rewanżowy w finale o awans. Od ciebie zależy, czy to spotkanie w ogóle zostanie dokończone.',
  cond:(p,c,S)=>S.round>=14,
  o:[
-  {l:'Proszę prezesa o zajebanie siekierą w rozdzielnię.', f:()=>{
-     return ['Mecz odwołany przy stanie, którego nikt już nie policzy.', fxWalk('void',0), fxM(12), fxP(-10)];}},
+  {l:'Mam sprytny plan.',
+   sum:'Kto by pomyślał, że siekiera w rozdzielni przerwie mecz.',
+   f:()=>{
+     return ['Mecz odwołany przy stanie, którego nikt już nie policzy.', fxWalk('void',0), fxM(12), fxP(-10),
+             fxBan(3)+' — wydział regulaminowy uznał cię za prowodyra', fxFine(20000)+' za „działanie na szkodę zawodów”'];}},
   {l:'Odjeżdżam mecz do końca.', f:()=>{G.S.teamPts-=2;
      return [fxP(7), 'Brak awansu — rywal był po prostu lepszy.'];}}
  ]},
@@ -1099,11 +1118,11 @@ const EVENTS=[
  x:'Szatnia milczy. Lider patrzy w podłogę, junior płacze w rękawicę, a menedżer nagrywa story na Instagram. Ktoś musi coś zrobić.',
  cond:(p,c,S)=>S.round>=14 && !!c && c.ovr<=65,
  o:[
-  {l:'Skrzykuję drużynę, żeby pokrzyczeć niemiłe rzeczy o rywalach.', f:()=>[fxT(3), fxHN(10), fxM(10)]},
+  {l:'Idziemy biegać i krzyczeć niemiłe słowa o drużynie z Zielonej Góry.', f:()=>[fxT(3), fxHN(10), fxM(10)]},
   {l:'„To, gdzie jeżdżę, jest bez znaczenia…”', f:()=>[fxH(10), fxP(10)]}
  ]},
 {id:'spoznienie', t:'SPÓŹNIASZ SIĘ 6 MINUT NA MECZ PÓŁFINAŁOWY',
- x:'Sędzia Lis źle kliknął cyferki w kalkulatorze i przez ciebie jest walkower. Łysa pała z telewizji już biegnie z mikrofonem.',
+ x:'Sędzia Lis źle kliknął cyferki w kalkulatorze i przez ciebie jest walkower. Łysy z telewizji już biegnie z mikrofonem.',
  cond:(p,c,S)=>S.round>=14,
  o:[
   {l:'Płaczę, że to nie moja wina.', f:()=>[fxM(10), fxP(-10), fxWalk('lose',0)],
@@ -1118,12 +1137,25 @@ const EVENTS=[
   {l:'„Spokojnie, jeszcze niczego nie wygraliśmy”.', f:()=>[fxP(8), fxL(5), fxM(-3), fxA(-3)]}
  ]},
 {id:'memorial', t:'MEMORIAŁ WIELKIEGO MISTRZA',
- x:'Dostałeś zaproszenie na Memoriał Wielkiego Mistrza. Obsada lepsza niż w Grand Prix, ale tor ma być ciężki i mokry.',
+ x:'Dostałeś zaproszenie na Memoriał Wielkiego Mistrza. Zawody są obsadzone lepiej niż Grand Prix. To Twoja szansa, ale tor ma być ciężki.',
  cond:(p)=>p.ovr>70,
  o:[
-  {l:'Jadę i pokażę, co potrafię.', f:()=>{ if(chance(35)) return ['WYGRANA w obsadzie lepszej niż GP.', fxO(3), fxM(5)];
-     return ['Drobny wypadek w półfinale.', fxO(-1), fxBan(1)];}},
-  {l:'Nic nie robię.', f:()=>['Zostajesz w domu. Memoriał wygrał ktoś inny.']}
+  /* ORZEŁ ALBO RESZKA — dosłownie. 50% szans na +25 OVR, 50% na natychmiastowy
+     koniec kariery z konkretnym, wymaganym tekstem na ekranie końcowym.
+     fxEnd ustawia p.retired + p.retireReason, a scEnd() (index.html) pokazuje
+     tę treść jako powód zakończenia kariery. */
+  {l:'Jadę i pokażę co potrafię.', f:()=>{
+     const heats=[]; let win=0;
+     for(let i=0;i<5;i++){ const pts=R(0,3); win+=pts; heats.push('Bieg '+(i+1)+': '+pts+' pkt'); }
+     if(chance(50)){
+       return [fxSum('WYGRYWASZ MEMORIAŁ. '+heats.join(' · ')+' — łącznie '+win+' pkt i puchar nad głową.'),
+               'WYGRANA MEMORIAŁU W OBSADZIE LEPSZEJ NIŻ GRAND PRIX.',
+               fxO(25)+' — jedne zawody, które przestawiły całą karierę',
+               fxM(15), fxP(5), fxK(120000)+' nagrody głównej'];
+     }
+     return [fxSum('Zapomniałeś zapiąć kasku i okazało się że Memoriał był dla Ciebie. Koniec kariery.'),
+             fxEnd('Zapomniałeś zapiąć kasku i okazało się że Memoriał był dla Ciebie. Koniec kariery')];}},
+  {l:'Nic nie robię.', f:()=>[]}
  ]},
 {id:'gpwywiad', t:'WYWIAD O GP CHALLENGE',
  x:'Dziennikarz pyta cię o obsadę tegorocznego GP Challenge. Nagrywa, a przy stoliku obok siedzi jeden z zawodników z tej listy.',
@@ -1163,25 +1195,25 @@ const EVENTS=[
      return ['Prezes wysłuchał i nie zmienił nic.', fxH(-25)+' — tracisz miejsce w składzie'];}},
   {l:'Trenuję w ciszy.', f:()=>[fxO(2), fxH(-10)+' w tym sezonie']}
  ]},
-{id:'guru', t:'GURU OD STATYSTYK',
- x:'Guru wyliczył w arkuszu, że jesteś najsłabszym startującym zawodnikiem w całej lidze. Wykres jest kolorowy i, niestety, prawdziwy.',
+{id:'guru', t:'DOŁU OD STATYSTYK',
+ x:'Dołu wyliczył w arkuszu, że jesteś najsłabszym startującym zawodnikiem w całej lidze. Wykres jest kolorowy i, niestety, prawdziwy.',
  cond:(p)=>p.prof<40,
  o:[
   {l:'Trenuję starty.', f:()=>[fxO(R(-2,2)), fxP(5)]},
-  {l:'Piszę, że guru to farmazon.', f:()=>{G.p.next.rowPen=true;return [fxM(R(-5,5)), '-15% szans na ofertę od ROW-u Rybnik.'];}}
+  {l:'Piszę, że dołu to farmazon.', f:()=>{G.p.next.rowPen=true;return [fxM(R(-5,5)), '-15% szans na ofertę od ROW-u Rybnik.'];}}
  ]},
 {id:'kompromitacja', t:'„NAJSŁABSZY ZAWODNIK LIGI” — RANKING PORTALU',
  x:()=>'Profesjonalizm '+G.p.prof+'/99. Portal zrobił zestawienie zawodników, którzy najczęściej dotykają taśmy i zawalają starty. Jesteś na podium.',
  cond:(p)=>p.prof<28,
  o:[
   {l:'Zatrudniam trenera od startów.', f:()=>[fxK(-20000), fxP(15)]},
-  {l:'„Taśma to loteria, nie moja wina”.', f:()=>[fxM(8), fxP(-5)]}
+  {l:'„Ale przynajmniej nie mam tyle ostrzeżeń co Musielak”.', f:()=>[fxM(8), fxP(-5)]}
  ]},
 {id:'dolufan', t:'KŁÓTNIA Z FANEM DOŁUSTATS',
  x:'Masz passę słabych zawodów i o 1:40 w nocy kłócisz się w internecie z kibicem własnej drużyny. On ma screeny, ty masz argumenty.',
  cond:(p)=>p.form<0,
  o:[
-  {l:'Rezygnuję z odpisywania.', f:()=>[fxP(3), fxH(-5), fxA(-1)]},
+  {l:'Nie ma sensu rozmawiać z trollami, lepiej pójść spać.', f:()=>[fxP(3), fxH(-5), fxA(-1)]},
   {l:'Zakładam się z nim o wynik.', f:()=>['Wygrałeś zakład — kibic piłuje karnet na wizji.', fxO(1), fxM(3), fxA(1)]}
  ]},
 {id:'zona', t:'KOLEGA Z ZESPOŁU I TWOJA ŻONA',
@@ -1221,6 +1253,26 @@ const EVENTS=[
                            fxLongInj('zerwane więzadła i złamane udo po wjechaniu w bandę na pełnym gazie'));
      return l;}},
   {l:'Nie słuchasz go.', f:()=>{const k=R(1000,5000);return ['Odganiasz ducha kaskiem.', fxK(k)+' od producenta kasków za tę reklamę'];}}
+ ]},
+{id:'jedziemy', t:'JEDZIEMY',
+ x:'Bus zapakowany, mechanik przypina ostatnią oponę, ty stoisz z telefonem w ręku. W aplikacji miga powiadomienie: „Gaczorek AI przeanalizował Twój ostatni mecz i ma gotowy setup”. Jedziemy.',
+ cond:(p,c,S)=>S.round>0,
+ o:[
+  /* ALGORYTM JAKO RULETKA: jedno kliknięcie potrafi zrobić z ciebie lidera
+     albo złom na kółkach. Przedziały są celowo ogromne — o to w tym chodzi. */
+  {l:'Skorzystaj z Gaczorek AI.', f:()=>{
+     const dOvr = R(-12,12), dEq = R(-30,30), dFit = R(-25,25), dHeat = R(-20,20);
+     const l=[fxOB(dOvr)+' (algorytm przestawił wszystko: przełożenia, sprężynę, kąt główki ramy)',
+              fxE(dEq)+' (Gaczorek kazał rozebrać silnik na parkingu)',
+              fxH(dHeat)];
+     G.S.equipFit = cl(G.S.equipFit - dFit, 0, 100);
+     l.push('Dopasowanie sprzętu po ingerencji algorytmu: '+G.S.equipFit+'%');
+     if(dOvr>=8)      l.push(fxSum('Algorytm trafił idealnie. Cztery wyjścia spod taśmy jak z podręcznika. Ktoś w parku maszyn pyta, kto ci to ustawił — mówisz, że wujek.'), fxM(10));
+     else if(dOvr<=-8)l.push(fxSum('Motocykl jedzie bokiem tam, gdzie powinien jechać przodem. Gaczorek AI napisał potem, że „dane wejściowe były niepełne”.'), fxM(-8), fxP(-5));
+     else             l.push(fxSum('Jedziemy. Wyszło mniej więcej tak samo jak zawsze, tylko z większą liczbą wykresów.'));
+     if(chance(20)) l.push(fxDef(12)+' — algorytm nie przewidział, że to silnik z 2011 roku');
+     return l;}},
+  {l:'Ustawiam na czuja, jak dziadek.', f:()=>[fxP(6), 'Bez wykresów, bez aplikacji. Bus rusza o piątej.']}
  ]},
 {id:'gaczorek', t:'GACZOREK AI DOSTAJE AKTUALIZACJĘ',
  x:'Nowa wersja pozwala zawodnikom podpytywać o ustawienia sprzętu bezpośrednio z boksu. Regulamin nic o tym nie mówi, bo regulamin nigdy nic nie mówi.',
@@ -1267,7 +1319,7 @@ const EVENTS=[
      if(chance(25)) return [fxO(5)+' (Sprzedał Ci tajniki żużla)'];
      return [fxEnd('Wypadek podczas wycieczki z Alfredem. Koniec kariery.')];
   }},
-  {l:'Pojadę awionetką z Tomaszem, będzie szybciej.', f:()=>[fxI(40)]}
+  {l:'Polecę awionetką z Tomaszem, będzie szybciej.', f:()=>[fxI(40)]}
  ]},
 {id:'maksym_wlewka', t:'WIECZOREK POETYCKI',
  x:'Maksym zaprasza Cię na małą wlewkę i wieczorek poetycki.',
@@ -1281,18 +1333,12 @@ const EVENTS=[
   {l:'Nie przepraszasz ojca.', f:()=>[fxM(30), pick([fxO(5), fxO(-5)])]},
   {l:'Przepraszasz.', f:()=>[fxP(10), fxM(-5), fxO(1), fxH(10)]}
  ]},
-{id:'wojna_kraj', t:'KONFLIKT ZBROJNY',
- x:'Twój kraj rozpoczyna wojnę z innym państwem.',
- o:[
-  {l:'Udaję, że jestem przeciwko.', f:()=>[fxS('banMatches', 14), {t:'+250 000 zł z zagranicznego kontraktu', f:(p)=>p.budget+=250000}]},
-  {l:'Jaka wojna? Kto to widział.', f:()=>[fxEnd('Zawieszenie i deportacja. Koniec kariery w Polsce.')]}
- ]},
 {id:'karetka_lodz', t:'BŁYSKAWICZNA KARETKA W ŁODZI',
  x:'Podczas meczu w Łodzi ulegasz wypadkowi. Prezes klubu łapie Cię za ramię i mówi, że szybko załatwi karetkę.',
  o:[
   {l:'Zgadzasz się.', f:()=>{ 
      if(chance(80)) return [fxI(-20)];
-     return [fxEnd('Karetka okazała się karawanem. Dostałeś „piąteczkę pavuloniku”. Koniec kariery.')];
+     return [fxEnd('Karetka okazała się karawanem, a ratownika widziałeś w dokumencie o jakichś Łowcach.”. Koniec kariery.')];
   }},
   {l:'Odmawiasz i czekasz na NFZ.', f:()=>[fxI(20)]}
  ]},
@@ -1345,19 +1391,19 @@ const EVENTS=[
  x:'Upadasz w 14. biegu na ostatniej pozycji, ale widzisz, że przegrywacie 1:5. Postanawiasz leżeć dalej, wymuszając powtórkę.',
  o:[
   {l:'Leżę!', f:()=>{ 
-     if(chance(75)) return [fxEnd('Zdemaskowali Cię. Zostałeś wykluczony, kibice spalili Ci busa. Po latach zostałeś bezdomnym i dostałeś raka skóry.')];
+     if(chance(75)) return [fxEnd('Zdemaskowali Cię. Zostałes wykluczony. Kibice spalili Ci busa. Uzależniłeś się od alkoholu. Obyś nikogo nie potrącił na drodze po pijaku.')];
      return [fxT(2)+' (Kolega wygrał powtórkę)'];
   }},
   {l:'Wstaję i zjeżdżam z toru.', f:()=>[fxP(10)]}
  ]},
 {id:'komisariat_ostrowski', t:'OSTROWSKI KOMISARIAT',
- x:'Zostałeś zatrzymany przez lokalną policję pod wpływem stresu pomeczowego.',
+ x:'Zostałes zatrzymany przez prezesa klubu pod wpływem stresu pomeczowego. Odgraża się "ty pijaku, jesteś skończony. Ja cię tak załatwię. Jesteś skończony jako zawodnik. Frajer jesteś".',
  o:[
-  {l:'W chuja zrobił Andrzej wariat.', f:()=>[fxP(-20), fxM(20)]},
-  {l:'Uciekam w alkohol.', f:()=>[fxEnd('Potrącasz kobietę i odsiadujesz wyrok wyższy niż za morderstwo.')]}
+  {l:'Ty jesteś pijakiem ', f:()=>[fxP(-20), fxM(20)]},
+  {l:'Ostentacyjnie idę na łotewski bimber ', f:()=>[fxEnd('Kurcze, jednak nie kłamał - jestem skończony. Hobby wygrało z pracą. Koniec kariery. Obyś nikogo nie potrącił po pijaku.')]}
  ]},
 {id:'zbiorka_junior', t:'ZBIÓRKA NA LECZENIE',
- x:'Junior z KLŻ wypierdolił w bandę na próbie toru. W internecie ruszyła zbiórka na jego leczenie.',
+ x:'Junior z KLŻ wywalił w bandę na próbie toru. W internecie ruszyła zbiórka na jego leczenie.',
  o:[
   {l:'Jesteśmy żużlową rodziną, dorzucam się.', f:()=>{return [{t:'-100 zł z konta', f:(p)=>p.budget-=100}];}},
   {l:'Co to za ogór, nie daję nic.', f:()=>[fxM(-5)]},
@@ -1375,8 +1421,8 @@ const EVENTS=[
 {id:'kradziony_silnik', t:'CZYJ TO SILNIK?',
  x:'Przypadkiem w Twoim boksie mechanicy znajdują ukradziony silnik juniora z Twojego klubu.',
  o:[
-  {l:'Nic o tym nie wiedziałem.', f:()=>[fxP(10)]},
-  {l:'Zajebałem jak Dawid w Argentynie.', f:()=>[fxM(10), fxO(-2)]}
+  {l:'Nic i tym nie wiedziałem.', f:()=>[fxP(10)]},
+  {l:'Coś o tym wiedziałem.', f:()=>[fxM(10), fxO(-2)]}
  ]},
 {id:'rozkrecony_silnik', t:'TAJEMNICA TUNERA',
  x:'Z ciekawości rozkręciłeś silnik od topowego tunera, nie mając jego zgody.',
@@ -1407,8 +1453,8 @@ const EVENTS=[
   {l:'Otwierasz drzwi od auta i wypadzasz na ulicę (wozisz Ryana Sullivana).', f:()=>[fxP(-10), fxO(15), {t:'Pogorszone relacje z prezesem'}]},
   {l:'Idziesz spać na tylnej kanapie.', f:()=>[fxO(-10), fxP(-5)]}
  ]},
-{id:'janusz_pytanie', t:'WYWIAD O JANUSZU',
- x:'Lokalny dziennikarz podtyka Ci mikrofon i pyta wprost: „Kim dla Pana jest Janusz Kołodziej?”.',
+{id:'janusz_pytanie', t:'WYWIAD O PIAŚCIE',
+ x:'Lokalny dziennikarz podtyka Ci mikrofon i pyta wprost: „Kim dla Pana jest Piast Kołodziej?”.',
  o:[
   {l:'Stara k***a.', f:()=>[fxM(10), fxP(-20)]},
   {l:'Złodziej.', f:()=>[fxP(10), fxM(-5)]}
@@ -1416,8 +1462,8 @@ const EVENTS=[
 {id:'kaczorek_ai', t:'OFERTA OD KACZORKA',
  x:'Przychodzi do Ciebie menedżer Piotr K. Mówi, że da Ci łapówkę, jeśli zrobisz parę zer, żeby dopasować Twoje wyniki do algorytmu AI.',
  o:[
-  {l:'Zgadzam się.', f:()=>{return [{t:'+10 000 zł, Pomalowany sufit, OVR -5', f:(p)=>{p.budget+=10000;}}, fxO(-5)];}},
-  {l:'Wzywasz Nighta i robisz wykład o szkodliwości AI.', f:()=>[fxM(-10), fxP(20)]}
+  {l:'Zgadzam się.', f:()=>{return [{t:'+10 000 zł, Pomalowany sufit, OVR -5', f:(p)=>{p.budget+=20000;}}, fxO(-5)];}},
+  {l:'Odmawiasz i robisz rajd z kolegami przeciwko AI na Twitterze', f:()=>[fxM(-10), fxP(20)]}
  ]},
 {id:'wesela_powrot', t:'TRZODA NA WESELU',
  x:'Prezes i trener Twojego byłego klubu robią potężną trzodę na Twoim weselu i namawiają Cię do powrotu.',
@@ -1434,21 +1480,21 @@ const EVENTS=[
 {id:'wlasciwy_komentarz', t:'KABINA KOMENTATORSKA',
  x:'Siedzisz w kabinie. Mecz trwa, musisz coś powiedzieć do mikrofonu.',
  o:[
-  {l:'„Ozon jest bliżej ziemi”.', f:()=>[fxM(10)]},
-  {l:'Krzyczysz: „HAHAHA SPIDŁEEEEJ!”.', f:()=>[fxM(20), fxP(-10)]},
+  {l:'„Ozon jest bliżej ziemi”.', f:()=>[fxM(-10)]},
+  {l:'Krzyczysz: „HAHAHA SPIDŁEEEEJ!”.', f:()=>[fxM(5), fxP(-15)]},
   {l:'Mówisz losowe rzeczy, bo nie znasz budowy motocykla.', f:()=>[fxP(-15)]}
  ]},
 {id:'kask_zapinanie', t:'NOWY KASK OD SPONSORA',
  x:'Przed meczem dostajesz nowy, niesprawdzony kask prosto z Temu.',
  o:[
   {l:'Sprawdzam zapięcie.', f:()=>[fxP(2)]},
-  {l:'Pierdolę to, zakładam jak leci.', f:()=>{ 
+  {l:'Zakładam jak leci.', f:()=>{ 
      if(chance(50)) return [fxEnd('Zapięcie puściło w trakcie biegu. Uraz głowy, koniec kariery.')];
      return [fxM(5)];
   }}
  ]},
-{id:'birkmose_szlug', t:'DYMEK W PARKU MASZYN',
- x:'Marcus Birkemose częstuje Cię dziwnie pachnącym szlugiem tuż po 15. biegu.',
+{id:'szlugemose_szlug', t:'DYMEK W PARKU MASZYN',
+ x:'Kolega Szlugemose częstuje Cię dziwnie pachnącym szlugiem tuż po 15. biegu.',
  o:[
   {l:'Biorę.', f:()=>{ 
      if(chance(60)) return [fxS('banMatches', 14), fxP(-30)+' (Wpadka na teście dopingowym)'];
@@ -1461,7 +1507,335 @@ const EVENTS=[
  o:[
   {l:'Przyjmujesz walkę.', f:()=>[fxM(15), fxI(20), fxS('banMatches', 2)]},
   {l:'Wycofujesz się i odchodzisz.', f:()=>[fxP(10)]}
- ]}
+ ]},
+/* ===== NOWE PATOLOGIE: SĘDZIOWIE, WYSPY, DEWELOPERZY ===== */
+{id:'sedzia_nazwisko', t:'SĘDZIA PRZY STOLIKU',
+ x:()=>{const j=JUDGES[judgeDraw()];
+   return 'Zawody prowadzi sędzia '+j.n+' — '+j.d+'. Przed pierwszym biegiem stoisz przy stoliku sędziowskim '+
+          'i już wiesz, że ten wieczór nie skończy się normalnie.';},
+ cond:(p,c,S)=>S.round>0,
+ o:[
+  {l:'Idę do stolika i grzecznie pytam o interpretację.', f:()=>{
+     const k=judgeDraw();
+     if(k==='palka')    return [fxSum('PAŁKA: „Regulamin, punkt 072, podpunkt 4”. Kevlar bez naszywki, kask bez homologacji, bus zaparkowany 40 cm za linią. Trzy protokoły, jeden wieczór.'),
+                                fxFine(6000)+' za trzy uchybienia regulaminowe', fxP(5), fxM(-4)];
+     if(k==='wojaczek') return [fxSum('WOJACZEK: obustronny walkower w GNIOŚCIE. Dwie drużyny, zero punktów, jeden protokół i cztery godziny drogi powrotnej.'),
+                                fxWalk('both',2), fxP(3), fxM(6)];
+     return [fxSum('KOBAK: niesłuszne czerwone światło, a dwie minuty włączone dopiero, gdy stałeś już przy taśmie. W Gnieźnie to podobno standard.'),
+             fxOB(-2)+' — jeden bieg oddany za darmo', fxP(4), fxA(-3)];}},
+  {l:'Robię awanturę przy stoliku na oczach kamer.', f:()=>{
+     const k=judgeDraw(), l=[];
+     l.push(fxM(14), fxP(-12), fxFine(8000)+' za zachowanie niesportowe');
+     if(k==='wojaczek') l.push(fxWalk('both',2), fxSum('WOJACZEK i tak dał obustronny walkower. Awantura zmieniła tylko to, że masz ją nagraną z trzech kamer.'));
+     else if(chance(45)) l.push(fxBan(2), fxSum('Wydział regulaminowy obejrzał nagranie. Sędzia '+JUDGES[k].n+' napisał raport na dwie strony.'));
+     else l.push(fxSum('Sędzia '+JUDGES[k].n+' wysłuchał wszystkiego bez mrugnięcia okiem i wrócił do protokołu. Nic z tego nie wynikło.'));
+     return l;}},
+  {l:'Zaciskam zęby i jadę swoje.', f:()=>[fxP(8), 'Sędzia sędzią, tor torem.']}
+ ]},
+
+{id:'krakus_hold', t:'HOŁD DLA KRAKUSA',
+ x:'Klub organizuje memoriałowy turniej „Hołd dla Krakusa”. Tor to szrot: koleiny po deszczu, banda wiązana drutem, karetka wypożyczona z ośrodka zdrowia. '+
+   'Zaległości klubu wobec zawodników sięgają siedmiu cyfr, a organizator mówi, że „kasa będzie po turnieju”.',
+ o:[
+  {l:'Odmowa jazdy, byle nie dostać kary na szrocie.', f:()=>[
+     fxFine(12000)+' regulaminowej za niestawienie się', fxP(10), fxM(-8),
+     fxSum('Nie jedziesz. Dwóch kolegów, którzy pojechali, wróciło z turnieju karetką — tą wypożyczoną z ośrodka zdrowia.')]},
+  {l:'Jadę, przecież to hołd.', f:()=>{
+     const l=[fxM(10), fxA(6)];
+     const r=R(1,100);
+     if(r<=45) l.push(fxI(25), fxE(-15), 'Kolein nie dało się objechać. Sprzęt do rozbiórki.');
+     else if(r<=75) l.push(fxO(1)+' (jazda po szrocie uczy pokory)', 'Wróciłeś cało. Cudem.');
+     else l.push(fxLongInj('złamana miednica po kontakcie z bandą wiązaną drutem'));
+     l.push('Organizator obiecał przelew do piątku. Który piątek — nie doprecyzował.');
+     l.push(fxSum('Puchar odebrany, hołd oddany, przelewu nie ma. Dług klubu urósł o twoją stawkę.'));
+     return l;}}
+ ]},
+
+{id:'uk_wycofanie', t:'BRYTYJSKI KLUB SIĘ WYCOFUJE',
+ x:'Twój brytyjski klub kończy działalność w połowie sezonu: promotor policzył, że wyścigi psów na tym samym obiekcie są po prostu opłacalne. '+
+   'Zamiast zaległej wypłaty dostajesz promotora w cylindrze, który wciska ci fanty: dwa komplety opon, kevlar z 2009 roku i skrzynkę napoju energetycznego bez etykiety.',
+ cond:(p)=>p.age>=20,
+ o:[
+  {l:'Biorę fanty. Brytyjczyk płakał, jak oddawał.', f:()=>[fxP(5), fxM(-10),
+     fxSum('Brytyjczyk płakał, jak oddawał. Cylinder zdjął dopiero przy busie.')]},
+  {l:'Niech sobie wsadzi ten cylinder w dupę.', f:()=>[fxK(15000)+' zrzutki od brytyjskich kibiców', fxP(-10), fxM(8),
+     fxSum('Nagranie z parkingu obiegło wyspiarski internet. Kibice zrobili zbiórkę „for the Polish lad”.')]}
+ ]},
+
+{id:'uk_psy', t:'PSY W NEWCASTLE',
+ x:'Dzień wcześniej na tym samym owalu odbyły się wyścigi chartów. Tor wygląda, jakby przeszło po nim stado, bo przeszło po nim stado. '+
+   'Promotor rozkłada ręce i prosi, żebyś jechał, bo „ludzie już kupili bilety”.',
+ cond:(p,c,S)=>S.round>0 && !p.next.noUK,
+ o:[
+  {l:'Ale to się ślizga!', f:()=>[fxBan(2), fxA(7),
+     fxSum('Ślizgało się tak, że w trzecim biegu położyłeś motocykl na prostej. Dwa spotkania oglądasz z boksu, ale szatnia stanęła za tobą murem.')]},
+  {l:'No chyba nie, walnięty knurze.', f:()=>{G.p.next.noUK=true;
+     return [fxP(-5), fxA(-5),
+       'Zerwany kontakt z promotorem — telefonów z Wysp już nie będzie.',
+       fxSum('Promotor zdjął słuchawkę tylko po to, żeby ją odłożyć. Na Wyspy w tym sezonie nie wracasz.')];}}
+ ]},
+
+{id:'uk_prawo_ulicy', t:'PRAWO ULICY',
+ x:'W biegu na brytyjskim torze młody zawodnik gospodarzy wchodzi ci pod koło i zrzuca cię do bandy. Wstajesz, otrzepujesz kevlar, a on stoi przy krawężniku obok swojego ojca, który jest tu kierownikiem drużyny.',
+ cond:(p,c,S)=>S.round>0 && !p.next.noUK,
+ o:[
+  {l:'Spokojna rozmowa po biegu.', f:()=>[fxP(3),
+     fxSum('Powiedziałeś mu, co zrobił źle, on przeprosił, ojciec podał rękę. Tyle. Nudne, ale dorosłe.')]},
+  {l:'Prawo ulicy — uderzam młodego na oczach ojca.', f:()=>[
+     fxP(-20), fxBan(3), fxFine(10000)+' od brytyjskiej federacji', fxM(12), fxA(-8),
+     fxSum('Uderzyłeś go przy parkingu, na oczach ojca i trzech kamer telefonów. Prawo ulicy działa w obie strony: wracasz do Polski wcześniej, niż planowałeś.')]}
+ ]},
+
+{id:'uk_mistrz', t:'MISTRZ ŚWIATA NA SĄSIEDNIM POLU',
+ x:'Losowanie ustawiło cię w biegu obok aktualnego Mistrza Świata, który dorabia w tej lidze na czwartkowych meczach. Trybuny wstały, zanim jeszcze podjechaliście pod taśmę.',
+ cond:(p,c,S)=>S.round>0 && !p.next.noUK,
+ o:[
+  {l:'Zakładam go na starcie.', f:()=>[fxP(5), fxA(7), fxL(10), fxM(8),
+     fxSum('Wyszedłeś spod taśmy pierwszy i utrzymałeś to do mety. Mistrz Świata poklepał cię po kasku w parku maszyn.')]},
+  {l:'Bawię się z nim na dystansie.', f:()=>[fxK(10000)+' premii od promotora za widowisko', fxM(10), fxA(3),
+     fxSum('Cztery okrążenia koło w koło. Promotor przyniósł kopertę jeszcze przed końcem zawodów.')]},
+  {l:'Pakuję go w krawężnik.', f:()=>[fxP(-10), fxM(6), fxA(-6),
+     'Mistrz Świata upada, ty przejeżdżasz obok bez oglądania się za siebie.',
+     fxSum('Mistrz upadł, ty pojechałeś dalej. Jego klub zamknął się po sezonie — podobno sponsor tytularny nie chciał już oglądać takich obrazków.')]}
+ ]},
+
+{id:'deweloper_bloki', t:'PREZES, DEWELOPER I PALIWO LOTNICZE',
+ x:'Prezes zaprasza cię do biura na zapleczu trybuny. Na stole leży wizualizacja: cztery bloki, parking podziemny i przedszkole dokładnie tam, gdzie teraz jest tor. '+
+   'Mówi, że w Coventry i Miszkolcu poszło gładko, i pyta, czy nie podłożyłbyś ognia pod stadion. Paliwo lotnicze już czeka w kanistrach w kotłowni.',
+ cond:(p,c)=>!!c,
+ o:[
+  {l:'Odmawiam i wychodzę z biura.', f:()=>{const l=[fxP(15), fxL(-10)];
+     if(chance(35)){ G.S.noRenew=true; l.push('Prezes zapamiętał. Kontraktu nie przedłuży.'); }
+     l.push(fxSum('Wyszedłeś, a wizualizacja została na stole. Stadion stoi. Na razie.'));
+     return l;}},
+  {l:'Zgadzam się. Kanistry same się nie wyleją.', f:()=>{
+     const kasa=R(250000,400000);
+     const l=[fxK(kasa)+' w gotówce, w reklamówce, bez faktury', fxP(-25), fxM(-15), fxL(-25)];
+     const c=clubOf(G.p);
+     if(c){ c.bankrupt=true; c.bankruptWhy='Pożar trybuny. Ubezpieczyciel odmówił wypłaty, teren kupił deweloper.'; c.debt=0; }
+     G.p.next.forceClub='weak_medium';
+     l.push('Stadion płonie w nocy z soboty na niedzielę. Trybuna B nie nadaje się nawet do rozbiórki.',
+            'Klub upada. W okienku szukasz nowego pracodawcy.');
+     if(chance(25)) l.push(fxSum('Biegli wskazali paliwo lotnicze, monitoring wskazał ciebie, a prezes wskazał adwokata — swojego, nie twojego.'),
+                           fxEnd('Biegli wskazali paliwo lotnicze, monitoring wskazał ciebie. Kariera kończy się na sali sądowej.'));
+     else l.push(fxSum('Bloki staną za dwa lata. Prezes zapłacił co do złotówki, a ty od tamtej nocy nie znosisz zapachu benzyny.'));
+     return l;}}
+ ]},
+
+/* ===== DOPISKA: SET ZDARZEŃ Z „MESSENGERA" — zachowany surowy, patologiczny ton 1:1.
+   Każda opcja liczy skutki i mutuje G.p / G.S BEZPOŚREDNIO przed return, oddając
+   wyłącznie tablicę stringów i gotowych helperów fx* — bez deskryptorów {t,f},
+   żeby rubryka EFEKTY nigdy nie pokazała [object Object]. ===== */
+
+{id:'plot_awantura', t:'AWANTURA O PŁOT',
+ x:'Twój rywal ciągle zamykał ci płot. Za każdym razem było niebezpiecznie.',
+ cond:(p,c,S)=>S.round>0,
+ o:[
+  {l:'Żadne fair play - będziemy się prać',
+   f:()=>{ if(chance(50)) return ['Jakby to były freak fighty to byś zarobił...', fxBan(R(0,1)), fxM(30)];
+     return ['Tym razem rywal okazał się twardszy.', fxBan(R(1,3)), fxI(10), fxM(10)]; }},
+  {l:'Dzwonię do sędziego „Wjechał we mnie! Przepraszam za słownictwo. Wywiózł mnie w płot. Gdzie miałem jechać?”',
+   f:()=>['Tylko telefon na wieżyczkę ukoi Twe nerwy.', fxM(10), fxP(5), fxH(5)]}
+ ]},
+
+{id:'kryterium_jopkow', t:'KRYTERIUM JOPKÓW',
+ x:'Podczas Kryterium Jopków doszło do karambolu w drugim łuku. Dla ciebie skończyło się wyłącznie na strachu i nie ma przeszkód do dalszej jazdy. Do czasu powtórki. Okazało się, że zapomniano zrobić ci rutynowe badania. Z tego powodu zostajesz wykluczony. To kolejna kontrowersyjna decyzja sędziego Wojaka wymierzona w ciebie.',
+ cond:(p,c,S)=>S.round>0 && S.round<5,
+ o:[
+  {l:'W ramach protestu zostaję na torze, a nawet się na nim kładę',
+   f:()=>['Powstają memy Rejtan. Upadek żużla.', fxM(10), fxP(-5), fxBan(R(0,2))]},
+  {l:'W parku maszyn oceniam pracę sędziego „Normalnie, motyla noga, polski cwaniaczek…”',
+   f:()=>['Kibice klaskają, geje tańczą poloneza bez sędziego.', fxM(5), fxP(-15), fxBan(R(1,4))]},
+  {l:'Skrzyknąłem swoich wiernych fanów o blokadę wieżyczki',
+   f:()=>['Hehe, potrzebna eskorta dla eskorty.', fxM(5), fxP(-5), fxH(-10), fxBan(R(0,2))]}
+ ]},
+
+{id:'wsparcie_rodziny', t:'WSPARCIE Z RODZINY',
+ x:'Znajoma żużlowa rodzina zaprasza ciebie na wspólne spędzanie czasu i wzmacnianie się przed zawodami. Z kim spędzasz czas i jaką metodę rozwoju wybierasz:',
+ cond:(p,c,S)=>S.round>0,
+ o:[
+  {l:'Ojciec rodu „fifteen shots, fifteen points”',
+   f:()=>{const l=['Pradawna polska technika — szanowana przez trenera.', fxO(R(0,3)), fxI(10), fxH(15)];
+     if(chance(30)) l.push(fxBan(R(2,5)));
+     return l;}},
+  {l:'Syn „Kroplówka robi kap kap”',
+   f:()=>{const l=['Można było robić gorsze rzeczy dożylnie.', fxO(R(0,2)), fxI(-10)];
+     if(chance(10)){ G.p.banSeasons=1; G.S.forcedEnd=true; l.push('KONIEC SEZONU I CAŁY KOLEJNY ROK POZA TOREM.'); }
+     return l;}},
+  {l:'Bratanek „Proszek działa dobrze na ciało, gorzej na zęby”',
+   f:()=>{const l=['Może chłop w szufladzie ma pół Meksyku, za to tylko połowę zębów.', fxO(6), fxP(-15)];
+     if(chance(50)){ G.p.banSeasons=1; G.S.forcedEnd=true; l.push('KONIEC SEZONU I ZAWIESZENIE NA CAŁY KOLEJNY SEZON.'); }
+     return l;}}
+ ]},
+
+{id:'bezpieczenstwo_ruchu', t:'BEZPIECZEŃSTWO RUCHU',
+ x:'Trenerem twojej drużyny został ekspert od bezpieczeństwa ruchu drogowego (chce robić program na ŻTV o bezpieczeństwie ruchu na żużlu). Na treningach każe wam robić plac manewrowy i uczy jeździć „partnersko”.',
+ cond:(p,c)=>!!c,
+ o:[
+  {l:'Chłonę jego wiedzę',
+   f:()=>{ G.p.form=cl((G.p.form||0)-10,-12,12);
+     return ['Plac manewrowy zamiast startów — koledzy nazywają cię już „kursantem”.', fxP(10), '-10 pkt dyspozycji', fxT(-7), fxI(-100)+' (twardy dolny próg ryzyka i tak zostaje 2%)']; }},
+  {l:'Jadę szybko, ale bezpiecznie',
+   f:()=>{ const r=R(1,100);
+     if(r<=10) return [fxEnd('Wypadek na „placu manewrowym” trenera od bezpieczeństwa ruchu. Kariera się kończy.')];
+     if(r<=55) return ['Trener wylatuje z zespołu — nikt już nie chce chodzić na kursy prawa jazdy zamiast na trening.', fxA(5)];
+     G.S.noRenew=true;
+     return ['Siedzisz na ławie do końca sezonu. Drużyna nie podpisuje z tobą nowego kontraktu.', fxH(-80)]; }}
+ ]},
+
+{id:'alkomat_dmpj', t:'OKNO ŻYCIA — ALKOMAT',
+ x:'Masz problemy z kontrolą motocykla w trakcie DMPJtów. Sędzia zawodów, widząc twoje „popisy”, uznaje, że musisz być pod wpływem alkoholu, dlatego wzywa policję, aby zbadać twoją trzeźwość alkomatem.',
+ cond:(p)=>p.age<=21 && p.ovr<40 && p.prof<40,
+ o:[
+  {l:'Dmucham, nie mając nic do zarzucenia',
+   f:()=>['Dmuchasz w alkomat, który pokazuje 0,0 promila.', fxP(2), fxH(-1)]},
+  {l:'„Ja nic nie piłem, nie potrzebuję testu”',
+   f:()=>{ G.S.forcedEnd=true; G.S.noRenew=true;
+     return ['Odrzucasz test alkomatem, co oznacza, że jednak coś piłeś.', 'ZAWIESZENIE NA CAŁY SEZON.', fxP(-5), 'Klub rozwiązuje z tobą kontrakt.']; }}
+ ]},
+
+{id:'braki_kadrowe', t:'BRAKI KADROWE',
+ x:'Właściciel klubu na zebraniu przyznaje się, że w drużynie brakuje osób na etacie mechanika klubowego oraz kierownika drużyny. Chce, abyś ty przejął obowiązki na tym etacie.',
+ cond:(p,c,S)=>!!c && appearanceChance(p,c,S.atm,S)<10,
+ o:[
+  {l:'No chyba kogoś z metanolem pogięło',
+   f:()=>{ G.S.forcedEnd=true; return ['Odrzucasz propozycję.', fxH(-20), fxP(5), 'Do końca sezonu nie jedziesz ani jednego spotkania.']; }},
+  {l:'Mogę spróbować',
+   f:()=>['Podejmujesz rolę mechanika klubowego oraz prezesa klubu w jednej osobie.', fxP(-10), fxO(-3), fxH(15)]}
+ ]},
+
+{id:'oszustwo_sprzet', t:'OSZUSTWO SPRZĘT',
+ x:'Trwa obchód przed ważnym meczem ligowym. Wszyscy Twoi rywale i ich mechanicy wyszli na tor, pozostawiając sprzęt bez nadzoru. Szczęście i modlitwa to może być za mało na rywala. Potrzeba przewagi technologicznej. Proponujesz:',
+ cond:(p,c,S)=>S.round>0,
+ o:[
+  {l:'wyciągnięcie beczki wzmocnionego etanolu',
+   f:()=>{ const l=['Nie pytam, czym i jak zostało to ochrzczone — ważne, że motocykl frunie.', fxT(6), fxA(3), fxO(1)];
+     if(chance(40)) l.push(fxBan(R(2,4)));
+     return l;}},
+  {l:'dosypanie do baków rywali cukru',
+   f:()=>{ const l=['Ugotowaliśmy słodkie zwycięstwa.', fxT(4), fxA(3)];
+     if(chance(20)) l.push(fxBan(R(0,2)));
+     return l;}},
+  {l:'jedna śrubka = miesiąc wódka',
+   f:()=>{ const l=['Pana tu, pana tam, zwycięstwu zmierza ku nam.', fxT(2), fxA(3)];
+     if(chance(10)) l.push(fxBan(R(0,1)));
+     return l;}}
+ ]},
+
+{id:'dziurawy_czestochowa', t:'DZIURAWY TOR CZĘSTOCHOWA',
+ x:'Kierownik drużyny narzeka, że drużyna nie ma atutu toru. Pyta się Ciebie, co można zrobić z tym fantem.',
+ cond:(p,c)=>!!c && !!p.club && p.club.includes('Częstochowa'),
+ o:[
+  {l:'Tu trzeba trenować',
+   f:()=>['Daliście z siebie wszystko, ale najpewniej znowu to będzie za mało.', fxP(10), fxO(1), fxH(10)]},
+  {l:'Kopa po klejnotach, że widać tylko skaczące kaski',
+   f:()=>['Na pobliskiej budowie nie ma tylu dziur co w tym kartoflisku.', fxT(3), fxH(10), fxI(30), fxBan(R(0,1))]},
+  {l:'Kilka ton glinki by się przydało',
+   f:()=>{ G.S.noRenew=true;
+     const l=['Wysypanie glinki przed ulewą nie było najinteligentniejszym pomysłem… Może kiedyś się zwiąże.',
+               fxT(6), fxO(1), fxBan(R(2,4)), 'Brak oferty w oknie transferowym od Częstochowy.'];
+     if(chance(30)) l.push('WALKOWER 40:0 — mecz odwołany przez stan toru.', fxWalk('lose',0));
+     return l;}}
+ ]},
+
+{id:'drzewo_grudziadz', t:'DRZEWO GRUDZIĄDZ',
+ x:'Jedziesz w Grudziądzu i masz przed sobą słynny dąb na 2 łuku. Co robisz?',
+ cond:(p,c)=>!!c && !!p.club && p.club.includes('Grudziądz'),
+ o:[
+  {l:'Dąb przynosi szczęście, pakuję się w niego z impetem',
+   f:()=>['Jedziesz po szerokiej tak, że dziki byłyby dumne.', fxO(2), fxI(40)]},
+  {l:'Kolega Pludra pokazał, jak omijać i poszerzać rywalowi',
+   f:()=>['Kasujesz rywala ścinką z krawężnika na zewnętrzną.', fxP(-10), fxM(10), fxA(-5)]}
+ ]},
+
+{id:'ostatni_luk', t:'OSTATNI ŁUK DYLEMAT',
+ x:'Wchodzisz w pierwszy łuk i widzisz ogromną lukę przy krawężniku. Problem w tym, że motocykl zaczyna wyciągać cię na zewnętrzną, a przed tobą jedzie cała trójka rywali. Co robisz?',
+ cond:(p,c,S)=>S.round>0,
+ o:[
+  {l:'Zamykasz gaz, odpuszczasz atak i próbujesz ustabilizować motocykl',
+   f:()=>['Stabilizujesz motocykl, ale z łuku wyjeżdżasz ostatni.', fxP(10), fxH(-5), fxA(3)]},
+  {l:'„Jakoś się zmieszczę”',
+   f:()=>['Nie zamykasz gazu i wciskasz się po krawężniku. Udaje ci się wyprzedzić jednego żużlowca, na drugiego brakuje siły.', fxH(10), fxP(-5), fxI(10)]},
+  {l:'Pełna dzida, odkręcasz gaz do końca i liczysz, że motocykl sam znajdzie przyczepność',
+   f:()=>['Motocykl znajduje przyczepność, a ty wyprzedzasz całą czwórkę na jednym wirażu — video z akcji robi furorę na X.', fxH(25), fxI(20), fxM(15), fxO(1)]},
+  {l:'„ALBO WSZYSCY, ALBO NIKT”',
+   f:()=>{ const l=['Wywozi ciebie na zewnętrzną i niekontrolowanie kasujesz wszystkich zawodników z toru. Akcja robi się absolutnym viralem w polskim internecie.',
+                     fxP(-30), fxM(30), fxA(-25), fxI(30)];
+     if(chance(10)) l.push(fxBan(R(0,1)));
+     return l;}}
+ ]},
+
+{id:'atmosfera_torun', t:'ZŁA ATMOSFERA TORUŃ',
+ x:'Od jakiegoś czasu są problemy z atmosferą i równą formą w zespole. Dostałeś bojowe zadanie ogarnięcia problemu.',
+ cond:(p,c,S)=>{ if(!c || !p.club || p.club.includes('Toruń')) return false;
+   const top3 = G.leagues[p.lk].clubs.slice().sort((a,b)=>b.ovr-a.ovr).slice(0,3).some(x=>x.name===c.name);
+   return !top3; },
+ o:[
+  {l:'Wyjdźmy wszyscy na rower',
+   f:()=>['Urządzacie wyścigi rowerowe wokół miasta.', fxT(2), fxO(1), fxA(3), fxI(5)]},
+  {l:'Ściągam psychoterapeutkę',
+   f:()=>['Jeny, ileż można bawić się piłkami.', fxT(2), fxO(1), fxA(6)]},
+  {l:'Kupuję na bazarze WIAROZOL INTENSE©',
+   f:()=>['WIARA WIARA JEST W NAS, MISTRZ POLSKI NADSZEDŁ CZAS.', fxT(5), fxO(2), fxA(1)]}
+ ]},
+
+{id:'bus_policja_lodz', t:'BUS, POLICJA, ŁÓDŹ',
+ x:'Rozbijasz klubowego busa na ulicach Łodzi. Masz na pokładzie więcej osób, niż pozwala dowód rejestracyjny, więc każesz nadprogramowym pasażerom spadać, a policjantów przekonujesz, żeby papierologię dokończyć po meczu. Na stadion docierasz w eskorcie radiowozu, a za chwilę masz pierwszy bieg.',
+ cond:(p,c,S)=>S.round>0,
+ o:[
+  {l:'Jedziesz jak gdyby nigdy nic',
+   f:()=>{ const l=['Wychodzisz do prezentacji prosto z radiowozu.', fxM(25), fxP(-15), fxA(-10)];
+     if(chance(5)) l.push(fxBan(R(0,1)));
+     return l;}},
+  {l:'Przyznajesz się do wszystkiego',
+   f:()=>['Przepraszasz policjantów i klub, po czym skupiasz się na zawodach.', fxP(2), fxM(8), fxA(5), fxK(-10000)]},
+  {l:'„PANOWIE, PO MECZU!”',
+   f:()=>{ const l=['Zostawiasz policjantów pod stadionem i pędzisz prosto pod taśmę.', fxM(20), fxP(-20), fxK(-2500)+' mandatu', fxA(-5)];
+     if(chance(25)) l.push(fxBan(R(1,2)));
+     return l;}},
+  {l:'Pełna koncentracja na meczu — mimo całego zamieszania wyjeżdżasz do pierwszego biegu',
+   f:()=>{ G.S.noRenew=true;
+     const inj=pick(['złamana ręka','złamana noga']);
+     const l=['Zaliczasz dzwon, który kończy się złamaniem — '+inj+'.', fxH(-30), fxO(-5), fxM(15), fxA(-15), 'Klub rozwiązuje z tobą kontrakt.'];
+     if(chance(35)){ G.S.forcedEnd=true; l.push('KONIEC SEZONU.'); }
+     return l;}}
+ ]},
+
+{id:'rzucanie_pieniedzmi', t:'RZUCANIE PIENIĘDZMI',
+ x:'Klub od dłuższego czasu ma problemy z płynnością finansową. Dodatkowo jedziecie teraz ważny mecz. Poszło ci bardzo słabo. Kibice zarzucają, że zostałeś przekupiony. Ostentacyjnie rzucają w ciebie pieniędzmi.',
+ cond:(p,c)=>p.budget<20000 && (!c || c.budget<200000),
+ o:[
+  {l:'Tak być nie może…',
+   f:()=>{ G.p.budget+=21.37; return ['Nie można zmarnować tych pieniędzy, więc zaczynasz je zbierać.', '+21,37 zł', fxM(-20), fxH(-5)]; }},
+  {l:'Dostałem tyle samo pieniędzy, co nasz klub zapłacił…',
+   f:()=>['A klub prawie wcale nie płaci — taki problem.', fxM(-10), fxH(-15), fxBan(R(0,1)), fxA(-3)]}
+ ]},
+
+{id:'magazyn_ekstraligi', t:'MAGAZYN EKSTRALIGI',
+ x:'Dostajesz zaproszenie do Magazynu Ekstraligi, a w niej jednym z gości obok ciebie ma być Kristoff Pustacki, który jest wielkim zwolennikiem polskiego juniora.',
+ cond:(p,c,S)=>S.round>0,
+ o:[
+  {l:'Potulnie zgadzasz się ze wszystkimi jego słowami',
+   f:()=>[fxM(-5), fxP(5)]},
+  {l:'Wykłócam się z ekspertem, twierdząc, że zagraniczny junior jest lepszy',
+   f:()=>{ const l=[fxM(25), fxP(-5)];
+     if(chance(5)){ G.S.noRenew=true; l.push('Nakablował na ciebie do klubu — kontrakt rozwiązany.'); }
+     return l;}}
+ ]},
+
+{id:'walka_w_bagnie', t:'WALKA W BAGNIE',
+ x:'Co prawda my chcemy „noł”, a sędzia „kaman”, to jednak wizja zawieszeń zmotywowała nas do jazdy. Bagno takie, że jedno wirażowego wcięło na amen. No ale jedziemy… Jeden z rywali strasznie nadstawia koło, żeby Ciebie oszprycować.',
+ cond:(p,c,S)=>S.round>0,
+ o:[
+  {l:'Próbuję jechać jeszcze węziej, może krawężnik odda',
+   f:()=>['Pojechałeś jak łajza po tej nieszczęsnej kredzie i nic nie wskórałeś.', fxP(-5), fxM(-10), fxK(-5000)]},
+  {l:'Zdejmuję gogle, bo nie mam zrywek, ale desperacko atakuję po szerokiej',
+   f:()=>['Pierwszy na mecie, pierwszy u okulisty, a to nie są tanie rzeczy…', fxL(5), fxI(10), fxK(-20000), fxP(7), fxM(15), fxO(1)]},
+  {l:'Nie ma sensu jechać dalej i zbierać błota',
+   f:()=>['Jednym prostym trikiem masz mniej do czyszczenia, ale kibice tego nie doceniają.', fxP(-15), fxL(-3)]},
+  {l:'Uprzejmie pokazuję po biegu, jaką szprycę mi dawał',
+   f:()=>['Sędzia wątpi, że zrzucenie rywala z motocykla to szczyt uprzejmości — daje czerwoną kartkę.', fxK(-7000), fxH(-5), fxBan(R(1,2))]}
+ ]},
 ];
 
 /* ============================================================
@@ -1596,13 +1970,13 @@ const WINTER_EVENTS=[
   {l:'Żałujesz wyjazdu, nie wierzysz w UFO.', f:()=>[fxM(-10), fxI(15)]}
  ]},
 {id:'szafa_influencer', t:'SKŁADANIE SZAFY',
- x:'Najebany żużlowy influencer dzwoni do Ciebie w grudniu i zaprasza na wspólne składanie szafy z IKEI.',
+ x:'Nawalony żużlowy influencer dzwoni do Ciebie w grudniu i zaprasza na wspólne składanie szafy z IKEI.',
  o:[
   {l:'Zgadzam się.', f:()=>[fxO(2), fxI(30)]},
-  {l:'Pierdolę, dzwonię na psy.', f:()=>[fxM(-10), fxP(10)]}
+  {l:'Dzwonię na płokułatułę', f:()=>[fxM(-10), fxP(10)]}
  ]},
 {id:'romans_prezeska', t:'PROPOZYCJA PREZESKI',
- x:'Prezeska klubu dzwoni przed okienkiem. Chce, żebyś ją wyruchał na oczach jej męża.',
+ x:'Prezeska klubu dzwoni przed okienkiem. Składa ofertę przyjaźni z benefitani kontraktowymi. Wykonanie ma odbyć się na oczach męża.',
  o:[
   // stawka za punkt siedzi w kontrakcie zawodnika (p.contract.rate), a nie w klubie
   {l:'Zgadzam się.', f:()=>{return [{t:'Podwyżka +2 000 zł za punkt.', f:(p)=>{p.contract.rate+=2000;}}];}},
@@ -1630,7 +2004,7 @@ const WINTER_EVENTS=[
   {l:'Zostaję w domu.', f:()=>[fxM(-40)]}
  ]},
 {id:'dietetyk_wawrzyniak', t:'DIETA OD DAWIDA',
- x:'Dawid Wawrzyniak proponuje, że od zimy zostanie Twoim osobistym dietetykiem.',
+ x:'Dawid Spożywczak proponuje, że od zimy zostanie Twoim osobistym dietetykiem.',
  o:[
   {l:'No raczej, wchodzę w to.', f:()=>[fxO(-5)+' (Prędkość spada, waga rośnie)']},
   {l:'Nie potrzebuję dietetyka.', f:()=>[fxP(-20)]}
@@ -1639,14 +2013,14 @@ const WINTER_EVENTS=[
  x:'Sławomir Drabik dzwoni i zaprasza na tradycyjną Galę Lodową. Tor jest z lodu, masz jechać na starych oponach z wkrętami do drewna.',
  o:[
   {l:'Wbijam wkręty i jadę w futrze!', f:()=>{ 
-     if(chance(20)) return [fxEnd('Wkręt wyleciał koledze z opony i trafił Cię w tętnicę. Tragedia na lodzie, koniec kariery.')]; 
+     if(chance(20)) return [fxEnd('Wkręt wyleciał koledze z opony i trafił. Tragedia na lodzie, koniec kariery.')]; 
      if(chance(40)) return [fxI(30)+' (Rozorana łydka)'];
      return [fxM(30), fxO(3)];
   }},
   {l:'Za zimno, siedzę w domu z grzańcem.', f:()=>[fxP(10)]}
  ]},
-{id:'bal_tygodnika', t:'BAL TYGODNIKA ŻUŻLOWEGO',
- x:'Zostałeś zaproszony na Bal Tygodnika Żużlowego. Wszyscy są już po kilku głębszych, a prezes lokalnych rywali głośno obraża Cię przy barze.',
+{id:'bal_tygodnika', t:'BAL Periodyka',
+ x:'Zostałeś zaproszony na Bal Periodyka Żużlowego. Wszyscy są już po kilku głębszych, a prezes lokalnych rywali głośno obraża Cię przy barze.',
  o:[
   {l:'Rzucasz w niego kieliszkiem z wódką.', f:()=>{return [fxM(30), fxP(-30), {t:'Kara od centrali: -20 000 zł', f:(p)=>p.budget-=20000}];}},
   {l:'Ignorujesz i idziesz tańczyć z żoną redaktora.', f:()=>[fxP(15), fxM(10)]}
@@ -1721,7 +2095,7 @@ const WINTER_EVENTS=[
  x:'W połowie lutego GKSŻ niespodziewanie wprowadza KSM (Kalkulowana Średnia Meczowa). Twój współczynnik absolutnie nie pasuje do wizji drużyny.',
  o:[
   {l:'Piszę pismo z błaganiem o status zastępstwa.', f:()=>[fxM(-10), fxP(-10)]},
-  {l:'Jebie mnie to, idę do innej ligi.', f:()=>{return [{t:'Wymuszony transfer na słabszy klub', f:(p)=>p.next.forceClub='weak'}, fxP(10)];}}
+  {l:'No to będę trzaskać komplety gdzie indziej', f:()=>{return [{t:'Wymuszony transfer na słabszy klub', f:(p)=>p.next.forceClub='weak'}, fxP(10)];}}
  ]},
 {id:'sylwester_petarda', t:'SYLWESTER Z MOŹDZIERZEM',
  x:'O północy kolega daje Ci do odpalenia ogromną, chińską petardę bez żadnego atestu.',
@@ -1775,7 +2149,7 @@ const WINTER_EVENTS=[
   {l:'Zasłaniasz motocykl własnym ciałem.', f:()=>[fxM(15), fxE(10)]}
  ]},
 {id:'plebiscyt', t:'LOKALNY PLEBISCYT',
- x:'Na gali "Sportowiec Roku" przegrywasz statuetkę z ping-pongistą z trzeciej ligi. Masz już promile we krwi.',
+ x:'Na gali "Sportowiec Roku" przegrywasz statuetkę z młotem. Znaczy się z gościem co rzuca młotem. Masz już promile we krwi, a gość śmieje się w swej mowie z tego że jeździsz na motorynce, a on zdobywa medale olimpijskie.',
  o:[
   {l:'Wchodzisz na scenę i robisz dym przed kamerami.', f:()=>[fxM(40), fxP(-30)]},
   {l:'Klaszczesz grzecznie i idziesz topić smutki w wódce.', f:()=>[fxP(5), fxO(-2)]}
@@ -1829,7 +2203,7 @@ const WINTER_EVENTS=[
  x:'Grudzień, spadło dużo śniegu. Mechanicy przywiązali starą maskę od Żuka do haka w klubowym busie i robią kulig po polnej drodze.',
  o:[
   {l:'Wsiadam na maskę, gazu!', f:()=>{
-     if(chance(25)) return [fxLongInj('Bus szarpnął, wyleciałeś w drzewo. Złamany kręgosłup, cały sezon z głowy.')]; 
+     if(chance(25)) return [fxLongInj('Bus szarpnął, wyleciałeś w drzewo. Uraz kręgosłupa, cały sezon z głowy.')]; 
      return [fxH(30), fxO(3)];
   }},
   {l:'Nagrywam ich tylko na telefon.', f:()=>[fxM(10), fxP(10)]}
@@ -1863,6 +2237,197 @@ const WINTER_EVENTS=[
      return [fxO(8)+' (Kondycja jak u maratończyka)'];
   }},
   {l:'Zapisuję się normalnie na siłownię.', f:()=>[fxP(10), fxO(2)]}
+ ]},
+
+/* ============================================================
+   PRZENIESIONE Z PULI LETNIEJ — TE SYTUACJE DZIEJĄ SIĘ WYŁĄCZNIE ZIMĄ
+   (usunięte z EVENTS, żeby nie wypadały w środku okresu startowego)
+   Efekty przepisane na wersje międzysezonowe: fxH→fxHN, fxI→fxIN,
+   fxRate→fxRateN, „koniec sezonu” → p.next.zeroMatches / p.next.heatPP.
+   ============================================================ */
+{id:'schabowe', t:'SCHABOWE Z ŻONĄ',
+ x:'Grudniowy wieczór. Wchodzisz do kuchni, a twoja żona trzyma w ręku nóż. Radio gra „Nie ma mocnych na Mariolę”.',
+ w:3,
+ o:[
+  {l:'Wchodzę do kuchni.', f:()=>{ if(chance(95)) return ['Robi schabowe. Same płaty, panierka jak trzeba.', fxO(1)+' — zima przy takim jedzeniu wyszła spokojna'];
+     G.p.next.heatPP = (G.p.next.heatPP||0) - 10;
+     return ['Odcinasz sobie palec przy krojeniu.', fxO(-2),
+             'Ręka w gipsie do marca — wchodzisz w sezon nieprzygotowany (-10 p.p. szans na biegi).'];}},
+  {l:'Wracam do salonu i udaję, że nic nie widziałem.', f:()=>['Kolacja była o 22:00. Zimna.']}
+ ]},
+
+{id:'wiatrowka', t:'ZNALEZIONA WIATRÓWKA',
+ x:'Styczeń, nuda, śnieg po kostki. Znajdujesz w domu wiatrówkę po dziadku. Obok leży puszka śrutu i stara tarcza z korka.',
+ w:2,
+ o:[
+  {l:'Czas się zabawić.', f:()=>{ if(chance(95)) return ['Kilka strzałów do puszki i tyle. Sąsiad nawet nie wyszedł.'];
+     return [fxEnd('niekontrolowany odpał na podwórku')];}},
+  {l:'Zostawiam ją w spokoju.', f:()=>[fxP(5)]}
+ ]},
+
+{id:'zima_zabrze', t:'PRZYGOTOWANIA ZIMOWE: HISZPANIA CZY SIŁOWNIA W ZABRZU',
+ x:'Grupa zawodników leci na trzy tygodnie do Almerii. Alternatywa to siłownia na osiedlu w Zabrzu, gdzie pan Mietek każe robić przysiady na czas.',
+ cond:(p)=>p.budget>=80000,
+ w:3,
+ o:[
+  {l:'Lecę do Hiszpanii.', f:()=>[fxK(-80000), fxO(3), fxP(5), fxHN(5)]},
+  {l:'Siłownia u Mietka w Zabrzu.', f:()=>[fxO(1), fxM(-5)+' — inni wrzucali story z plaży']}
+ ]},
+
+{id:'ojciec', t:'OJCIEC-MENEDŻER CHCE NEGOCJOWAĆ',
+ x:'Okienko transferowe za pasem. Ojciec ma teczkę, koszulę i przekonanie, że wszyscy w tej lidze to złodzieje. W sumie ma rację, ale prezesi już się o nim między sobą pisali.',
+ w:3,
+ o:[
+  {l:'Niech negocjuje.',     f:()=>[fxRateN(1.2), fxM(-10), fxHN(-10)+' — trener nie znosi „tatusiów”']},
+  {l:'Sam sobie załatwiam.', f:()=>[fxP(5)]}
+ ]},
+
+{id:'bogaty_klub', t:'PREZES POKAZUJE NOWĄ HALĘ',
+ x:()=>'Zima. Klub ma budżet '+zl((clubOf(G.p)||{budget:0}).budget)+' i właśnie otworzył centrum treningowe z sauną i salą do wideo-analiz. Prezes pyta, czy chcesz swój klucz na te cztery miesiące.',
+ cond:(p,c)=>!!c && c.budget>=8000000,
+ w:3,
+ o:[
+  {l:'Wprowadzam się tam na stałe.', f:()=>[fxO(2), fxP(10), fxM(-5)+' — znikasz z życia towarzyskiego', fxHN(4)]},
+  {l:'Wolę swój brudny warsztat.',   f:()=>[fxL(-10), fxE(4)]}
+ ]},
+
+{id:'argentyna_motocykl', t:'ARGENTYŃCZYK CHCE KUPIĆ TWÓJ MOTOCYKL',
+ x:'Międzysezon, więc sprzęt stoi w warsztacie. Zhristian Cubillaga Pisze po hiszpańsku przez tłumacza, że to start jego pięknej kariery w Europie. Ma odłożone oszczędności całej rodziny.',
+ w:3,
+ o:[
+  {l:'Jestem uczciwy.',              f:()=>[fxK(20000), fxM(5), fxP(5)]},
+  {l:'Sprzedaję mu oklejony naklejkami Pickiego Nedersena złom.',  f:()=>{G.p.next.noArg=true;return [fxK(50000), fxM(-10), fxP(-10),
+     'Most spalony: zaproszenia na IM Argentyny już nie dostaniesz.'];}}
+ ]},
+
+{id:'cross', t:'CROSS I MELDONIUM',
+ x:'Cztery miesiące bez meczu i przekonanie, że masz za mało jazdy. Dostajesz zaproszenie na zimowe treningi motocrossowe, a przy okazji ktoś podsuwa ci „coś na regenerację”.',
+ cond:(p)=>p.form<0,
+ w:4,
+ o:[
+  {l:'Jadę, bo co może się złego wydarzyć.', f:()=>{const r=R(1,100);
+     if(r<=30) return [fxO(2), fxHN(5)];
+     if(r<=58) return ['Trzy weekendy w błocie. Zero efektu.'];
+     if(r<=86){G.p.next.zeroMatches=true;
+       return ['Wpadka dopingowa na zimowych zawodach — federacja zawiesza cię na cały nadchodzący sezon.'];}
+     if(r<=92) return ['Otarcia, siniaki i nic więcej.'];
+     if(r<=99) return ['Zeskok z hopy, kolano zostaje w koleinie.',
+                       fxLongInj('zerwane więzadła krzyżowe w kolanie na treningu crossowym')];
+     return [fxEnd('poważny uraz kręgosłupa na crossie — renta')];}},
+  {l:'Nie będę się rozpraszać bzdurami.', f:()=>[fxP(3)]}
+ ]},
+
+/* ============================================================
+   ZDARZENIA UNIWERSALNE — TA SAMA SYTUACJA, WERSJA ZIMOWA
+   Te same zdarzenia zostają też w EVENTS (pula letnia). Tutaj mają
+   sufiks `_w` w id (historia losowań jest wspólna po id w obrębie puli),
+   zimowy opis i modyfikatory międzysezonowe zamiast sezonowych.
+   ============================================================ */
+{id:'nagrania_w', t:'WYCIEK PRYWATNYCH NAGRAŃ (MIĘDZYSEZONIE)',
+ x:'Sylwester, trzecia nad ranem, czyjś telefon. Rano w sieci wiszą nagrania, na których śpiewasz „Eniułej, eniułej”, „Słodko-słodka” i „Nie ma mocnych na Mariolę”. Do pierwszego meczu cztery miesiące, do pierwszego mema — cztery minuty.',
+ w:3,
+ o:[
+  {l:'Skoro wyciekło, to jadę z tym dalej!', f:()=>[fxM(15), fxP(-5), fxHN(-5)+' — trener obejrzał to przed podpisaniem składu']},
+  {l:'Obracam w żart, ale nowych filmików nie będzie.', f:()=>[fxM(7), fxP(3)]},
+  {l:'Usuwajcie to natychmiast!', f:()=>[fxP(7), fxM(-7), 'Prawnik wziął zaliczkę i tyle go widziałeś.']}
+ ]},
+
+{id:'podryw_w', t:'PODRYW NA BALU KLUBOWYM',
+ x:'Zimowy bal klubowy. Podrywają cię piękne panie, na barze stoją „jogurty topless” od sponsora, a prezes patrzy z drugiego końca sali i nie wygląda na zachwyconego.',
+ w:3,
+ o:[
+  {l:'Wybieram reporterkę z telewizji.', f:()=>[fxM(6), fxP(-3)]},
+  {l:'Wybieram nieznaną szarą myszkę.', f:()=>{const r=R(1,100);
+     if(r<=60) return [fxO(2)+' (spokojna zima i ciepła kolacja)', fxP(3)];
+     if(r<=90) return ['Zima zleciała spokojnie.'];
+     if(r<=98) return ['Nic ciekawego z tego nie wyszło.'];
+     return [fxEnd('gigantyczny przypał i ucieczka z kraju')];}},
+  {l:'Wybieram plastikową.', f:()=>{ if(chance(50)) return [fxIN(5), fxO(R(-2,2))];
+     return [fxM(-3), fxO(1)];}},
+  {l:'Mówię im, że preferuję stringi mojej babci.', f:()=>[fxM(3), fxP(3)]}
+ ]},
+
+{id:'gollob_w', t:'POJEDYNEK WE ŚNIE Z GOLLOBEM (ZIMOWY)',
+ x:'Luty, żadnej jazdy od października. Śni ci się, że jedziesz w parze z Tomaszem Gollobem. Wychodzicie spod taśmy na podwójne prowadzenie, ale Gollob zostawia ci przy krawężniku podejrzanie dużo miejsca.',
+ w:2,
+ o:[
+  {l:'Wchodzę pod Golloba.', f:()=>{ if(chance(30)) return [fxO(1)+' (sen czasem uczy)'];
+     return ['Upadek. Budzisz się na podłodze obok łóżka.', fxIN(5)];}},
+  {l:'Trzymam swoją pozycję.', f:()=>[fxP(3)]}
+ ]},
+
+{id:'awangarda_w', t:'ZBIÓRKA AWANGARDY (PRZED OKIENKIEM)',
+ x:'Zima, konto puste, a przy ofercie sponsoringowej odzywa się Awangarda żużlowa. Organizują na grupie zbiórkę, żeby móc ci zapłacić za logo na kevlarze w nowym sezonie.',
+ cond:(p)=>p.budget<50000,
+ w:3,
+ o:[
+  {l:'Zgadzam się i lajkuję fanpage.', f:()=>{const l=[];
+     if(chance(15)) l.push(fxK(8000)+' ze zbiórki'); else l.push('Zbiórka utknęła na 340 zł.');
+     l.push(fxM(R(-4,4))); l.push(fxP(-2)); return l;}},
+  {l:'Wy jesteście normalnie nienormalni.', f:()=>{G.p.next.noSponsor=true;
+     return [fxP(3), 'Żadnych ofert sponsorskich w najbliższym okienku.'];}}
+ ]},
+
+{id:'speedcoin_w', t:'KOLEGA WCHODZI W „SPEEDCOINA” (ZIMĄ)',
+ x:'Międzysezonie, wszyscy siedzą w domach. Pokazuje ci wykres na telefonie z pękniętym ekranem. Mówi, że to „krypto dla żużlowców” i że jego kuzyn zrobił na tym mieszkanie w Rybniku.',
+ cond:(p)=>p.budget>=10000,
+ w:3,
+ o:[
+  {l:'Wchodzę za 20% budżetu.', f:()=>{const inv=Math.round(G.p.budget*0.2);G.p.budget-=inv;
+     if(chance(25)){G.p.budget+=inv*3;return ['Wpłaciłeś '+zl(inv)+', wyjąłeś '+zl(inv*3)+'.','Kolega chce teraz procent.'];}
+     return ['Projekt zniknął razem ze stroną. I to jeszcze przed okienkiem transferowym.','Straciłeś '+zl(inv)+'.'];}},
+  {l:'Nie wchodzę.', f:()=>[fxP(2)]}
+ ]},
+
+{id:'dietetyk_w', t:'DIETETYK Z INSTAGRAMA (ZIMOWA REDUKCJA)',
+ x:'Ma 200 tysięcy obserwujących, certyfikat z webinaru i plan żywieniowy w PDF-ie. Twoja mama mówi, że wyglądasz jak z obozu, a do pierwszego meczu są jeszcze trzy miesiące.',
+ w:3,
+ o:[
+  {l:'Robię redukcję przez całą zimę.', f:()=>[fxO(2), fxP(-10)+' (osłabienie organizmu)', fxIN(15)]},
+  {l:'Jem schabowego u mamy.',          f:()=>[fxO(-1), fxP(5)]}
+ ]},
+
+/* ===== DOPISKA: ZIMOWY SET Z „MESSENGERA" — tekst zachowany 1:1. Efekty
+   sezonowe (fxA/fxH/fxI...) w zimie są kosmetyczne, jak w reszcie tej puli
+   (patrz applyWinterChoice w engine.js) — realny skutek na kolejny sezon
+   dają wyłącznie mutacje p.next.* i warianty fxHN/fxIN/fxK/fxO/fxP/fxM. ===== */
+
+{id:'historia_leszno', t:'HISTORIA LESZNO',
+ x:'Jeden z kibiców Unii Leszno jest wielkim fanem historii. Pragnie dostać się do sejfu z dokumentami historycznymi i poznać tajemnice i ciekawostki z historii klubu.',
+ cond:(p)=>!!p.club && p.club.includes('Leszno'),
+ o:[
+  {l:'Pomagasz mu.',
+   f:()=>{ G.p.next.zeroMatches=true; G.p.next.noRenew=true;
+     return ['Tajemnica ujawniona — naprawdę Unia Leszno To Nie Jest Polski Klub.', fxM(30),
+             'W KOLEJNYM SEZONIE ZALICZASZ 0 MECZÓW.', 'Brak oferty kontraktu od Leszna.']; }},
+  {l:'Liczy się tu i teraz!',
+   f:()=>['Ciekawe, kiedy tajemnice ujrzą światło dzienne…', fxP(10), fxA(3), fxHN(10)]}
+ ]},
+
+{id:'komentowanie_drwal', t:'KOMENTOWANIE — DRWAL',
+ x:'Jeden z komentatorów mówi, że nie może być tak, że skończysz karierę i nie będziesz miał co robić. Ugaduje pierwsze zawody do skomentowania. Nie musisz się na tym znać. Współkomentujesz:',
+ cond:(p)=>p.age>40,
+ o:[
+  {l:'Mistrzostwa Świata w Byciu Drwalem',
+   f:()=>['Przynajmniej tutaj piła nie ma długów…', fxP(3), fxM(3), fxHN(5), fxO(R(1,2))]},
+  {l:'Mistrzostwa Europy w sambo bojowym',
+   f:()=>['„PO AMBITNEJ WALCE!” — doznajesz olśnienia co do walki ciało w ciało.', fxO(R(1,2)), fxP(10), fxM(-5)]},
+  {l:'Kwalifikacje olimpijskie w bierkach podwodnych elektrycznych',
+   f:()=>['Doznajesz olśnienia co do czasu reakcji.', fxO(2), fxM(10), fxP(-10)]}
+ ]},
+
+{id:'reklama_krosno', t:'REKLAMA KROSNO',
+ x:'Po dołączeniu do klubu, sponsor strategiczny stwierdza, że potrzebuje nowej reklamy. Potrzebuje też nowej twarzy, a Twoja okazuje się być idealna.',
+ cond:(p)=>!!p.club && p.club.includes('Krosno'),
+ o:[
+  {l:'Imię nazwisko, polecam',
+   f:()=>{ const k=R(20000,40000); return ['Reklama jest grana wszędzie i każdy ma jej dosyć.', fxM(-10), fxK(k)]; }},
+  {l:'Czekam na lepsze oferty',
+   f:()=>{ const base=R(15000,35000); const r=R(1,3);
+     if(r===1) return ['Sponsor traci zainteresowanie. Żadnej kasy z tego nie będzie.'];
+     if(r===2) return ['Sponsor jednak się targuje.', fxK(Math.round(base*0.5))];
+     return ['Sponsor odpala kampanię w podwójnym budżecie.', fxM(10), fxK(base*2)];
+   }}
  ]}
 ];
  

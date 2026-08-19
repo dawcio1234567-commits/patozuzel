@@ -50,16 +50,35 @@ function retireCheck(p){
    return 'Ciało odmówiło wcześniej, niż wynikało z papierów (granica: '+lim+' lat). Przy takim profesjonalizmie regeneracja to loteria.';
  return null;
 }
-/* ---------- EKONOMIA GRACZA: KOSZTY ŻYCIA I MNOŻNIK WIEKU ---------- */
+/* Młody nie dostaje stawki seniora, choćby miał ją wpisaną w umowie. */
+function youngRateMul(p){ return ECON.youngRate[p.age] || 1; }
+/* ---------- EKONOMIA MŁODZIEŻOWCA: KOSZTY TEŻ MUSZĄ BYĆ MŁODZIEŻOWE ----------
+   Zgłoszony problem: junior na kontrakcie ZAWODOWYM kończył sezon głęboko na
+   minusie NIEZALEŻNIE od tego, jak dobrze jeździł. Powód: youngRateMul() tnie
+   mu WYNAGRODZENIE nawet do 40% stawki (16 lat), ale koszty życia i serwis
+   posezonowy liczyły się po pełnej, dorosłej stawce — 16-latek z kontraktem
+   zawodowym płacił dokładnie tyle samo za mieszkanie i serwis silnika, co
+   30-letni senior, zarabiając przy tym ułamek jego pensji. Amator miał
+   osobną, płaską zniżkę (ECON.liveAmat), ale zawodowy junior — żaden.
+   youngCostMul() skaluje koszty tym samym mechanizmem wieku: przy 16 latach
+   (youngRateMul 0.40) koszty spadają do ok. 70%, przy 23 latach (0.96) różnica
+   jest już kosmetyczna (ok. 98%) — od 24. roku życia znika całkowicie. */
+function youngCostMul(p){
+ if(!p || (p.age||18)>23) return 1;
+ return cl(0.50 + 0.50*youngRateMul(p), 0.5, 1);
+}
 function livingCostOf(p, idle){
  const lk = (p.lk && ECON.liveLeague[p.lk]) ? p.lk : 'KL';
  let c = (ECON.liveBase + Math.max(0,(p.age||18)-18)*ECON.liveAge) * ECON.liveLeague[lk];
  if(idle) c *= ECON.liveIdle;
- else if(p.contract && p.contract.type==='Amatorski') c *= ECON.liveAmat;
+ /* Amator też jest młodzieżowcem: stara wersja dawała WSZYSTKIM amatorom tę
+    samą płaską zniżkę (0.50), więc 16-latek mieszkający u rodziców kosztował
+    tyle samo, co 21-letni amator na swoim. Teraz zniżka amatorska i zniżka
+    wiekowa MNOŻĄ się — najmłodsi żyją najtaniej, próg znika przy 24 latach. */
+ else if(p.contract && p.contract.type==='Amatorski') c *= ECON.liveAmat*youngCostMul(p);
+ else c *= youngCostMul(p);         // zawodowy junior — koszty życia też młodzieżowe
  return Math.round(c);
 }
-/* Młody nie dostaje stawki seniora, choćby miał ją wpisaną w umowie. */
-function youngRateMul(p){ return ECON.youngRate[p.age] || 1; }
 
 /* ============================================================
    ALIMENTY DO ARGENTYNY — 45 000 ZŁ CO SEZON
@@ -191,8 +210,11 @@ function newPlayer(name,clsId){
   // FORMA: dyspozycja z ostatniego sezonu (-12..+12). Ujemna = dołek.
   // Czytają ją warunki zdarzeń losowych (cond: p.form<0).
   form:0,
+  // RUBRYKA BUDŻETOWA OSTATNIEJ DECYZJI — patrz chooseEv()/applyWinterChoice().
+  lastDecisionBudgetDelta:0, lastDecisionLabel:'',
   shop:{bought:[],log:[],spent:0,equipGain:0,mechHired:false},
   next:{zeroMatches:false, heatPP:0, betterOffers:false, noRenew:false, rowPen:false, noArg:false,
+        noUK:false,
         injuryPP:0, rateMul:1, noSponsor:false, lockTransfer:0, forceClub:null},
   career:{seasons:0,matches:0,heats:0,pts:0,bon:0,def:0,exc:0,earned:0,titles:0,best:'—',bestAvg:0,
           living:0, service:0, renewals:0}
@@ -350,7 +372,7 @@ function startSeason(){
  /* Flagi przenoszone na OKIENKO TRANSFEROWE (konsumuje je makeOffers) zostają;
     reszta jednorazowych efektów z poprzedniego sezonu się zeruje. */
  p.next={zeroMatches:false, heatPP:0, betterOffers:p.next.betterOffers, noRenew:false,
-         rowPen:p.next.rowPen, noArg:p.next.noArg,
+         rowPen:p.next.rowPen, noArg:p.next.noArg, noUK:p.next.noUK,
          injuryPP:0, rateMul:1,
          noSponsor:p.next.noSponsor, lockTransfer:p.next.lockTransfer||0, forceClub:p.next.forceClub||null};
  
@@ -432,11 +454,17 @@ function applyWinterChoice(e, i){
  G.S=Object.assign(winterCtx(), {teamPts:0, teamOvr:0, ovrBonus:0, injuryPP:0, heatPP:0,
    extraDefP:0, banMatches:0, fines:0, equipFit:100, rateMul:1, evLog:[], walkower:false});
  let out=[];
+ evSumClear();                                   // bufor pulpitu podsumowania (fxSum)
+ const budgetBefore=G.p.budget;                  // rubryka budżetowa decyzji — patrz chooseEv() w index.html
  // fxApply: spłaszcza wynik f(), odpala odroczone deskryptory { t, f } i zwraca
  // same stringi — inaczej w rubryce EFEKTY lądowało „[object Object]".
  try{ out=fxApply(o.f()); }catch(err){ out=['(zdarzenie zimowe nie doszło do skutku: '+err.message+')']; }
+ const budgetDelta=Math.round(G.p.budget-budgetBefore);
+ if(budgetDelta!==0){ G.p.lastDecisionBudgetDelta=budgetDelta; G.p.lastDecisionLabel=e.t; }
+ let sum=evSumTake();
+ if(o.sum) sum=[o.sum].concat(sum);
  G.S=keep;
- G.wevTitle=e.t; G.wevChoice=o.l; G.wevLog=out;
+ G.wevTitle=e.t; G.wevChoice=o.l; G.wevLog=out; G.wevSum=sum;
  return out;
 }
  
@@ -745,6 +773,13 @@ function resolveSeason(){
    // sezon bez startow to sam magazyn i konserwacja, a nie pelny serwis
    serviceCost = run>0 ? Math.round(ECON.svcBase + run*ECON.svcPerHeat + p.equip*ECON.svcEquipW)
                        : Math.round(ECON.svcBase*0.35);
+   // SERWIS WEDŁUG LIGI — patrz komentarz przy ECON.svcLeague w data.js:
+   // lokalny warsztat w KLŻ nie kosztuje tyle, co fabryczny serwis w Ekstralidze.
+   serviceCost = Math.round(serviceCost * (ECON.svcLeague[p.lk]||1));
+   // MŁODZIEŻOWA ZNIŻKA NA SERWIS — ta sama logika co w livingCostOf(): junior
+   // na kontrakcie zawodowym zarabia ułamek stawki seniora, więc rachunek za
+   // tuning nie może być liczony po cenach seniorskich (patrz youngCostMul()).
+   serviceCost = Math.round(serviceCost * youngCostMul(p));
    p.budget -= serviceCost;
    p.career.service = (p.career.service||0) + serviceCost;
    notes.push('SERWIS POSEZONOWY: '+zl(serviceCost)+' (rozbiórka, tłoki, uszczelki, transport do tunera). Nikt tego za ciebie nie zapłaci.');
@@ -1485,6 +1520,19 @@ function payRatioOf(club){
  let r = 0.15 + cl(health,0,1)*0.85 + (G.p.med/99)*0.08 + RF(-0.12,0.15);
  if(club.budget<=0) r*=0.30;
  if(club.debt>0)    r-=0.08;                 // kto raz nie zapłacił, ten znowu nie zapłaci
+ /* SIŁA PRZEBICIA GWIAZDY: skarżono się, że nawet zawodnik z OVR 90+ po sezonie
+    z mistrzostwem i średnią 2.7 kończył rok z długami „jak w Gorzowie" — bo
+    payRatio zależy WYŁĄCZNIE od kondycji klubu, a gwiazda takiej dźwigni
+    w realnym żużlu po prostu ma (albo idzie do prezesa, albo do PZM).
+    Próg obniżony z 75 do 55 (granica "zawodowego" kontraktu w mkOffer): to
+    właśnie w tym przedziale ląduje utalentowany JUNIOR na kontrakcie
+    zawodowym — bez podłogi płacił pełne, dorosłe rachunki (serwis, życie),
+    a od klubu dostawał grosze, bo payRatio liczy się wyłącznie z kondycji
+    klubu. Podłoga rośnie łagodnie od 55 do 75 OVR, dalej tak jak było. */
+ if(G.p.ovr>=55){
+   const floor = G.p.ovr>=75 ? 0.35 + (G.p.ovr-75)*0.012 : 0.15 + (G.p.ovr-55)*0.01;
+   r = Math.max(r, floor);
+ }
  return cl(r,0,1);
 }
 /* Progi buntu. Młodzi (poniżej 18 lat) wytrzymują dużo więcej niż seniorzy. */
@@ -2797,7 +2845,12 @@ function renewRejection(miss, rating, lastAvg){
    nie będzie się bił o kogoś, kto i tak będzie oglądał mecze z parkingu.
    ============================================================ */
 const MARKET={
- avgRef   : 1.40,  avgW  : 9,        // średnia biegopunktowa: odniesienie i waga
+ /* AVGW PODNIESIONE Z 9 NA 15: skarżono się, że średnia z ostatniego sezonu
+    zbyt słabo przekłada się na oferty — mistrzowski rok ze średnią 2.7+
+    powinien wywindować wycenę wyraźnie, a fatalny sezon (średnia poniżej 1.0)
+    powinien tak samo wyraźnie ją zdołować. Przy avgW=15 różnica między
+    średnią 1.0 a 2.7 to już +25.5 pkt do wyceny (dawniej +15.3). */
+ avgRef   : 1.40,  avgW  : 15,        // średnia biegopunktowa: odniesienie i waga
  medRef   : 40,    medW  : 0.10,
  profRef  : 45,    profW : 0.12,
  equipRef : 55,    equipW: 0.10,
@@ -2806,7 +2859,12 @@ const MARKET={
  age      : {16:-6, 17:-4, 18:-2, 19:0, 20:1, 21:2, 22:2, 23:2, 24:2, 25:2,
              26:1, 27:1, 28:0, 29:0, 30:-1, 31:-2, 32:-4, 33:-6, 34:-8, 35:-10},
  ageOld   : -13,                                    // 36 lat i więcej
- rateBase : {EL:2400, E2:1150, KL:480},             // zł/pkt w klubie o średnim poziomie ligi
+ /* KL Z 480 NA 650, E2 Z 1150 NA 1350: stawka za punkt w dolnych ligach była
+    ustawiona tak nisko, że nawet zawodnik dopasowany poziomem do klubu nie
+    był w stanie odrobić kosztów życia i serwisu w trakcie sezonu — patrz
+    komentarz przy ECON.liveLeague/ECON.svcLeague w data.js. Ekstraliga
+    zostaje bez zmian, żeby nie spłaszczyć różnicy między ligami do zera. */
+ rateBase : {EL:2400, E2:1350, KL:650},             // zł/pkt w klubie o średnim poziomie ligi
  bonusMax : 0.030                                   // maks. część budżetu klubu na premię za podpis
 };
 
@@ -2980,8 +3038,17 @@ function makeOffers(){
          * ((c.arr||0)>0?0.45:1)
          * RF(0.35,1.00))
      : 0;
-   /* DŁUGOŚĆ UMOWY też ma logikę: młodego wiąże się na dłużej, weterana na rok. */
-   const years = p.age<=21 ? R(2,3) : p.age<=27 ? R(1,3) : p.age<=32 ? R(1,2) : 1;
+   /* DŁUGOŚĆ UMOWY też ma logikę: młodego wiąże się na dłużej, weterana na rok.
+      W wieku juniorskim (≤21) i w oknie U24 (22-24) kluby najchętniej podpisują
+      DOKŁADNIE na tyle lat, ile zostało do końca danej kategorii wiekowej —
+      to standardowa praktyka (rubryka młodzieżowa/U24 w składzie). Reszta
+      ofert zostaje przy starym, szerszym rozstrzale, żeby rynek nie stał się
+      w 100% deterministyczny. */
+   const juniorLeftYears = Math.max(1, 22-p.age);   // do końca wieku juniorskiego (≤21 r.ż. włącznie)
+   const u24LeftYears    = Math.max(1, 25-p.age);   // do końca okna U24 (≤24 r.ż. włącznie)
+   const years = p.age<=21 ? (chance(65) ? juniorLeftYears : R(2,3))
+               : p.age<=24 ? (chance(65) ? u24LeftYears    : R(1,3))
+               : p.age<=27 ? R(1,3) : p.age<=32 ? R(1,2) : 1;
    const I = interest || clubInterest(p, c, lk, rating);
    return {club:c.name, lk, ovr:c.ovr, budget:c.budget, debt:c.debt, arr:c.arr||0,
      type: pro?'Zawodowy':'Amatorski', years, rate, bonus:bon,
@@ -3003,6 +3070,18 @@ function makeOffers(){
    const want=p.next.forceClub; p.next.forceClub=null; p.next.noSponsor=false;
    let hit=null;
    if(want==='weak'){ const c=pick(G.leagues.KL.clubs.slice().sort((a,b)=>a.ovr-b.ovr).slice(0,3)); hit={c, lk:'KL'}; }
+   /* 'weak_medium' — KARA ŁAGODNIEJSZA NIŻ 'weak'.
+      'weak' wysyłał zawsze na samo dno: trzy najsłabsze kluby Krajowej Ligi.
+      Przy zdarzeniach typu „niezapięty kask juniora" to była kara nieproporcjonalna
+      do przewinienia. Tutaj losujemy z szerszego worka: cała dolna połowa KLŻ
+      PLUS dolna połowa 2. Ekstraligi — czyli klub słaby ALBO średni. */
+   else if(want==='weak_medium'){
+     const half = arr => arr.slice().sort((a,b)=>a.ovr-b.ovr).slice(0, Math.max(2, Math.ceil(arr.length/2)));
+     const bag = half(G.leagues.KL.clubs).map(c=>({c, lk:'KL'}))
+          .concat(half(G.leagues.E2.clubs).map(c=>({c, lk:'E2'})))
+          .filter(x=>x.c && !x.c.bankrupt);
+     hit = bag.length ? pick(bag) : null;
+   }
    /* 'any' = zdarzenie wypycha cię z klubu, ale nie mówi dokąd — losowy klub
       z dowolnej ligi. 'current' = blokada, zostajesz tam, gdzie jesteś.
       Wcześniej obie wartości szły do findClub() i zwracały null, więc opcja

@@ -30,6 +30,22 @@ const shuffle=a=>{const b=a.slice();for(let i=b.length-1;i>0;i--){const j=R(0,i)
    PROFESJONALIZM (główny czynnik) i OVR (talent, za który klub jeszcze płaci).
    Progi siedzą w RETIRE w data.js.
    ============================================================ */
+/* ============================================================
+   DZIENNIK ZMIAN OVR
+   ------------------------------------------------------------
+   Zgłoszenie gracza: „sprawdź, czy zdarzenia dodające OVR faktycznie dodają
+   OVR, bo nie widać tego w kontroli wykonania" — i osobno: „dodaj rozwijaną
+   listę, co wpłynęło na spadek/wzrost OVR". Zdarzenia OVR dodawały (fxO
+   zmienia G.p.ovr od razu), ale nigdzie tego nie było widać, więc wyglądało
+   to na błąd. Od teraz KAŻDA zmiana OVR w sezonie przechodzi przez ten
+   dziennik i ląduje w raporcie.
+   ============================================================ */
+function logOvr(delta, why){
+ if(!delta) return;
+ if(!G || !G.S) return;
+ if(!G.S.ovrLog) G.S.ovrLog=[];
+ G.S.ovrLog.push({d:Math.round(delta*100)/100, w:why});
+}
 function retireAgeOf(p){
  if(!p) return RETIRE.max;
  const prof=cl(p.prof||0,0,99), ovr=cl(p.ovr||1,1,99);
@@ -193,6 +209,10 @@ function newGame(){
   tables:{}, results:{}, playoff:null, promo:[], bankrupts:[], greenTable:[],
   p:null, last:null, history:[], log:[], ev:null, S:null,
   phase:{}, riders:[], recIMP:[], recMIMP:null, meForm:0,
+  /* --- ŚWIAT: zawodnicy spoza Polski + stan cyklu IMŚ (patrz sekcja 5e) --- */
+  world:[], sgp:null, imsHist:[], imsjHist:[],
+  /* --- PODGLĄD MECZU (klikniecie w wynik) --- */
+  matchView:null,
   /* --- SPONSORZY TYTULARNI ---
      bannedSponsors: firmy z Grupy B, które już raz uciekły z kasą — znikają z gry na zawsze.
      sponsorRenames: zmiany nazw klubów czekające na wejście w nowym roku (do raportu w UI). */
@@ -382,9 +402,32 @@ function startSeason(){
      czytają S.round i S.matches, żeby "afera po meczu" nie trafiła się zimą. */
   round: R(1, BAL.rounds+2),
   matches: 0,
-  prof0:p.prof, med0:p.med, ovr0:p.ovr, equip0:p.equip
+  prof0:p.prof, med0:p.med, ovr0:p.ovr, equip0:p.equip,
+  /* DZIENNIK ZMIAN OVR — patrz logOvr() i rubryka „CO RUSZYŁO TWÓJ OVR" w UI. */
+  ovrLog:[], signBonus:0
  };
  G.S.matches = G.S.round-1;
+ /* ============================================================
+    PREMIA ZA PODPIS — CO SEZON, A NIE RAZ NA KONTRAKT
+    ------------------------------------------------------------
+    Zgłoszenie gracza: „kwotę za podpis powinno się dostawać co sezon, nie
+    tylko po podpisaniu kontraktu". Racja i tak to działa w realnych umowach:
+    premia jest rozpisana na lata trwania kontraktu, a nie wypłacana raz na
+    pięć lat z góry. Wcześniej signContract()/acceptRenew() dopisywały ją do
+    budżetu w chwili podpisu i tyle — przy umowie na cztery lata trzy sezony
+    szły bez grosza premii. Teraz premia z kontraktu wpływa NA STARCIE
+    KAŻDEGO SEZONU objętego umową (wypłata jest po stronie klubu, więc
+    obowiązuje ją ten sam limit wypłacalności co stawkę za punkt).
+    ============================================================ */
+ if(club && p.contract && p.contract.bonus>0 && p.banSeasons===0){
+   const owed=Math.round(p.contract.bonus);
+   const ratio=payRatioOf(club);
+   const paid=Math.round(owed*ratio), unpaid=owed-paid;
+   p.budget += paid; p.career.earned += paid; club.budget -= paid;
+   if(unpaid>0) club.debt += unpaid;
+   p.career.signBonus=(p.career.signBonus||0)+paid;
+   G.S.signBonus=paid; G.S.signBonusOwed=owed;
+ }
  /* Flagi przenoszone na OKIENKO TRANSFEROWE (konsumuje je makeOffers) zostają;
     reszta jednorazowych efektów z poprzedniego sezonu się zeruje. */
  p.next={zeroMatches:false, heatPP:0, betterOffers:p.next.betterOffers, noRenew:false,
@@ -495,9 +538,11 @@ function riderLine(ctx){
    const rr=Math.random();
    if(rr<ctx.defP){d++;codes.push('d');continue;}
    if(rr<ctx.defP+ctx.excP){w++;codes.push('w');continue;}
+   /* BEZ PUNKTÓW BONUSOWYCH: ten pomocnik obsługuje zawody, w których nie ma
+      par klubowych (turnieje indywidualne, czwórmecze), więc bonus z art. 720
+      nie ma tu prawa bytu. Gwiazdki wyleciały (patch 21.08.2026). */
    const v=cl(Math.round(ctx.ppr+gauss(0,0.95)),0,3); mp+=v;
-   if((v===1||v===2) && chance(30)){mb++;codes.push(v+'*');}
-   else codes.push(String(v));
+   codes.push(String(v));
  }
  return {h,codes,mp,mb,d,w};
 }
@@ -515,6 +560,12 @@ function leagueAvgOvr(lk){const cs=G.leagues[lk].clubs;return cs.reduce((a,c)=>a
 function resolveSeason(){
  const p=G.p, S=G.S, club=getClub(p), lk=p.lk;
  const notes=[];
+ /* --- OVR ZE ZDARZENIA: fxO zmienia p.ovr od razu po wyborze opcji, więc
+        różnica względem stanu z początku sezonu (S.ovr0) to CZYSTY skutek
+        zdarzenia. Wcześniej nikt tego nigdzie nie pokazywał i wyglądało to
+        tak, jakby zdarzenia "nie dodawały OVR". --- */
+ const evOvrDelta = p.ovr - (S.ovr0!=null?S.ovr0:p.ovr);
+ if(evOvrDelta) logOvr(evOvrDelta, 'zdarzenie: '+(S.evTitle||'decyzja z ekranu zdarzenia'));
  
  /* --- atmosfera w klubie (na skali 1:1 liczona w PUNKTACH OVR, nie w procentach) --- */
  let atmAdd=0; let atmTxt='przeciętna';
@@ -583,6 +634,10 @@ function resolveSeason(){
  /* --- SYMULACJA SEZONU: KOLEJKA PO KOLEJCE, MECZ PO MECZU --- */
  simSeasonChrono(ctx, lk, club.name, S.teamPts);
  meR.out=false;
+ /* STATYSTYKI INDYWIDUALNE WSZYSTKICH LIG — zdjęcie po rundzie zasadniczej,
+    zanim play-off dołoży biegi tylko połowie stawki. */
+ const leagueStats = buildLeagueStats();
+ const myRank = myLeagueRank(leagueStats, lk);
  
  if(S.injDone) notes.push((S.injCat?'KONTUZJA WYKLUCZAJĄCA NA ROK':S.injBad?'POWAŻNA KONTUZJA':'KONTUZJA')+
    ' w '+(S.injRound||'trakcie sezonu')+'. kolejce. '+
@@ -660,7 +715,10 @@ function resolveSeason(){
    po.m++; po.h+=L.me.starts; po.p+=L.me.pts; po.b+=L.me.bon;
    L.me.codes.forEach(c=>{ po.codes.push(c);
      if(c==='d')po.d++;else if(c==='w')po.w++;else if(c==='-')po.rep++;}); }));
- po.avg = po.h>0 ? po.p/po.h : 0;
+ /* ŚREDNIA Z BONUSAMI (patch 21.08.2026): punkt bonusowy to punkt zdobyty
+    na torze, więc od teraz wchodzi do średniej biegopunktowej — w lidze,
+    w play-offie i w dorobku łącznym. */
+ po.avg = po.h>0 ? (po.p+po.b)/po.h : 0;
  po.avgTxt = po.h>0 ? po.avg.toFixed(2) : '—';
  
  /* --- DMPJ: jedziesz WYŁĄCZNIE do 21. roku życia (twardy warunek) --- */
@@ -685,8 +743,9 @@ function resolveSeason(){
  const completed = Math.max(0, heats - defects - exclusions);
  pts = cl(pts, 0, completed*3);
  
- /* --- ŚREDNIA BIEGOPUNKTOWA (LIGA) = PKT / BIEGI --- */
- const avg = heats>0 ? pts/heats : 0;
+ /* --- ŚREDNIA BIEGOPUNKTOWA (LIGA) = (PKT + BONUSY) / BIEGI ---
+    Punkty bonusowe wliczają się do średniej (zmiana z 21.08.2026). --- */
+ const avg = heats>0 ? (pts+bonus)/heats : 0;
  const avgTxt = heats>0 ? avg.toFixed(2) : '—';
  
  /* --- ZAWODY INDYWIDUALNE --- */
@@ -695,9 +754,11 @@ function resolveSeason(){
     dzięki czemu „kłótnia z fanem po passie słabych meczów” trafia tylko w dołku. */
  p.form = Math.round(heats>0 ? G.meForm : -3);
  const ind = !blocked ? simIndividual(p, effOvr, defP, excP) : null;
+ /* --- CYKL ŚWIATOWY: IMŚ, IMŚJ2, eliminacje, Challenge, mistrzostwa Europy --- */
+ const world = !blocked ? simWorldSeason(p, effOvr, defP, excP, ind?ind.zkTop4:null) : null;
  
  /* --- OCENA SEZONU ZE WSZYSTKICH ROZGRYWEK --- */
- const tally={h:heats+po.h, p:pts+po.p};
+ const tally={h:heats+po.h, p:pts+po.p+bonus+po.b};
  tally.h+=dmpj.me.heats; tally.p+=dmpj.me.pts;
  /* GROSZE OD PZM: 500 zł startowego za każdy turniej (DMPJ, IMP, MIMP, Kaski)
     + 150 zł za każdy zdobyty w nich punkt. Z tego się nie żyje, ale na paliwo jest. */
@@ -705,36 +766,77 @@ function resolveSeason(){
  if(dmpj && dmpj.eligible && dmpj.me){ pzmStarts+=dmpj.me.starts||0; pzmPts+=dmpj.me.pts||0; }
  const medals=[];
  if(ind){
-   /* UWAGA: 'macec' NIE wchodzi do listy niżej — Puchar MACEC to zawody
-      międzynarodowe organizowane przez MACEC, nie przez PZM, więc nie
-      dolicza się do ryczałtów PZM (pzmStarts/pzmPts). Ma własną, osobną
-      wypłatę z regulaminu — patrz blok „PUCHAR MACEC — NAGRODY" niżej. */
+   /* UWAGA: 'palet' NIE wchodzi do listy niżej — Puchar PALET to zawody
+      międzynarodowe, nie rozgrywki PZM, więc nie dolicza się do ryczałtów
+      PZM (pzmStarts/pzmPts). Ma własną wypłatę — patrz blok niżej. */
    ['imp','mimp','zk','sk','bk','szk'].forEach(k=>{
      const c=ind[k]; if(!c||!c.rode) return;
      (c.rounds||[]).forEach(rr=>{ if(rr.me){tally.h+=rr.me.codes.length; tally.p+=rr.me.pts;
                                             pzmStarts++; pzmPts+=rr.me.pts||0;} });
      if(c.mePos>=1&&c.mePos<=3) medals.push({k, name:c.name, pos:c.mePos});
    });
-   if(ind.macec && ind.macec.rode){
-     (ind.macec.rounds||[]).forEach(rr=>{ if(rr.me){tally.h+=rr.me.codes.length; tally.p+=rr.me.pts;} });
-     if(ind.macec.mePos>=1 && ind.macec.mePos<=3) medals.push({k:'macec', name:ind.macec.name, pos:ind.macec.mePos});
+   if(ind.palet && ind.palet.rode){
+     (ind.palet.rounds||[]).forEach(rr=>{ if(rr.me){tally.h+=rr.me.codes.length; tally.p+=rr.me.pts;} });
+     if(ind.palet.mePos>=1 && ind.palet.mePos<=3) medals.push({k:'palet', name:ind.palet.name, pos:ind.palet.mePos});
    }
  }
- /* --- PUCHAR MACEC — NAGRODY WEDŁUG REGULAMINU ---
+ /* --- PUCHAR PALET — NAGRODY WEDŁUG REGULAMINU ---
     Realne stawki (netto, w euro), przeliczone na złote po kursie ok. 4,3:
     310/250/190/160/140×2/120×2/110×2/100×2/90×2/70×2/60×2 za miejsca 1-16,
     plus ryczałt startowy minimum 125 euro na zawodnika (dostajesz go zawsze,
-    niezależnie od wyniku — to nie jest liga dla gwiazd, tylko dla ludzi,
+    niezależnie od wyniku — to nie jest cykl dla gwiazd, tylko dla ludzi,
     którzy nigdy nie zobaczą Grand Prix, stąd skromne kwoty). */
- if(ind && ind.macec && ind.macec.rode){
+ if(ind && ind.palet && ind.palet.rode){
    const prizeEUR=[310,250,190,160,140,140,120,120,110,110,100,100,90,90,70,70];
-   const rank=ind.macec.mePos||16;
+   const rank=ind.palet.mePos||16;
    const prizePLN=Math.round((prizeEUR[rank-1]||60)*4.3/10)*10;
    const travelPLN=Math.round(125*4.3/10)*10;
-   const macecIncome=prizePLN+travelPLN;
-   p.budget+=macecIncome; p.career.earned+=macecIncome;
-   notes.push('Puchar MACEC: '+rank+'. miejsce w klasyfikacji końcowej cyklu (16 zawodników z sześciu krajów) — '+
-     zl(prizePLN)+' nagrody + '+zl(travelPLN)+' ryczałtu startowego = '+zl(macecIncome)+'.');
+   const paletIncome=prizePLN+travelPLN;
+   p.budget+=paletIncome; p.career.earned+=paletIncome;
+   notes.push('Puchar PALET: '+rank+'. miejsce w klasyfikacji końcowej cyklu (16 zawodników z siedmiu krajów) — '+
+     zl(prizePLN)+' nagrody + '+zl(travelPLN)+' ryczałtu startowego = '+zl(paletIncome)+'.');
+ }
+ /* ============================================================
+    INDYWIDUALNE MISTRZOSTWA ŚWIATA — DOROBEK I PIENIĄDZE
+    ------------------------------------------------------------
+    "Najśmieszniejsze jest to, że mistrz świata dostaje mniej hajsu" — było
+    tak dlatego, że cyklu światowego w grze po prostu nie było, a wszystko,
+    co indywidualne, płaciło ryczałtami PZM (500 zł startowego, 150 zł za
+    punkt). Teraz Grand Prix płaci jak Grand Prix: ryczałt startowy za każdą
+    rundę, nagroda za miejsce w rundzie i osobna, największa pula za miejsce
+    w klasyfikacji końcowej cyklu. Mistrz świata zarabia w jeden sezon więcej
+    niż przeciętny ligowiec przez pół kariery — i tak ma być.
+    ============================================================ */
+ let imsEarned=0; const imsParts=[];
+ if(world){
+   [['ims','INDYWIDUALNE MISTRZOSTWA ŚWIATA'],['imsj','INDYWIDUALNE MISTRZOSTWA ŚWIATA JUNIORÓW']].forEach(([k,label])=>{
+     const c=world[k]; if(!c||!c.rode) return;
+     (c.rounds||[]).forEach(rd=>{ if(rd.me){ tally.h+=rd.me.codes.length; tally.p+=rd.me.chartPts; } });
+     if(c.mePos>=1 && c.mePos<=3) medals.push({k, name:c.name, pos:c.mePos});
+     if(c.money){ imsEarned+=c.money; imsParts.push({w:label+' — '+c.mePos+'. miejsce w cyklu', v:c.money}); }
+   });
+   if(world.qual && world.qual.challenge && world.qual.challenge.rode){
+     const ch=world.qual.challenge;
+     if(ch.money){ imsEarned+=ch.money; imsParts.push({w:'SGP Challenge — '+ch.mePos+'. miejsce', v:ch.money}); }
+   }
+   if(world.sec && world.sec.rode && world.sec.money){
+     imsEarned+=world.sec.money;
+     imsParts.push({w:'Indywidualne Mistrzostwa Europy — '+world.sec.mePos+'. miejsce', v:world.sec.money});
+   }
+   if(imsEarned>0){
+     p.budget+=imsEarned; p.career.earned+=imsEarned;
+     p.career.imsEarned=(p.career.imsEarned||0)+imsEarned;
+     notes.push('CYKL ŚWIATOWY — wypłaty: '+imsParts.map(x=>x.w+' '+zl(x.v)).join(' · ')+' = '+zl(imsEarned)+'.');
+   }
+   if(world.ims && world.ims.mePos===1){
+     p.career.worldTitles=(p.career.worldTitles||0)+1;
+     notes.push('INDYWIDUALNY MISTRZ ŚWIATA '+G.year+'! Złoty medal FIM i cała pula z klasyfikacji końcowej cyklu.');
+   }
+   if(world.imsj && world.imsj.mePos===1){
+     p.career.worldJunTitles=(p.career.worldJunTitles||0)+1;
+     notes.push('INDYWIDUALNY MISTRZ ŚWIATA JUNIORÓW '+G.year+'!');
+   }
+   if(world.ims) notes.push('Mistrzem świata '+G.year+' został '+world.ims.champion+' ('+ctryName(world.ims.championCtry)+').');
  }
  const PZM_START=500, PZM_PER_PT=150;
  const pzmEarned = pzmStarts*PZM_START + pzmPts*PZM_PER_PT;
@@ -788,15 +890,49 @@ function resolveSeason(){
    if(p.loyalty!==loy0) notes.push('Lojalność wobec klubu: '+loy0+' → '+p.loyalty+' (kolejny sezon w tych samych barwach).');
  }
  
- /* --- ROZWÓJ --- */
+ /* ============================================================
+    ROZWÓJ ZAWODNIKA — I CO NA NIEGO WPŁYWA
+    ------------------------------------------------------------
+    NOWE (patch 21.08.2026): OVR rozwija się SZYBCIEJ W KLUBIE Z LEPSZĄ
+    ATMOSFERĄ I WIĘKSZYM BUDŻETEM. Do tej pory otoczenie nie miało z rozwojem
+    nic wspólnego: 16-latek w klubie z pustą kasą, zaległościami i szatnią
+    na noże rósł dokładnie tak samo jak ten sam 16-latek w mistrzowskim
+    zespole z fizjoterapeutą, torem treningowym i sprzętem na miejscu.
+    Teraz otoczenie liczy się jawnie, a rozpiska trafia do dziennika OVR.
+    ============================================================ */
  let growth = p.age<=21?7.4 : p.age<=24?4.4 : p.age<=28?1.8 : p.age<=32?0.1 : p.age<=36?-2.6 : -5;
- growth += (p.prof-50)/26;
- growth += heats>0 ? (avg-1.4)*(p.age<=21?1.4:2.4) : -3.5;   // brak startów = brak rozwoju
- growth += gauss(0,1.6);
+ const gParts=[{d:Math.round(growth*100)/100, w:'wiek '+p.age+' — naturalna krzywa rozwoju'}];
+ const gAdd=(d,w)=>{ if(!d) return; growth+=d; gParts.push({d:Math.round(d*100)/100, w}); };
+ gAdd((p.prof-50)/26, 'profesjonalizm '+p.prof);
+ gAdd(heats>0 ? (avg-1.4)*(p.age<=21?1.4:2.4) : -3.5,
+      heats>0 ? ('dyspozycja w sezonie — średnia '+avgTxt) : 'cały rok bez startów — brak rozwoju');
+ /* --- OTOCZENIE: ATMOSFERA I ZAMOŻNOŚĆ KLUBU --- */
+ if(club){
+   const atmF=(S.atm-50)/50;                                        // -1 .. +1
+   gAdd(atmF*1.25, 'atmosfera w klubie '+S.atm+'/100 ('+atmTxt+')');
+   const inc=LEAGUE_INC[lk]||1;
+   const budF=cl((club.budget||0)/(inc*1.6), -1.2, 1.6);            // pusto/bogato względem ligi
+   gAdd(budF*1.10, 'budżet klubu '+zl(club.budget)+' na tle ligi '+G.leagues[lk].short);
+   if((club.debt||0)>0) gAdd(-cl(club.debt/400000, 0.2, 1.4), 'klub zalega ci '+zl(club.debt)+' — sprzęt i serwis stoją');
+   const lvl=cl((club.ovr-leagueAvgOvr(lk))/14, -0.8, 0.9);
+   gAdd(lvl*0.8, 'poziom kolegów z kadry (klub '+club.ovr+' przy średniej ligi '+Math.round(leagueAvgOvr(lk))+')');
+ }
+ gAdd(gauss(0,1.6), 'to, czego nie da się rozpisać (ciało, głowa, przypadek)');
  // sufit talentu: im bliżej swojego potencjału, tym trudniej o kolejny punkt
- if(growth>0) growth *= cl(((p.pot||p.ovr+8)-p.ovr)/10, 0, 1);
+ if(growth>0){
+   const capF=cl(((p.pot||p.ovr+8)-p.ovr)/10, 0, 1);
+   if(capF<1){ const before=growth; growth*=capF;
+     gParts.push({d:Math.round((growth-before)*100)/100, w:'sufit talentu — jesteś blisko swojego potencjału ('+(p.pot||'—')+')'}); }
+ }
  const oldOvr=p.ovr;
  p.ovr = cl(Math.round(p.ovr+growth),1,99);
+ const ovrApplied=p.ovr-oldOvr;
+ if(ovrApplied) logOvr(ovrApplied, 'rozwój po sezonie — suma czynników z rozpiski niżej');
+ else if(Math.abs(growth)>=0.4) G.S.ovrLog.push({d:0,
+   w:'rozwój po sezonie policzony na '+(growth>0?'+':'')+growth.toFixed(1)+
+     ' pkt, ale OVR uderzył w sufit skali (99) — nie ma gdzie rosnąć'});
+ S.growthParts=gParts;
+ S.growthRaw=Math.round(growth*100)/100;
  
  /* --- ZUŻYCIE SPRZĘTU I SERWIS POSEZONOWY ---
     Stare -5..-11 na sezon oznaczało, że jeden zakup u dobrego tunera starczał
@@ -869,7 +1005,10 @@ function resolveSeason(){
  const gradeCalc = seasonScore({
    overall, heats:tally.h, matches:matches+po.m, pos, avg, po, medals, dmpj,
    injured:S.injDone, injMissed:S.injTotal||0, bonus, club:seasonClubName, lk,
-   leagueName:G.leagues[lk].name
+   leagueName:G.leagues[lk].name,
+   /* NOWE: pozycja w statystykach indywidualnych własnej ligi i kategorii wiekowej */
+   indRank: myRank, leagueShort:G.leagues[lk].short,
+   ims: world?world.ims:null, imsj: world?world.imsj:null
  });
  const grade = gradeOf(gradeCalc.score, tally.h);
  
@@ -894,9 +1033,11 @@ function resolveSeason(){
   bonusAll   : bonus   + po.b,
   defectsAll : defects + po.d,
   exclAll    : exclusions + po.w,
-  avgAll     : (heats+po.h) > 0 ? (pts+po.p)/(heats+po.h) : 0,
-  avgAllTxt  : (heats+po.h) > 0 ? ((pts+po.p)/(heats+po.h)).toFixed(2) : '—',
+  avgAll     : (heats+po.h) > 0 ? (pts+po.p+bonus+po.b)/(heats+po.h) : 0,
+  avgAllTxt  : (heats+po.h) > 0 ? ((pts+po.p+bonus+po.b)/(heats+po.h)).toFixed(2) : '—',
   avg, avgTxt, grade, earned, earnedBon, pos, posReg, po, dmpj, ind, tally, overall, medals,
+  world, leagueStats, myRank, imsEarned, imsParts,
+  signBonus:S.signBonus||0, signBonusOwed:S.signBonusOwed||0,
   tabRow:myRow, injured, injMissed, clubEvents, strikeRounds:S.strikeRounds, payLog:S.payLog,
   strike, ovrFrom:oldOvr, ovrTo:p.ovr, notes, fines:S.fines, lines, replaced,
   profFrom:S.prof0, profTo:p.prof, profDelta, medFrom:S.med0, medTo:p.med, medDelta, statLog,
@@ -928,6 +1069,10 @@ function resolveSeason(){
     do sezonu (i co przechodzi na kolejny rok), a UI pokazuje to obok wyboru.
     ============================================================ */
  res.evEffects = {
+   /* OVR ZE ZDARZENIA — brakująca rubryka, przez którą wyglądało to tak,
+      jakby zdarzenia dodające OVR nic nie robiły. */
+   ovrEvent   : evOvrDelta||0,
+   ovrFrom    : S.ovr0,
    heatPP     : S.heatPP||0,
    injuryPP   : S.injuryPP||0,
    injuryP    : S.injuryP||0,
@@ -951,18 +1096,22 @@ function resolveSeason(){
  };
  res.gradeParts = gradeCalc.parts;      // rozpiska oceny do UI: skąd wzięła się ta ocena
  res.gradeScore = Math.round(gradeCalc.score*100)/100;
+ /* --- DZIENNIK OVR: wszystko, co w tym sezonie ruszyło OVR, w jednym miejscu --- */
+ res.ovrLog     = (S.ovrLog||[]).slice();
+ res.growthParts= (S.growthParts||[]).slice();
+ res.growthRaw  = S.growthRaw||0;
  res.equipWear  = equipWear;
  res.serviceCost= serviceCost;
  medals.forEach(m=>{
    /* Nie każdy podium to "Mistrzostwo Polski" — Turniej Szkoleniowy i Puchar
       MACEC to osobne, mniejsze rozgrywki (jeden regionalny, jeden
       międzynarodowy), więc dostają własne, trafniejsze etykiety. */
-   const labels = (m.k==='szk' || m.k==='macec')
+   const labels = (m.k==='szk' || m.k==='palet')
      ? ['','ZWYCIĘSTWO W KLASYFIKACJI KOŃCOWEJ','2. MIEJSCE W KLASYFIKACJI KOŃCOWEJ','3. MIEJSCE W KLASYFIKACJI KOŃCOWEJ']
      : ['','MISTRZOSTWO POLSKI','WICEMISTRZOSTWO','BRĄZOWY MEDAL'];
    notes.push(m.name+': '+labels[m.pos]+'!');
    p.career.medals=(p.career.medals||0)+1;
-   if(m.pos===1 && m.k!=='szk' && m.k!=='macec') p.career.indTitles=(p.career.indTitles||0)+1;
+   if(m.pos===1 && m.k!=='szk' && m.k!=='palet' && m.k!=='ims' && m.k!=='imsj') p.career.indTitles=(p.career.indTitles||0)+1;
  });
  if(ind&&ind.imp&&ind.imp.rode&&!medals.some(m=>m.k==='imp')&&ind.imp.mePos)
    notes.push('IMP: '+ind.imp.mePos+'. miejsce w klasyfikacji końcowej.');
@@ -984,6 +1133,12 @@ function resolveSeason(){
    p.budget+=pp; p.career.earned+=pp; club.budget-=pp;
    if(un>0 && !myBk) club.debt+=un;
    S.owed+=poCash; S.paid+=pp;
+ }
+ if(S.signBonus>0 || S.signBonusOwed>0){
+   notes.push('PREMIA ZA PODPIS — RATA ZA SEZON '+G.year+': należne '+zl(S.signBonusOwed||0)+
+     ', klub wypłacił '+zl(S.signBonus||0)+
+     ((S.signBonusOwed||0)>(S.signBonus||0)?' (reszta poszła w zaległości).':'.')+
+     ' Premia z kontraktu rozlicza się co sezon przez cały okres umowy.');
  }
  const owed=S.owed, paid=S.paid, unpaid=Math.max(0,owed-paid);
  const ratio = owed>0 ? Math.round(paid/owed*100) : 100;
@@ -1207,7 +1362,34 @@ function seasonScore(o){
  
  /* 8) JAZDA NA KOLEGĘ Z PARY */
  if(o.bonus>=8){ s+=GRADE.bonusPts; push(GRADE.bonusPts, o.bonus+' punktów bonusowych — jeździsz na drużynę'); }
- 
+
+ /* ============================================================
+    9) MIEJSCE W STATYSTYKACH INDYWIDUALNYCH SWOJEJ LIGI
+    ------------------------------------------------------------
+    Ta sama średnia znaczy co innego w Ekstralidze i co innego w Krajowej
+    Lidze — i co innego u 17-latka niż u 30-latka. Dlatego ocenę sezonu
+    domyka pozycja w klasyfikacji WŁASNEJ ligi i WŁASNEJ kategorii wiekowej
+    (juniorzy osobno, seniorzy osobno). 1. miejsce daje pełną premię,
+    środek stawki jest neutralny, ogon klasyfikacji zabiera punkty.
+    ============================================================ */
+ if(o.indRank && o.indRank.qual && o.indRank.pos && o.indRank.n>=4){
+   const R1=o.indRank;
+   const pct = 1 - (R1.pos-1)/Math.max(1,(R1.n-1));       // 1 = najlepszy, 0 = ostatni
+   const val = pct>=0.5 ? (pct-0.5)*2*GRADE.indRankW : (pct-0.5)*2*(-GRADE.indRankP);
+   s+=val;
+   push(val, R1.pos+'. miejsce na '+R1.n+' w klasyfikacji '+R1.cat+' '+(o.leagueShort||'')+
+     ' (średnia '+R1.avg.toFixed(2)+')');
+ } else if(o.indRank && !o.indRank.qual){
+   push(0, 'za mało startów ('+o.indRank.starts+'), żeby wejść do klasyfikacji indywidualnej ligi — minimum '+o.indRank.min);
+ }
+
+ /* 10) CYKL ŚWIATOWY — inna półka niż krajowe podwórko */
+ [['ims','Indywidualne Mistrzostwa Świata'],['imsj','Indywidualne Mistrzostwa Świata Juniorów']].forEach(([k,label])=>{
+   const c=o[k]; if(!c || !c.rode || !c.mePos) return;
+   if(c.mePos<=3){ const d=GRADE.imsMedal[c.mePos]||0; s+=d; push(d, label+' — '+['','złoto','srebro','brąz'][c.mePos]); }
+   else if(c.mePos<=8){ s+=GRADE.imsTop8; push(GRADE.imsTop8, label+' — '+c.mePos+'. miejsce w klasyfikacji cyklu'); }
+ });
+
  return {score:Math.max(0,s), parts};
 }
  
@@ -1445,10 +1627,20 @@ function simMeeting(homeName, awayName, ctx, meId, forceSave){
    res.forEach(x=>{
      const s=st[x.r.id];
      s.starts++; s.pts+=x.pts; s.bon+=x.bon;
-     s.codes.push(x.out || String(x.pts));
+     /* ------------------------------------------------------------
+        NAPRAWA (patch 21.08.2026): W LIDZE NIE BYŁO WIDAĆ, KTÓRY BIEG DAŁ
+        PUNKT BONUSOWY. Silnik liczył bonus poprawnie (x.bon), ale do kodów
+        biegu wpisywał samą liczbę punktów — gwiazdka „2*"/„1*" istniała
+        WYŁĄCZNIE w uproszczonym generatorze DMPJ (riderLine), czyli
+        dokładnie tam, gdzie punktów bonusowych w ogóle być nie powinno.
+        Teraz jest odwrotnie i zgodnie z regulaminem: bonus (art. 720)
+        zapisuje się przy biegu ligowym, a w zawodach, w których nie ma par
+        klubowych, nie ma go wcale.
+        ------------------------------------------------------------ */
+     s.codes.push(x.out || (String(x.pts)+(x.bon?'*':'')));
      if(x.side==='h') hs+=x.pts; else as+=x.pts;
    });
-   heats.push({label, res:res.map(x=>({id:x.r.id,name:x.r.name,num:x.num,pts:x.pts,out:x.out,side:x.side}))});
+   heats.push({label, res:res.map(x=>({id:x.r.id,name:x.r.name,num:x.num,pts:x.pts,bon:x.bon||0,out:x.out,side:x.side}))});
  };
  
  for(let h=0; h<13; h++){
@@ -1487,9 +1679,9 @@ function simMeeting(homeName, awayName, ctx, meId, forceSave){
    if(entries.length<3) break;
    const res=leagueHeat(entries, ctx, meId);
    res.forEach(x=>{ const s=st[x.r.id]; s.starts++; s.pts+=x.pts; s.bon+=x.bon;
-     s.codes.push(x.out||String(x.pts)); if(x.side==='h') hs+=x.pts; else as+=x.pts; });
+     s.codes.push(x.out||(String(x.pts)+(x.bon?'*':''))); if(x.side==='h') hs+=x.pts; else as+=x.pts; });
    heats.push({label:14+extra, nominated:true,
-     res:res.map(x=>({id:x.r.id,name:x.r.name,num:x.num,pts:x.pts,out:x.out,side:x.side}))});
+     res:res.map(x=>({id:x.r.id,name:x.r.name,num:x.num,pts:x.pts,bon:x.bon||0,out:x.out,side:x.side}))});
  }
  // zapis do statystyk sezonowych + AKTUALIZACJA FORMY (wpływa na numery w kolejnym meczu)
  Object.values(st).forEach(s=>{
@@ -1526,8 +1718,20 @@ function simMeeting(homeName, awayName, ctx, meId, forceSave){
   Object.values(st).forEach(s=>{ if(idsH.has(s.r.id)) hh+=s.pts; else if(idsA.has(s.r.id)) aa+=s.pts; });
   hs=hh; as=aa;
  }
+ /* --- KARTA MECZOWA DO PODGLĄDU (patch 21.08.2026) ---
+    Zamrożony, samowystarczalny zapis spotkania: kto jechał, pod jakim numerem,
+    ile zdobył punktów i bonusów, z jakimi kodami biegów. Trzymamy go zamiast
+    referencji do żywych obiektów zawodników — te zmieniają się z każdym
+    kolejnym sezonem, więc wynik sprzed trzech lat pokazywałby dzisiejszą kadrę. */
+ const idsH=new Set(Object.values(LH).filter(Boolean).map(r=>r.id));
+ const box=Object.values(st).map(x=>({
+   id:x.r.id, name:x.r.name, num:x.num, age:x.r.age,
+   side: idsH.has(x.r.id) ? 'h' : 'a',
+   starts:x.starts, pts:x.pts, bon:x.bon, codes:x.codes.slice(),
+   me: !!(meId && x.r.id===meId)
+ })).sort((a,b)=> (a.side===b.side ? (a.num||99)-(b.num||99) : (a.side==='h'?1:-1)));
  const me = meId && st[meId] ? st[meId] : null;
- return {hs, as, heats, st, me: me? {starts:me.starts, pts:me.pts, bon:me.bon, codes:me.codes.filter(c=>typeof c==='string'), num:me.num} : null,
+ return {hs, as, heats, st, box, me: me? {starts:me.starts, pts:me.pts, bon:me.bon, codes:me.codes.filter(c=>typeof c==='string'), num:me.num} : null,
    lineH:LH, lineA:LA, saveIn, save:{h:svH, a:svA}, meGap, meReg};
 }
  
@@ -1702,6 +1906,7 @@ function playerRoundStatus(rd){
      S.injDmg   = bad ? R(INJ.dmgMin+1, INJ.dmgMax+2) : R(INJ.dmgMin, INJ.dmgMax);
    }
    p.ovr=cl(p.ovr-S.injDmg,1,99);
+   logOvr(-S.injDmg, (cat?'kontuzja katastrofalna':bad?'poważna kontuzja':'kontuzja')+' w '+(rd+1)+'. kolejce');
    const me=G.riders.find(r=>r.me); if(me) me.ovr=cl(me.ovr-S.injDmg,1,99);
    return cat ? 'ZERWANE WIĘZADŁA / ZŁAMANE UDO' : 'KONTUZJA';
  }
@@ -1886,7 +2091,7 @@ function simSeasonChrono(ctx, myLk, myClub, ptsPen){
          }
          A[key].done=true;
        }
-       st[k].RS.push({round:rd+1,h,a,hs:M.hs,as:M.as,me:c?M.me:null,heats:M.heats,lineH:M.lineH,lineA:M.lineA});
+       st[k].RS.push({round:rd+1,h,a,hs:M.hs,as:M.as,me:c?M.me:null,heats:M.heats,box:M.box});
        if(mine){
          const home=h===myClub, rode=!!(c&&M.me&&M.me.starts>0);
          const savedIn = rode && !!M.saveIn;
@@ -2174,8 +2379,8 @@ function tie(stage, cA, cB, ctx, myClub){
  const agA=M1.as+M2.hs, agB=M1.hs+M2.as;
  const draw = agA===agB;
  const win = agB>agA ? cB : cA, lose = agB>agA ? cA : cB;
- const legs=[{h:cB.name,aw:cA.name,hs:M1.hs,as:M1.as,me:M1.me,heats:M1.heats},
-             {h:cA.name,aw:cB.name,hs:M2.hs,as:M2.as,me:M2.me,heats:M2.heats}];
+ const legs=[{h:cB.name,aw:cA.name,hs:M1.hs,as:M1.as,me:M1.me,heats:M1.heats,box:M1.box},
+             {h:cA.name,aw:cB.name,hs:M2.hs,as:M2.as,me:M2.me,heats:M2.heats,box:M2.box}];
  return {stage, a:cA.name, b:cB.name, legs, agA, agB, draw, win, lose, winner:win.name};
 }
 function runPhase(lk, ctx, myClub){
@@ -2223,13 +2428,67 @@ function runPhase(lk, ctx, myClub){
    Wszystko rozgrywane czwórmeczami: 4 pkt meczowe za I miejsce,
    3 za II, 2 za III, 1 za IV, plus punkty biegowe (art. 804).
    ============================================================ */
+/* ------------------------------------------------------------
+   CZWÓRMECZ DMPJ — TERAZ SYMULOWANY BIEG PO BIEGU
+   ------------------------------------------------------------
+   ODPOWIEDŹ NA PYTANIE „czy każdy mecz jest symulowany wg silnika":
+   liga i cała faza play-off zawsze szły przez simMeeting (siódemka na drużynę,
+   15 biegów), turnieje indywidualne przez tabelę 20-biegową — ale DMPJ było
+   jedynym miejscem, gdzie wynik brał się z rzutu kością na poziom drużyny,
+   a nie z przejechanych biegów. Od tego patcha czwórmecz też jedzie się realnie:
+     · 4 drużyny po 4 juniorów (16 zawodników),
+     · 24 biegi, w każdym po jednym zawodniku z każdej drużyny, 3-2-1-0,
+     · każdy zawodnik ma 6 startów, defekty i wykluczenia liczone tak samo
+       jak w lidze,
+     · punkty meczowe 4/3/2/1 wg sumy punktów biegowych (art. 804 ust. 3:
+       przy remisie punkty meczowe dzielą się po równo).
+   PUNKTÓW BONUSOWYCH TU NIE MA I BYĆ NIE MOŻE: w czwórmeczu każda drużyna ma
+   w biegu jednego zawodnika, więc nie istnieje „kolega z pary", za którym
+   można finiszować. Stąd zniknęły gwiazdki z linii DMPJ.
+   ------------------------------------------------------------ */
+function dmpjSquad(team, ctx, myTeam){
+ const real=squadOf(team.name).filter(isJun).sort((a,b)=>b.ovr-a.ovr);
+ const ladder=[5,1,-3,-8];
+ const out=ladder.map((off,i)=>({
+   name: real[i] ? real[i].name : (pick(IMIE)+' '+pick(NAZW)),
+   ovr : cl(Math.round(team.ovr+off+gauss(0,2.2)),5,95),
+   team: team.name, me:false
+ }));
+ if(ctx && myTeam && team.name===myTeam){
+   out[0]={name:G.p.name, ovr:cl(Math.round(ctx.meOvr||team.ovr+5),1,99), team:team.name, me:true};
+ }
+ return out;
+}
 function quad(teams, ctx, myTeam){
- const avg=teams.reduce((a,t)=>a+t.ovr,0)/teams.length;
- let raw=teams.map(t=>Math.max(4, gauss(24+(t.ovr-avg)*0.55, 4.5)));
- const s=raw.reduce((a,b)=>a+b,0);
- let hp=raw.map(v=>Math.round(v*96/s));
- hp[0]+=96-hp.reduce((a,b)=>a+b,0);
- const rows=teams.map((t,i)=>({name:t.name,hp:Math.max(0,hp[i])}));
+ /* Stawka czwórmeczu: 4 drużyny × 4 zawodników. */
+ const squads=teams.map(t=>dmpjSquad(t, ctx, myTeam));
+ const all=[]; squads.forEach((sq,ti)=>sq.forEach((r,ri)=>all.push({...r, ti, ri, pts:0, bon:0, starts:0, codes:[]})));
+ const ref=all.reduce((a,r)=>a+r.ovr,0)/Math.max(1,all.length);
+ /* Program: każdy zawodnik po 6 startów, w każdym biegu po jednym z drużyny. */
+ const HEATS=24;
+ const prog=squads.map((sq,ti)=>{
+   const seq=[]; for(let i=0;i<4;i++) for(let k=0;k<6;k++) seq.push(i);
+   return shuffle(seq);
+ });
+ const heats=[];
+ for(let h=0; h<HEATS; h++){
+   const entries=all.filter(r=>prog[r.ti][h]===r.ri);
+   if(entries.length<2) continue;
+   const res=entries.map(r=>{
+     const dP = r.me&&ctx ? ctx.defP : cl(0.030+(62-r.ovr)*0.0007, 0.014, 0.13);
+     const eP = r.me&&ctx ? ctx.excP : cl(0.026+(58-r.ovr)*0.0005, 0.010, 0.07);
+     const rr=Math.random();
+     const out = rr<dP ? 'd' : rr<dP+eP ? 'w' : null;
+     return {r, out, str: rideStr(r.ovr, ref, 0)};
+   });
+   const fin=res.filter(x=>!x.out).sort((a,b)=>b.str-a.str);
+   fin.forEach((x,i)=>x.pts=[3,2,1,0][i]);
+   res.forEach(x=>{ if(x.out) x.pts=0; });
+   res.forEach(x=>{ x.r.starts++; x.r.pts+=x.pts; x.r.codes.push(x.out||String(x.pts)); });
+   heats.push({label:h+1, res:res.map(x=>({name:x.r.name, team:x.r.team, pts:x.pts, out:x.out, me:x.r.me}))});
+ }
+ /* Tabela drużynowa. */
+ const rows=teams.map((t,ti)=>({name:t.name, hp: all.filter(r=>r.ti===ti).reduce((a,r)=>a+r.pts,0)}));
  rows.sort((a,b)=>b.hp-a.hp);
  // art. 804 ust. 3 — przy równych punktach biegowych dzielimy punkty meczowe
  let i=0;
@@ -2240,8 +2499,14 @@ function quad(teams, ctx, myTeam){
    for(let k=i;k<=j;k++){rows[k].mp=val;rows[k].tied=j>i;}
    i=j+1;
  }
- const me = (ctx&&myTeam&&teams.some(t=>t.name===myTeam)) ? riderLine({...ctx,heatBase:5,fixed:5}) : null;
- return {rows, me, teams:teams.map(t=>t.name)};
+ const meR=all.find(r=>r.me);
+ const me = (ctx && myTeam && meR)
+   ? {h:meR.starts, codes:meR.codes, mp:meR.pts, mb:0,
+      d:meR.codes.filter(c=>c==='d').length, w:meR.codes.filter(c=>c==='w').length}
+   : null;
+ return {rows, me, teams:teams.map(t=>t.name), heats,
+   box: all.map(r=>({name:r.name, team:r.team, pts:r.pts, starts:r.starts, codes:r.codes, me:r.me}))
+          .sort((a,b)=>b.pts-a.pts)};
 }
 function groupStage(teams, rounds, ctx, myTeam){
  const tab=teams.map(t=>({name:t.name,ovr:t.ovr,mp:0,hp:0}));
@@ -2273,7 +2538,7 @@ function simDMPJ(effOvr, defP, excP, myClub, eligible, skipEarly){
  const T=(names,pen)=>names.map(n=>({name:n, ovr:cl(Math.round(base[n]-pen),5,90)}));
  const jAvg  = all.reduce((a,t)=>a+t.ovr,0)/all.length;
  const jAvgE = cl(jAvg-EARLY_PEN,5,90);
- const mkCtx = avg => ({ppr:cl(1.45+(effOvr-avg)*0.052,0.15,2.9), defP, excP, heatBase:5, fixed:5});
+ const mkCtx = avg => ({ppr:cl(1.45+(effOvr-avg)*0.052,0.15,2.9), defP, excP, heatBase:5, fixed:5, meOvr:effOvr});
  const ctxLate  = eligible ? mkCtx(jAvg)  : null;
  const ctxEarly = (eligible && !skipEarly) ? mkCtx(jAvgE) : null;
  const myLate   = eligible ? myClub : null;
@@ -2459,7 +2724,162 @@ function ageRiders(){
  });
  dedupeAllSquads();
  allClubs().forEach(c=>{ c.ovr=squadStrength(c.name); });
+ worldAge();                       // reszta świata też ma kolejny rok na karku
 }
+/* ============================================================
+   5e-0. ŚWIAT POZA POLSKĄ
+   ------------------------------------------------------------
+   Do Indywidualnych Mistrzostw Świata nie da się wystawić samych Polaków.
+   Ten blok tworzy i utrzymuje przy życiu resztę żużlowego świata: Duńczyków,
+   Szwedów, Anglików i całą drugą półkę (Niemcy, Finlandia, Francja, USA,
+   Ukraina, Argentyna, Czechy). Zawodnicy zagraniczni starzeją się, rozwijają
+   i kończą kariery tak samo jak krajowi, a na ich miejsce wchodzą nowi —
+   dzięki temu cykl światowy ma ciągłość między sezonami, a nie losuje sobie
+   stawki od zera co rok.
+   ============================================================ */
+let WID=500000;                                  // osobna pula ID, żeby nie zderzyć się z G.riders
+/* Docelowa siła i liczebność poszczególnych krajów: `top` to poziom lidera
+   danej federacji, `n` to liczba zawodników trzymanych w puli. */
+const WORLD_TIERS = [
+ {c:'DEN', top:97, n:16, step:2.3}, {c:'SWE', top:96, n:16, step:2.3}, {c:'GBR', top:93, n:16, step:2.5},
+ {c:'CZE', top:82, n:10, step:3.0}, {c:'GER', top:81, n:10, step:3.0}, {c:'FIN', top:80, n:10, step:3.1},
+ {c:'USA', top:79, n:10, step:3.1}, {c:'FRA', top:78, n:10, step:3.2}, {c:'ARG', top:76, n:10, step:3.2},
+ {c:'UKR', top:75, n:10, step:3.3}
+];
+function worldName(c){
+ const P=WORLD_NAMES[c]||WORLD_NAMES.GBR;
+ return pick(P.f)+' '+pick(P.l);
+}
+function makeWorldRider(ctry, ovr, age){
+ const a = age!=null ? age : R(17,34);
+ const o = cl(Math.round(ovr),1,99);
+ const pot = cl(Math.round(o + (a<=21?R(10,28) : a<=24?R(4,12) : R(0,3))), o, 99);
+ return {id:WID++, name:worldName(ctry), ctry, age:a, ovr:o, pot, retired:false, world:true, sea:blankSea()};
+}
+function worldInit(){
+ G.world=[];
+ WORLD_TIERS.forEach(t=>{
+   for(let i=0;i<t.n;i++){
+     // drabinka: lider federacji na `top`, każdy kolejny niżej, z szumem
+     const ovr = t.top - i*(t.step || (t.top>80?3.6:3.1)) + gauss(0,2.0);
+     /* Ostatnie cztery miejsca każdej federacji to NARYBEK: bez tego zagraniczne
+        kraje nie miały kogo wystawić do IMŚJ2 i cykl juniorski robił się polski. */
+     const age = i<3 ? R(22,33) : (i>=t.n-4 ? R(16,20) : R(17,32));
+     G.world.push(makeWorldRider(t.c, ovr, age));
+   }
+ });
+ return G.world;
+}
+function worldPool(){
+ if(!G.world || !G.world.length) worldInit();
+ return G.world.filter(r=>!r.retired);
+}
+function worldAge(){
+ if(!G.world || !G.world.length){ worldInit(); return; }
+ G.world.forEach(r=>{
+   r.age++; r.sea=blankSea();
+   let g = r.age<=21?7.0 : r.age<=24?4.2 : r.age<=28?1.7 : r.age<=32?0.1 : r.age<=36?-2.6 : -5;
+   if(g>0) g *= cl(((r.pot||r.ovr+6)-r.ovr)/9, 0, 1);
+   r.ovr = cl(Math.round(r.ovr+g+gauss(0,1.9)),1,99);
+   if(r.age>=R(33,41) && chance(26)) r.retired=true;
+   if(r.age>41) r.retired=true;
+ });
+ G.world=G.world.filter(r=>!r.retired);
+ // uzupełnienie federacji do zakładanej liczebności + korekta driftu poziomu
+ WORLD_TIERS.forEach(t=>{
+   const have=G.world.filter(r=>r.ctry===t.c);
+   for(let i=have.length;i<t.n;i++) G.world.push(makeWorldRider(t.c, t.top-R(8,26)+gauss(0,3), R(16,20)));
+   /* ------------------------------------------------------------
+      PIPELINE MŁODZIEŻOWY KAŻDEJ FEDERACJI
+      Bez tego zdarzało się, że całe pokolenie danego kraju kończyło kariery
+      w tym samym czasie, federacja odbudowywała się samymi 20-latkami i przez
+      kilka sezonów nie miała KOGO wystawić do IMŚJ2 — a wtedy limity krajowe
+      nie miały czego przycinać i cykl juniorski robił się polski. Każdy kraj
+      trzyma teraz minimum trzech zawodników do 21 lat; miejsce dla nich robi
+      najsłabszy weteran.
+      ------------------------------------------------------------ */
+   const MINJUN=3;
+   let jun=G.world.filter(r=>r.ctry===t.c && r.age<=21).length;
+   while(jun<MINJUN){
+     const pool=G.world.filter(r=>r.ctry===t.c);
+     if(pool.length>=t.n){
+       const old=pool.filter(r=>r.age>=29).sort((a,b)=>a.ovr-b.ovr)[0]
+              || pool.slice().sort((a,b)=>a.ovr-b.ovr)[0];
+       if(old) old.retired=true;
+     }
+     G.world.push(makeWorldRider(t.c, t.top-R(14,30)+gauss(0,3), R(16,19)));
+     jun++;
+   }
+   G.world=G.world.filter(r=>!r.retired);
+   /* Korekta driftu federacji: bez niej Szwecja czy Anglia potrafiły zapaść się
+      na kilkanaście sezonów (jedno pokolenie kończy kariery naraz) i cykl robił
+      się polsko-duński. Próg zaostrzony z 4 na 2 punkty, siła korekty w górę. */
+   const cur=G.world.filter(r=>r.ctry===t.c).sort((a,b)=>b.ovr-a.ovr);
+   const drift=t.top-(cur[0]?cur[0].ovr:t.top);
+   if(Math.abs(drift)>=2) cur.forEach(r=>{ r.ovr=cl(Math.round(r.ovr+drift*0.45+gauss(0,0.8)),1,99); });
+ });
+}
+/* Wspólny "paszport" dla obu światów: krajowi zawodnicy siedzą w G.riders
+   (bez pola ctry, więc domyślnie POL), zagraniczni w G.world. */
+const ctryOf = r => (r && r.ctry) ? r.ctry : 'POL';
+const ctryName = c => WORLD_CTRY[c] || c;
+/* Wiersz startowy do tabeli 20-biegowej (meeting20 czyta id/name/age/ovr). */
+const worldRow = r => ({id:r.id, name:r.name, age:r.age, ovr:r.ovr, ctry:ctryOf(r)});
+/* Ranking światowy: Polacy z G.riders + reszta świata, jedna lista.
+   `bonus` gracza (G.meForm) doliczany tak samo jak w ranking() krajowym. */
+function worldRanking(filter){
+ const pol=G.riders.filter(r=>!r.retired && (!filter||filter(r)))
+   .map(r=>({...r, ctry:'POL', score:r.ovr + (r.me?(G.meForm||0):0) + (r.rankBias||0)}));
+ const wor=worldPool().filter(r=>!filter||filter(r)).map(r=>({...r, score:r.ovr}));
+ return pol.concat(wor).sort((a,b)=>b.score-a.score);
+}
+
+/* ============================================================
+   STATYSTYKI INDYWIDUALNE LIG
+   ------------------------------------------------------------
+   Zgłoszenie gracza: „dodaj statystyki indywidualne dla każdej z lig".
+   Zdjęcie robione jest PO RUNDZIE ZASADNICZEJ (przed play-offem), żeby
+   klasyfikacja była porównywalna dla wszystkich — do play-offu wchodzi
+   przecież tylko połowa stawki.
+   ŚREDNIA LICZY PUNKTY BONUSOWE (druga prośba z tego samego zgłoszenia):
+   bonus to punkt zdobyty na torze dla drużyny, więc wchodzi do średniej
+   biegopunktowej, a nie tylko do portfela.
+   Kategorie: juniorzy (U21) i seniorzy klasyfikowani są ODDZIELNIE —
+   16-latek nie ściga się w tabeli z 30-letnim liderem Ekstraligi.
+   ============================================================ */
+function buildLeagueStats(){
+ const out={};
+ const MIN=(typeof GRADE!=='undefined' && GRADE.indRankMin) ? GRADE.indRankMin : 12;
+ LKEYS.forEach(k=>{
+   const rows=[];
+   G.leagues[k].clubs.forEach(c=>squadOf(c.name).forEach(r=>{
+     const s=r.sea||blankSea();
+     if(!s.starts) return;
+     rows.push({id:r.id, name:r.name, club:c.name, age:r.age, jun:isJun(r),
+       m:s.m, starts:s.starts, pts:s.pts, bon:s.bon, def:s.def, exc:s.exc, rep:s.rep,
+       avg:(s.pts+s.bon)/Math.max(1,s.starts), qual:s.starts>=MIN, me:!!r.me});
+   }));
+   const byAvg=(a,b)=> (b.qual?1:0)-(a.qual?1:0) || b.avg-a.avg || b.pts-a.pts;
+   rows.sort(byAvg);
+   rows.forEach((x,i)=>{ x.pos=i+1; });
+   ['jun','sen'].forEach(cat=>{
+     const sub=rows.filter(x=> cat==='jun' ? x.jun : !x.jun);
+     const q=sub.filter(x=>x.qual);
+     q.forEach((x,i)=>{ x.catPos=i+1; x.catN=q.length; });
+     sub.filter(x=>!x.qual).forEach(x=>{ x.catPos=null; x.catN=q.length; });
+   });
+   out[k]={rows, min:MIN};
+ });
+ return out;
+}
+/* Miejsce Gracza w klasyfikacji swojej ligi i swojej kategorii wiekowej. */
+function myLeagueRank(stats, lk){
+ const L=stats&&stats[lk]; if(!L) return null;
+ const me=L.rows.find(x=>x.me); if(!me) return null;
+ return {pos:me.catPos, n:me.catN, avg:me.avg, starts:me.starts, qual:me.qual,
+   cat: me.jun ? 'juniorów (U21)' : 'seniorów', jun:me.jun, min:L.min, overall:me.pos, total:L.rows.length};
+}
+
 // ranking krajowy — podstawa nominacji GKSŻ
 function ranking(filter){
  const me=G.riders.find(r=>r.me);
@@ -2589,10 +3009,13 @@ function simIndividual(p, effOvr, defP, excP){
   const f=fieldOf(nom.slice(0,16));
   const mi=meIn(f);
   const T=meeting20(f, mi, mi>=0?ctx:null);
-  out.zk=finishInd({name:'ZŁOTY KASK', sub:'Memoriał Jerzego Szczakiela · jeden turniej finałowy',
+  out.zk=finishInd({name:'ZŁOTY KASK', sub:'Memoriał Jerzego Szczakiela · jeden turniej finałowy · TOP 4 jedzie do SGP CHALLENGE',
     rode:mi>=0, rounds:[roundInfo('FINAŁ ZŁOTEGO KASKU',T,mi)],
     podium:T.slice(0,3).map(t=>t.name), mePos: mi>=0? T.findIndex(t=>t.me)+1 : 0,
-    mePts: mi>=0? T.find(t=>t.me).pts : 0});
+    mePts: mi>=0? T.find(t=>t.me).pts : 0,
+    /* TOP 4 Złotego Kasku = polskie eliminacje do SGP Challenge (patrz simWorldQualifiers). */
+    top4:T.slice(0,4).map(t=>({id:t.id, name:t.name}))});
+  out.zkTop4=out.zk.top4;
  }
  /* ---------- SREBRNY KASK — młodzieżowcy (twardo U21), eliminacje + finał ---------- */
  out.sk = kaskYouth('SREBRNY KASK','podstawa nominacji do IMŚJ', isJun, me, ctx, fieldOf, meIn);
@@ -2600,12 +3023,17 @@ function simIndividual(p, effOvr, defP, excP){
  out.bk = kaskYouth('BRĄZOWY KASK','podstawa nominacji do IMEJ', isU19, me, ctx, fieldOf, meIn);
 
  /* ============================================================
-    TURNIEJ SZKOLENIOWY — dla juniorów klubów, które nie awansowały do
-    fazy play-off (art. 61 regulaminu: tabela 20-biegowa, 16 zawodników
-    + 2 rezerwowych, wyłącznie krajowi zawodnicy młodzieżowi). To poligon
-    dla juniorów słabszych klubów — coś, co jest do zrobienia w sezonie,
-    który i tak kończy się bez play-off. Jeden turniej z cyklu rozgrywanego
-    równolegle w całej Polsce; reszta cyklu toczy się bez twojego udziału.
+    TURNIEJE SZKOLENIOWE — CYKL OŚMIU TURNIEJÓW
+    ------------------------------------------------------------
+    ZMIANA (patch 21.08.2026): to nie jest JEDEN turniej, tylko CYKL OŚMIU
+    turniejów rozgrywanych w sezonie (art. 61: tabela 20-biegowa, 16 zawodników
+    + 2 rezerwowych, wyłącznie krajowi zawodnicy młodzieżowi z klubów, które nie
+    uzyskały prawa startu w fazie play-off). Wcześniej gra rozgrywała jedną
+    rundę i uznawała sprawę za zamkniętą — reszta cyklu "toczyła się bez twojego
+    udziału", co przy ośmiu turniejach w kalendarzu było po prostu nieprawdą.
+    Klasyfikacja końcowa cyklu to suma punktów ze wszystkich ośmiu rund;
+    przy równej liczbie punktów wyżej ten, kto miał lepsze miejsce w turnieju
+    rozegranym PÓŹNIEJ.
     ============================================================ */
  {
   const eligible = isJun(p) && clubMissedPlayoffs(p.club);
@@ -2615,53 +3043,79 @@ function simIndividual(p, effOvr, defP, excP){
     const meRow = pool.find(r=>r.id===me.id);
     if(meRow){ nom = nom.slice(0,15); nom.push(meRow); }
   }
-  const sub='dla juniorów klubów spoza czołowej czwórki (art. 61) · tabela 20-biegowa · 16 zawodników + 2 rezerwowych';
+  const sub='cykl 8 turniejów dla juniorów klubów spoza czołowej czwórki (art. 61) · tabela 20-biegowa · 16 zawodników + 2 rezerwowych · klasyfikacja = suma punktów z ośmiu rund';
   if(eligible && nom.length>=16){
     const f=fieldOf(nom.slice(0,16));
     const mi=meIn(f);
-    const T=meeting20(f, mi, mi>=0?ctx:null);
-    out.szk=finishInd({name:'TURNIEJ SZKOLENIOWY', sub, rode:mi>=0,
-      rounds:[roundInfo('TURNIEJ SZKOLENIOWY',T,mi)],
-      podium:T.slice(0,3).map(t=>t.name), mePos: mi>=0? T.findIndex(t=>t.me)+1 : 0,
-      mePts: mi>=0? T.find(t=>t.me).pts : 0});
+    const N=SZK_ROUNDS;
+    const total={}; f.forEach((r,k)=>total[k]=0);
+    const roundPos=f.map(()=>[]);
+    const szkRounds=[]; let rode=false;
+    for(let t=0;t<N;t++){
+      const T=meeting20(f, mi, mi>=0?ctx:null);
+      T.forEach((row,pos)=>{ const k=f.findIndex(r=>r.id===row.id); if(k>=0){ total[k]+=row.pts; roundPos[k].push(pos+1); } });
+      if(mi>=0) rode=true;
+      szkRounds.push(roundInfo('TURNIEJ SZKOLENIOWY — RUNDA '+(t+1)+'/'+N, T, mi));
+    }
+    const order=f.map((r,k)=>k).sort((a,b)=>{
+      if(total[b]!==total[a]) return total[b]-total[a];
+      for(let t=N-1;t>=0;t--){ const d=(roundPos[a][t]||99)-(roundPos[b][t]||99); if(d) return d; }
+      return 0;
+    });
+    const cls=order.map(k=>({name:f[k].name, pts:total[k], me:k===mi}));
+    const mePos = mi>=0 ? order.indexOf(mi)+1 : 0;
+    out.szk=finishInd({name:'TURNIEJE SZKOLENIOWE', sub, rode, rounds:szkRounds, classification:cls,
+      clsLabel:'KLASYFIKACJA KOŃCOWA CYKLU (suma punktów z '+N+' turniejów)',
+      podium:cls.slice(0,3).map(c=>c.name), mePos, mePts: mi>=0? total[mi] : 0});
   } else {
-    out.szk=finishInd({name:'TURNIEJ SZKOLENIOWY', sub, rode:false, rounds:[], podium:[], mePos:0, mePts:0});
+    out.szk=finishInd({name:'TURNIEJE SZKOLENIOWE', sub, rode:false, rounds:[], podium:[], mePos:0, mePts:0});
   }
  }
 
  /* ============================================================
-    PUCHAR MACEC — międzynarodowy cykl dla zawodników spoza czołówki
-    (Stowarzyszenie Motocyklowe Krajów Europy Środkowej). Stawka: gracz +
-    15 zagranicznych rywali ze Słowacji, Czech, Rumunii, Bułgarii, Węgier
-    i Ukrainy — 16 zawodników, kilka rund tej samej stawki, klasyfikacja
-    końcowa to suma punktów ze wszystkich rund. Art. 1.5 regulaminu: przy
-    remisie punktowym wyżej ten, kto miał lepsze miejsce w turnieju
-    rozegranym PÓŹNIEJ — liczone tu wstecz, runda po rundzie.
-    Kwalifikacja: umiarkowany OVR — to liga dla zawodników, którzy nigdy
-    nie zobaczą Grand Prix, nie dla gwiazd klubu. ---------------------- */
+    PUCHAR PALET — MIĘDZYNARODOWY CYKL DRUGIEJ PÓŁKI
+    ------------------------------------------------------------
+    ZMIANY (patch 21.08.2026), obie ze zgłoszenia gracza:
+      1) cykl nazywa się teraz PUCHAR PALET (dawniej "Puchar MACEC"),
+      2) w cyklu jeżdżą TEŻ POLACY. Wcześniej stawkę robiło piętnastu
+         obcokrajowców i samotny Gracz — teraz obok niego startuje kilku
+         krajowych zawodników z tej samej półki (ten sam przedział OVR),
+         a resztę uzupełniają rywale ze Słowacji, Czech, Rumunii, Bułgarii,
+         Węgier i Ukrainy.
+    Format bez zmian: 16 zawodników, tabela 20-biegowa, kilka rund tej samej
+    stawki, klasyfikacja końcowa to suma punktów. Art. 1.5 regulaminu: przy
+    remisie punktowym wyżej ten, kto miał lepsze miejsce w turnieju rozegranym
+    PÓŹNIEJ — liczone tu wstecz, runda po rundzie.
+    Kwalifikacja: umiarkowany OVR — to cykl dla zawodników, którzy nigdy nie
+    zobaczą Grand Prix, nie dla gwiazd klubu.
+    ============================================================ */
  {
-  const macecOk = p.ovr>=18 && p.ovr<=62;
-  const sub='międzynarodowy cykl — SVK/CZE/ROU/BGR/HUN/UKR · tabela 20-biegowa · klasyfikacja = suma punktów z rund';
-  if(macecOk){
-   /* Stawka: 15 zagranicznych rywali (fikcyjni, patrz MACEC_NAMES w data.js) +
-      gracz. Zawodnicy z ROU/BGR/HUN/UKR są w tej stawce relacyjnie mocniejsi —
-      zgodnie z opisem "super, jak na poziom tych krajów". */
-   const foreign=shuffle(MACEC_NAMES.slice()).slice(0,15).map((x,k)=>{
+  const paletOk = p.ovr>=18 && p.ovr<=62;
+  const sub='międzynarodowy cykl — POL/SVK/CZE/ROU/BGR/HUN/UKR · tabela 20-biegowa · klasyfikacja = suma punktów z rund';
+  if(paletOk){
+   /* POLACY W STAWCE: krajowi zawodnicy o zbliżonym poziomie (18-62 OVR),
+      z pominięciem Gracza — to oni robią cykl "polskim", a nie tylko wyjazdowym. */
+   const polPool = ranking(r=>!r.me && r.ovr>=16 && r.ovr<=66);
+   const polN = cl(R(4,6), 0, polPool.length);
+   const poles = shuffle(polPool.slice(0, Math.min(polPool.length, 22))).slice(0, polN)
+     .map(r=>({id:r.id, name:r.name+' (POL)', age:r.age, ovr:r.ovr, ctry:'POL'}));
+   const foreignN = 15-poles.length;
+   const foreign=shuffle(PALET_NAMES.slice()).slice(0,foreignN).map((x,k)=>{
      const bump=(x.c==='ROU'||x.c==='BGR'||x.c==='HUN'||x.c==='UKR') ? R(2,10) : R(-6,4);
-     return {id:-1000-k, name:x.n+' ('+x.c+')', age:R(19,34), ovr:cl(Math.round(G.p.ovr+bump+gauss(0,6)),15,70)};
+     return {id:-1000-k, name:x.n+' ('+x.c+')', age:R(19,34), ovr:cl(Math.round(G.p.ovr+bump+gauss(0,6)),15,70), ctry:x.c};
    });
-   const meRow={id:me.id, name:me.name, age:p.age, ovr:cl(Math.round(effOvr),1,99)};
-   const field=shuffle([meRow, ...foreign]);
+   const meRow={id:me.id, name:me.name, age:p.age, ovr:cl(Math.round(effOvr),1,99), ctry:'POL'};
+   const field=shuffle([meRow, ...poles, ...foreign]).slice(0,16);
    const mi=field.findIndex(r=>r.id===me.id);
    const roundsN=R(3,4);
    const total={}; field.forEach((r,k)=>total[k]=0);
    const roundPos=field.map(()=>[]);           // miejsce w KAŻDEJ rundzie — materiał na tiebreak art. 1.5
-   const macecRounds=[]; let rode=false;
+   const paletRounds=[]; let rode=false;
    for(let t=0;t<roundsN;t++){
     const T=meeting20(field, mi, mi>=0?ctx:null);
-    T.forEach((row,pos)=>{ const k=field.findIndex(r=>r.id===row.id); total[k]+=row.pts; roundPos[k].push(pos+1); });
+    T.forEach((row,pos)=>{ const k=field.findIndex(r=>r.id===row.id); if(k>=0){ total[k]+=row.pts; roundPos[k].push(pos+1); } });
     if(mi>=0) rode=true;
-    macecRounds.push(roundInfo('PUCHAR MACEC — RUNDA '+(t+1), T, mi));
+    paletRounds.push(roundInfo('PUCHAR PALET — RUNDA '+(t+1), T, mi));
    }
    const order=field.map((r,k)=>k).sort((a,b)=>{
      if(total[b]!==total[a]) return total[b]-total[a];
@@ -2670,13 +3124,16 @@ function simIndividual(p, effOvr, defP, excP){
    });
    const cls=order.map(k=>({name:field[k].name, pts:total[k], me:k===mi}));
    const mePos = mi>=0 ? order.indexOf(mi)+1 : 0;
-   out.macec=finishInd({name:'PUCHAR MACEC', sub, rode, rounds:macecRounds, classification:cls,
-     podium:cls.slice(0,3).map(c=>c.name), mePos, mePts: mi>=0? total[mi] : 0});
+   out.palet=finishInd({name:'PUCHAR PALET', sub, rode, rounds:paletRounds, classification:cls,
+     clsLabel:'KLASYFIKACJA KOŃCOWA CYKLU (suma punktów ze wszystkich rund)',
+     podium:cls.slice(0,3).map(c=>c.name), mePos, mePts: mi>=0? total[mi] : 0,
+     poles:poles.length+1});
   } else {
-   out.macec=finishInd({name:'PUCHAR MACEC', sub, rode:false, rounds:[], podium:[], mePos:0, mePts:0});
+   out.palet=finishInd({name:'PUCHAR PALET', sub, rode:false, rounds:[], podium:[], mePos:0, mePts:0});
   }
+  out.macec=out.palet;                 // zgodność wsteczna ze starymi zapisami
  }
- 
+
  /* ---------- MIMP — eliminacje + finał, TYLKO juniorzy U21 ----------
     Filtr wieku jest twardy: zawodnik po 21. urodzinach (w tym Gracz) nie ma
     prawa startu i nie pojawi się ani w eliminacjach, ani w finale. */
@@ -2783,12 +3240,412 @@ function kaskYouth(name, sub, filt, me, ctx, fieldOf, meIn){
    mePos: mi>=0? T.findIndex(t=>t.me)+1 : 0, mePts: mi>=0? T.find(t=>t.me).pts : 0});
 }
  
+/* ============================================================
+   5e. INDYWIDUALNE MISTRZOSTWA ŚWIATA (IMŚ)
+   ------------------------------------------------------------
+   W papierach FIM cykl nazywa się "Speedway Grand Prix" i tak też opisuje go
+   regulamin, na którym oparty jest ten blok. Format rundy — jeden do jednego:
+     · 16 zawodników, 20 biegów zasadniczych, 3-2-1-0 (wykluczenie i defekt = 0),
+     · dwóch z czoła tabeli jedzie prosto do FINAŁU,
+     · miejsca 3-10 rozstawiane są na dwa biegi ostatniej szansy (LCQ1, LCQ2),
+       zwycięzca każdego dołącza do finału,
+     · zwycięzca finału wygrywa rundę. Razem 23 biegi.
+   Klasyfikacja cyklu to suma punktów za miejsca w rundach (SGP.pts).
+   Skład, eliminacje, dzikie karty i rezerwy toru — patrz komentarz przy SGP
+   w data.js oraz sgpLineup() niżej.
+   ============================================================ */
+
+/* --- REFERENCJE DO ZAWODNIKÓW: jedna forma dla Polaka i obcokrajowca --- */
+const sgpRef  = r => ({t: r.world?'W':'P', id:r.id, name:r.name, ctry:ctryOf(r)});
+function sgpFind(ref){
+ if(!ref) return null;
+ const src = ref.t==='W' ? (G.world||[]) : (G.riders||[]);
+ return src.find(x=>x.id===ref.id && !x.retired) || null;
+}
+/* ------------------------------------------------------------
+   LIMITY KRAJOWE — JEDNO NARZĘDZIE DLA CAŁEGO CYKLU
+   ------------------------------------------------------------
+   `capPick` przechodzi listę OD NAJLEPSZEGO i bierze zawodnika tylko wtedy,
+   gdy jego federacja nie wyczerpała jeszcze przydziału. Dzięki temu Polska
+   zostaje najsilniejszą federacją stawki, ale przestaje BYĆ stawką — a przy
+   okazji do cyklu wchodzą Czesi, Niemcy czy Australijczycy, którzy przy
+   doborze „po prostu najlepszych" nie mieli szans przebić się przez masę
+   polskiej ligi.
+   ------------------------------------------------------------ */
+function capPick(list, caps, def, n, seen){
+ const cnt={}, out=[], used=seen||new Set();
+ const lim=c=>(caps && caps[c]!=null) ? caps[c] : (def==null?99:def);
+ for(const r of list){
+   if(!r || used.has(r.id)) continue;
+   const c=ctryOf(r);
+   if((cnt[c]||0) >= lim(c)) continue;
+   cnt[c]=(cnt[c]||0)+1; used.add(r.id); out.push(r);
+   if(n && out.length>=n) break;
+ }
+ return out;
+}
+/* Ile miejsc w danym komplecie zajmuje już dana federacja. */
+function ctryCount(list, getter){
+ const o={}; list.forEach(x=>{ const c=ctryOf(getter?getter(x):x); o[c]=(o[c]||0)+1; }); return o;
+}
+/* Rezerwa toru / zastępstwo: ktoś z tej samej półki, kto akurat jest wolny. */
+function sgpSub(seen, minOvr){
+ const pool=worldRanking().filter(r=>!seen.has(r.id) && r.ovr>=(minOvr||0));
+ return pool.length ? pool[R(0, Math.min(5,pool.length-1))] : null;
+}
+
+/* --- JEDEN BIEG POZA TABELĄ (LCQ / FINAŁ) — opis do UI --- */
+function gpExtraHeat(idxs, field, meIdx, ctx, label){
+ const H=oneHeat(idxs, field, meIdx, ctx);
+ const order=idxs.slice().sort((a,b)=>H.place[a]-H.place[b]);
+ return {label, H, order,
+   rows: order.map((ix,k)=>({pos:k+1, name:field[ix].name, ctry:field[ix].ctry||'POL',
+     out:(H.res.find(x=>x.i===ix)||{}).out||null, me:ix===meIdx}))};
+}
+/* --- PEŁNA RUNDA GRAND PRIX: 20 biegów + LCQ1 + LCQ2 + FINAŁ --- */
+function gpRound(field, meIdx, ctx, title){
+ const T=meeting20(field, meIdx, ctx);          // tabela 20-biegowa (posortowana)
+ const chart=T.map(t=>t.i);                     // indeksy w polu wg miejsca w tabeli
+ const chartPts={}; T.forEach(t=>chartPts[t.i]=t.pts);
+ /* Rozstawienie biegów ostatniej szansy: miejsca 3-10 z tabeli. */
+ const l1i=[chart[2],chart[5],chart[6],chart[9]].filter(x=>x!=null);
+ const l2i=[chart[3],chart[4],chart[7],chart[8]].filter(x=>x!=null);
+ const L1=gpExtraHeat(l1i, field, meIdx, ctx, 'LCQ1 — BIEG OSTATNIEJ SZANSY');
+ const L2=gpExtraHeat(l2i, field, meIdx, ctx, 'LCQ2 — BIEG OSTATNIEJ SZANSY');
+ const fi=[chart[0],chart[1],L1.order[0],L2.order[0]].filter(x=>x!=null);
+ const F=gpExtraHeat(fi, field, meIdx, ctx, 'FINAŁ RUNDY');
+ /* Klasyfikacja rundy: finał 1-4, dalej przegrani LCQ wg miejsc, na końcu tabela. */
+ const cls=[...F.order];
+ const pair=(k)=>{ const a=L1.order[k], b=L2.order[k];
+   const av=a!=null?chart.indexOf(a):99, bv=b!=null?chart.indexOf(b):99;
+   return av<=bv ? [a,b] : [b,a]; };
+ [1,2,3].forEach(k=>pair(k).forEach(x=>{ if(x!=null && !cls.includes(x)) cls.push(x); }));
+ chart.forEach(x=>{ if(!cls.includes(x)) cls.push(x); });
+ /* Linia gracza: kody z tabeli + LCQ + finał. */
+ let me=null;
+ if(meIdx>=0){
+   const row=T.find(t=>t.i===meIdx);
+   const codes=row? row.codes.slice() : [];
+   const lcq = L1.H.place[meIdx]!=null && l1i.includes(meIdx) ? {n:1, place:L1.H.place[meIdx], out:(L1.H.res.find(x=>x.i===meIdx)||{}).out}
+             : l2i.includes(meIdx) ? {n:2, place:L2.H.place[meIdx], out:(L2.H.res.find(x=>x.i===meIdx)||{}).out} : null;
+   if(lcq) codes.push('LCQ'+lcq.n+':'+(lcq.out || lcq.place+'m'));
+   const inF=fi.includes(meIdx);
+   if(inF) codes.push('F:'+((F.H.res.find(x=>x.i===meIdx)||{}).out || (F.H.place[meIdx]+'m')));
+   me={chartPts: row?row.pts:0, chartPos: chart.indexOf(meIdx)+1, codes,
+       pos: cls.indexOf(meIdx)+1, lcq, inFinal:inF};
+ }
+ return {title, T, chart, chartPts, cls, L1, L2, F, me,
+   rows: cls.map((ix,k)=>({pos:k+1, name:field[ix].name, ctry:field[ix].ctry||'POL',
+     chart:chartPts[ix]||0, gp:SGP.pts[k]||0, me:ix===meIdx}))};
+}
+
+/* --- STAN CYKLU MIĘDZY SEZONAMI --- */
+function ensureSgpSeed(){
+ if(G.sgp && G.sgp.top7) return G.sgp;
+ const rank=worldRanking(r=>!isJun(r)).filter(r=>r.age>=20);
+ /* Pierwsza obsada cyklu też podlega limitom krajowym — inaczej gra startowała
+    z piętnastoma Polakami i cały cykl przez lata próbował się z tego odkopać. */
+ const pool=capPick(rank, SGP.natCap, SGP.natCapDef, 15);
+ const take=(a,b)=>pool.slice(a,b).map(sgpRef);
+ G.sgp={ top7:take(0,7), ch4:take(7,11), sec:pool[11]?sgpRef(pool[11]):null,
+         wilds:take(12,15), champ:null, champYear:null, seeded:true };
+ return G.sgp;
+}
+/* --- SKŁAD CYKLU: 15 stałych uczestników (art. "Line-up") --- */
+function sgpLineup(){
+ const S=ensureSgpSeed(), out=[], seen=new Set(), cnt={};
+ const lim=c=>(SGP.natCap[c]!=null) ? SGP.natCap[c] : SGP.natCapDef;
+ /* Limit krajowy obowiązuje w KOLEJNOŚCI PIERWSZEŃSTWA: najpierw kwalifikacja
+    z poprzedniego cyklu (tego nikt nikomu nie odbierze), potem Challenge,
+    mistrz Europy, a na końcu dzikie karty. Dzięki temu nikt wywalczonego
+    miejsca nie traci — przydział przycina wyłącznie dobór uznaniowy. */
+ const put=(r,how,hard)=>{
+   if(!r||seen.has(r.id)) return false;
+   const c=ctryOf(r);
+   if(!hard && (cnt[c]||0) >= lim(c)) return false;
+   seen.add(r.id); cnt[c]=(cnt[c]||0)+1; out.push({r, how, ctry:c}); return true;
+ };
+ (S.top7||[]).forEach((ref,i)=>put(sgpFind(ref), 'kwalifikacja z cyklu '+(G.year-1)+' — miejsce '+(i+1)+'.', true));
+ (S.ch4||[]).forEach((ref,i)=>put(sgpFind(ref), 'Challenge — miejsce '+(i+1)+'.', true));
+ if(S.sec) put(sgpFind(S.sec), 'Mistrz Europy (SEC) — miejsce gwarantowane', true);
+ (S.wilds||[]).forEach(ref=>put(sgpFind(ref), 'stała dzika karta Komisji'));
+ /* Braki (kontuzje, końce karier, mistrz Europy już w czołowej siódemce)
+    uzupełnia Komisja kolejnymi stałymi dzikimi kartami — już z limitem. */
+ const pool=worldRanking(r=>!isJun(r));
+ let i=0;
+ while(out.length<15 && i<pool.length){ put(pool[i++], 'stała dzika karta Komisji'); }
+ /* Awaryjnie (bardzo wąska pula) dopuszczamy złamanie limitu, żeby stawka
+    w ogóle się zebrała — lepszy cykl z nadreprezentacją niż cykl bez obsady. */
+ i=0;
+ while(out.length<15 && i<pool.length){ put(pool[i++], 'stała dzika karta Komisji', true); }
+ return out.slice(0,15);
+}
+
+/* ------------------------------------------------------------
+   CYKL — WSPÓLNY SILNIK DLA IMŚ I IMŚJ2
+   ------------------------------------------------------------ */
+function runGpSeries(cfg){
+ const {name, sub, perm, rounds, meId, ctx, prize, series, startFee, wildPool, jun, hosts} = cfg;
+ const total={}, wins={}, seenRef={};
+ perm.forEach(x=>{ total[x.r.id]=0; wins[x.r.id]=0; seenRef[x.r.id]=x.r; });
+ const roundsOut=[]; let rode=false;
+ const meStat={rounds:0, chartPts:0, finals:0, podiums:0, roundWins:0};
+ let money=0; const moneyParts=[];
+ for(let t=0;t<rounds;t++){
+   /* ------------------------------------------------------------
+      DZIKA KARTA RUNDY — SZESNASTY ZAWODNIK, INNY W KAŻDEJ RUNDZIE
+      Każda runda jedzie się w innym kraju i dziką kartę dostaje zawodnik
+      GOSPODARZY. Wcześniej brało się po prostu najlepszego z rankingu poza
+      stawką — a że polski ranking jest najliczniejszy, dziką kartę rundy
+      niemal zawsze dostawał Polak i cykl robił się jeszcze bardziej polski.
+      ------------------------------------------------------------ */
+   const host=(hosts && hosts.length) ? hosts[t % hosts.length] : null;
+   const seen=new Set(perm.map(x=>x.r.id));
+   const wcAll=(wildPool||[]).filter(r=>!seen.has(r.id));
+   const wcHome=host ? wcAll.filter(r=>ctryOf(r)===host) : [];
+   const wcPool = wcHome.length ? wcHome : wcAll;
+   const wc = wcPool.length ? wcPool[R(0,Math.min(4,wcPool.length-1))] : sgpSub(seen,0);
+   const fieldRows = perm.map(x=>worldRow(x.r));
+   if(wc) fieldRows.push(worldRow(wc));
+   while(fieldRows.length<16){ const s=sgpSub(new Set(fieldRows.map(f=>f.id)),0); if(!s) break; fieldRows.push(worldRow(s)); }
+   const field=fieldRows.slice(0,16);
+   const mi = meId!=null ? field.findIndex(r=>r.id===meId) : -1;
+   if(mi>=0) rode=true;
+   if(wc && total[wc.id]==null){ total[wc.id]=0; wins[wc.id]=0; seenRef[wc.id]=wc; }
+   field.forEach(f=>{ if(total[f.id]==null){ total[f.id]=0; wins[f.id]=0; seenRef[f.id]=f; } });
+   const Rn=gpRound(field, mi, mi>=0?ctx:null, name+' — RUNDA '+(t+1));
+   Rn.cls.forEach((ix,k)=>{ const id=field[ix].id; total[id]+=SGP.pts[k]||0; if(k===0) wins[id]++; });
+   if(mi>=0 && Rn.me){
+     meStat.rounds++; meStat.chartPts+=Rn.me.chartPts;
+     if(Rn.me.inFinal) meStat.finals++;
+     if(Rn.me.pos<=3) meStat.podiums++;
+     if(Rn.me.pos===1) meStat.roundWins++;
+     const pr=Math.round((prize[Rn.me.pos-1]||prize[prize.length-1]));
+     money+=pr+startFee;
+     moneyParts.push({w:'runda '+(t+1)+' — '+Rn.me.pos+'. miejsce', v:pr+startFee});
+   }
+   Rn.wild = wc ? {name:wc.name, ctry:ctryOf(wc)} : null;
+   Rn.host = host;
+   if(host) Rn.title = Rn.title + ' · GRAND PRIX — ' + ctryName(host).toUpperCase();
+   roundsOut.push(Rn);
+ }
+ const ids=Object.keys(total);
+ const cls=ids.map(id=>({id:Number(id), name:(seenRef[id]||{}).name||'—', ctry:ctryOf(seenRef[id]||{}),
+     pts:total[id], wins:wins[id]||0, me:meId!=null && Number(id)===meId}))
+   .sort((a,b)=> b.pts-a.pts || b.wins-a.wins);
+ const mePos = meId!=null ? cls.findIndex(c=>c.me)+1 : 0;
+ if(mePos>0){
+   const sp=Math.round(series[mePos-1]||series[series.length-1]);
+   money+=sp;
+   moneyParts.push({w:'klasyfikacja końcowa — '+mePos+'. miejsce', v:sp});
+ }
+ return {name, sub, rode, rounds:roundsOut, classification:cls, perm,
+   mePos, mePts: mePos>0 ? cls[mePos-1].pts : 0, meStat,
+   podium: cls.slice(0,3).map(c=>({name:c.name, ctry:c.ctry})),
+   champion: cls[0]? cls[0].name : null, championCtry: cls[0]? cls[0].ctry : null,
+   money: Math.round(money), moneyParts, jun:!!jun};
+}
+
+/* ------------------------------------------------------------
+   ELIMINACJE DO CYKLU + CHALLENGE + MISTRZOSTWA EUROPY
+   ------------------------------------------------------------
+   Droga do Grand Prix prowadzi przez eliminacje krajowe, a te kończą się
+   turniejem Challenge — to z niego wychodzi czterech nowych uczestników cyklu.
+     · POLSKA — kwalifikują się zdobywcy czterech pierwszych miejsc Złotego Kasku,
+     · ANGLIA, SZWECJA, DANIA — każdy z tych krajów ma własne eliminacje (po 3 miejsca),
+     · RESZTA ŚWIATA (Niemcy, Finlandia, Francja, USA, Ukraina, Argentyna, Czechy)
+       jedzie we WSPÓLNYCH eliminacjach i wyprowadza z nich tylko trzech — te
+       federacje stoją żużlowo słabiej i szerszy przydział rozwaliłby balans cyklu.
+   ------------------------------------------------------------ */
+function padField(rows, ctry, n, baseOvr){
+ while(rows.length<n){
+   rows.push(worldRow(makeWorldRider(ctry||'GBR', (baseOvr||45)-rows.length*1.2+gauss(0,4), R(17,30))));
+ }
+ return rows;
+}
+function natQual(ctryList, slots, title, meId, ctx, exclude){
+ const ex = exclude || new Set();
+ const pool = worldPool().filter(r=>ctryList.includes(r.ctry) && !ex.has(r.id))
+   .sort((a,b)=>b.ovr-a.ovr);
+ let rows=pool.slice(0,16).map(worldRow);
+ rows=padField(rows, ctryList[0], 16, rows.length?rows[rows.length-1].ovr:45);
+ const mi = meId!=null ? rows.findIndex(r=>r.id===meId) : -1;
+ const T=meeting20(rows, mi, mi>=0?ctx:null);
+ return {title, rows, T, mi,
+   through: T.slice(0,slots).map(t=>rows.find(r=>r.id===t.id)),
+   table: T.map((t,i)=>({pos:i+1, name:t.name, ctry:(rows.find(r=>r.id===t.id)||{}).ctry||ctryList[0],
+     pts:t.pts, me:t.me, through:i<slots}))};
+}
+function simWorldQualifiers(p, ctx, zkTop4, inGp){
+ const ex=new Set(inGp||[]);
+ const meR=G.riders.find(r=>r.me);
+ const meId = meR? meR.id : null;
+ const quals=[]; const field=[];
+ /* --- POLSKA: cztery pierwsze miejsca Złotego Kasku --- */
+ const pol=[];
+ (zkTop4||[]).forEach(x=>{ const r=G.riders.find(y=>y.id===x.id && !y.retired); if(r && !ex.has(r.id)) pol.push(r); });
+ if(pol.length<SGP.qual.POL){
+   ranking().filter(r=>!ex.has(r.id)).forEach(r=>{ if(pol.length<SGP.qual.POL && !pol.some(x=>x.id===r.id)) pol.push(r); });
+ }
+ pol.slice(0,SGP.qual.POL).forEach(r=>field.push(worldRow(r)));
+ quals.push({title:'ELIMINACJE KRAJOWE — POLSKA', note:'kwalifikują się zdobywcy czterech pierwszych miejsc ZŁOTEGO KASKU',
+   table: pol.slice(0,SGP.qual.POL).map((r,i)=>({pos:i+1, name:r.name, ctry:'POL', pts:null, me:!!r.me, through:true}))});
+ /* --- ANGLIA / SZWECJA / DANIA: osobne eliminacje --- */
+ [['GBR','ANGLIA'],['SWE','SZWECJA'],['DEN','DANIA']].forEach(([c,label])=>{
+   const q=natQual([c], SGP.qual[c], 'ELIMINACJE KRAJOWE — '+label, null, null, ex);
+   q.through.forEach(r=>{ if(r) field.push(r); });
+   quals.push({title:q.title, note:'awans: '+SGP.qual[c]+' pierwsze miejsca', table:q.table});
+ });
+ /* --- WSPÓLNE ELIMINACJE RESZTY ŚWIATA --- */
+ {
+  const q=natQual(SGP.restCtry, SGP.qual.REST, 'ELIMINACJE WSPÓLNE — POZOSTAŁE KRAJE', null, null, ex);
+  q.through.forEach(r=>{ if(r) field.push(r); });
+  quals.push({title:q.title, note:'Niemcy, Finlandia, Francja, USA, Ukraina, Argentyna, Czechy — razem, awans: '+SGP.qual.REST,
+    table:q.table});
+ }
+ /* --- CHALLENGE — 16 zawodników, tabela 20-biegowa, awans do cyklu dla TOP4 --- */
+ let rows=field.slice(0,16);
+ rows=padField(rows,'CZE',16, rows.length?rows[rows.length-1].ovr:50);
+ const mi = meId!=null ? rows.findIndex(r=>r.id===meId) : -1;
+ const T=meeting20(rows, mi, mi>=0?ctx:null);
+ const chTable=T.map((t,i)=>({pos:i+1, name:t.name, ctry:(rows.find(r=>r.id===t.id)||{}).ctry||'POL',
+   pts:t.pts, me:t.me, codes:t.codes}));
+ let money=0;
+ if(mi>=0){
+   const pos=T.findIndex(t=>t.me)+1;
+   money=Math.round((SGP.chPrize[pos-1]||SGP.chPrize[SGP.chPrize.length-1])+SGP.chStartFee);
+ }
+ return {quals, challenge:{title:'SGP CHALLENGE — OSTATNIA RUNDA ELIMINACJI', table:chTable, rode:mi>=0,
+   mePos: mi>=0 ? T.findIndex(t=>t.me)+1 : 0, mePts: mi>=0 ? T.find(t=>t.me).pts : 0, money},
+   order:T.map(t=>rows.find(r=>r.id===t.id)).filter(Boolean)};
+}
+/* --- MISTRZOSTWA EUROPY: zwycięzca ma miejsce w cyklu na kolejny rok --- */
+function simSEC(ctx, inGp){
+ const ex=new Set(inGp||[]);
+ const EU=['POL','GBR','SWE','DEN','GER','FIN','FRA','UKR','CZE','LAT','SVK'];
+ const meR=G.riders.find(r=>r.me);
+ const cand=worldRanking(r=>EU.includes(ctryOf(r))).filter(r=>!ex.has(r.id));
+ /* Mistrzostwa Europy to też turniej międzynarodowy, a nie polski finał
+    z zaproszonymi gośćmi — obsada 16 miejsc z limitem na federację. */
+ let rows=capPick(cand, SGP.secNatCap, SGP.secNatDef, 16).map(worldRow);
+ rows=padField(rows,'GER',16, rows.length?rows[rows.length-1].ovr:55);
+ const mi = meR ? rows.findIndex(r=>r.id===meR.id) : -1;
+ const T=meeting20(rows, mi, mi>=0?ctx:null);
+ const win=rows.find(r=>r.id===T[0].id);
+ let money=0;
+ if(mi>=0){ const pos=T.findIndex(t=>t.me)+1; money=Math.round(SGP.secPrize[pos-1]||SGP.secPrize[SGP.secPrize.length-1]); }
+ return {title:'INDYWIDUALNE MISTRZOSTWA EUROPY', rode:mi>=0,
+   table:T.map((t,i)=>({pos:i+1, name:t.name, ctry:(rows.find(r=>r.id===t.id)||{}).ctry||'POL', pts:t.pts, me:t.me})),
+   winner:win, mePos: mi>=0 ? T.findIndex(t=>t.me)+1 : 0, money};
+}
+
+/* ------------------------------------------------------------
+   CAŁY SEZON ŚWIATOWY — WOŁANY Z resolveSeason()
+   ------------------------------------------------------------ */
+function simWorldSeason(p, effOvr, defP, excP, zkTop4){
+ const meR=G.riders.find(r=>r.me);
+ if(meR){ meR.ovr=cl(Math.round(effOvr),1,99); meR.name=p.name; meR.age=p.age; }
+ const ctx={defP, excP};
+ ensureSgpSeed();
+ /* --- IMŚ: cykl seniorski --- */
+ const perm=sgpLineup();
+ const inGp=perm.map(x=>x.r.id);
+ /* Pula dzikich kart rundy: najlepsi spoza stawki, ale z limitem 3 na federację —
+    inaczej lista byłaby w całości polska i rotacja gospodarzy nic by nie dała.
+    Gracz dopisywany jest osobno, żeby dzika karta rundy była dla niego realną
+    drogą do Grand Prix, nawet gdy limit jego federacji jest już wypełniony. */
+ const wildRank=worldRanking(r=>!isJun(r)).filter(r=>!inGp.includes(r.id));
+ let wildPool=capPick(wildRank, {POL:4, DEN:3, SWE:3, GBR:3}, 3, 30);
+ if(meR && !inGp.includes(meR.id) && !wildPool.some(r=>r.id===meR.id)){
+   const meRow=wildRank.find(r=>r.id===meR.id);
+   if(meRow && wildRank.indexOf(meRow)<40) wildPool.push(meRow);
+ }
+ const ims=runGpSeries({
+   name:'INDYWIDUALNE MISTRZOSTWA ŚWIATA',
+   sub:'16 zawodników · 20 biegów + LCQ1, LCQ2 i finał (23 biegi) · '+SGP.rounds+' rund w cyklu',
+   perm, rounds:SGP.rounds, meId: meR?meR.id:null, ctx, hosts:SGP.hosts,
+   prize:SGP.prize, series:SGP.series, startFee:SGP.startFee, wildPool});
+ ims.lineup=perm.map(x=>({name:x.r.name, ctry:ctryOf(x.r), how:x.how}));
+ /* --- IMŚJ2: cykl juniorski, trzy rundy --- */
+ const jPool=worldRanking(isJun);
+ /* Ten sam problem co w seniorach: polska baza juniorów jest wielokrotnie
+    liczniejsza niż zagraniczne, więc bez limitów IMŚJ2 było turniejem polskim
+    z gośćmi. Limity te same co w cyklu seniorskim. */
+ let jSel=capPick(jPool, SGP.natCap, SGP.natCapDef, 15);
+ if(jSel.length<15){                       // za mało juniorów pod limitami — dobieramy resztę
+   const have=new Set(jSel.map(r=>r.id));
+   jSel=jSel.concat(jPool.filter(r=>!have.has(r.id)).slice(0,15-jSel.length));
+ }
+ const jPerm=jSel.map(r=>({r, how:'nominacja z rankingu juniorów ('+ctryName(ctryOf(r))+')'}));
+ const jIds=jPerm.map(x=>x.r.id);
+ const imsj = jPerm.length>=15 ? runGpSeries({
+   name:'INDYWIDUALNE MISTRZOSTWA ŚWIATA JUNIORÓW',
+   sub:'cykl IMŚJ2 · wyłącznie zawodnicy do 21 lat · tylko '+SGP.roundsJun+' rundy · format 23-biegowy',
+   perm:jPerm, rounds:SGP.roundsJun, meId:(meR && isJun(p))?meR.id:null, ctx,
+   prize:SGP.prize.map(v=>Math.round(v*SGP.junPrizeMul)),
+   series:SGP.series.map(v=>Math.round(v*SGP.junSeriesMul)),
+   startFee:Math.round(SGP.startFee*SGP.junPrizeMul), hosts:SGP.hostsJun,
+   wildPool:capPick(jPool.filter(r=>!jIds.includes(r.id)), {POL:4}, 3, 24), jun:true}) : null;
+ if(imsj) imsj.lineup=jPerm.map(x=>({name:x.r.name, ctry:ctryOf(x.r), how:x.how}));
+ /* --- ELIMINACJE, CHALLENGE, MISTRZOSTWA EUROPY --- */
+ const Q=simWorldQualifiers(p, ctx, zkTop4, inGp);
+ const sec=simSEC(ctx, inGp);
+ /* --- STAN NA KOLEJNY SEZON --- */
+ const top7ids=ims.classification.slice(0,7).map(c=>c.id);
+ const refOf=id=>{ const w=(G.world||[]).find(x=>x.id===id); if(w) return sgpRef(w);
+                   const r=(G.riders||[]).find(x=>x.id===id); return r?sgpRef(r):null; };
+ const nextTop7=ims.classification.slice(0,7).map(c=>refOf(c.id)).filter(Boolean);
+ /* Regulamin: jeżeli któryś z czwórki Challenge jest już w czołowej siódemce cyklu,
+    jego miejsce bierze najwyżej sklasyfikowany zawodnik Challenge, który jeszcze
+    nie ma kwalifikacji. */
+ /* ------------------------------------------------------------
+    LIMIT KRAJOWY NA WEJŚCIU Z CHALLENGE — LICZONY DYNAMICZNIE
+    ------------------------------------------------------------
+    Sam sztywny limit „2 z Challenge na kraj" nie wystarczał: przy pięciu
+    Polakach z kwalifikacji z poprzedniego cyklu plus dwóch z Challenge
+    robiło się siedmiu, w kolejnym roku dziewięciu i stawka znowu pełzła
+    w stronę jednonarodowej. Teraz przydział Challenge to RESZTA
+    przydziału federacji po odliczeniu tych, którzy już mają kwalifikację —
+    dzięki temu liczba zawodników jednego kraju w cyklu nie rośnie z roku
+    na rok, tylko stoi na ustalonym poziomie.
+    WYJĄTEK: GRACZ. Jeżeli wjedzie do czwórki Challenge, miejsce dostaje
+    zawsze — bo to jego główna droga do Grand Prix i nie może jej zamknąć
+    arytmetyka przydziałów. Wtedy jego kraj ma po prostu o jednego więcej.
+    ------------------------------------------------------------ */
+ const alreadyTop7=ctryCount(nextTop7, x=>x);
+ const chCnt={};
+ const natLim=c=>(SGP.natCap[c]!=null?SGP.natCap[c]:SGP.natCapDef);
+ const chLim=c=>Math.max(0, Math.min(SGP.chNatCap||2, natLim(c)-(alreadyTop7[c]||0)));
+ const ch4=[];
+ Q.order.forEach(r=>{
+   if(ch4.length>=4 || top7ids.includes(r.id)) return;
+   const isMe = meR && r.id===meR.id;
+   const c=ctryOf(r);
+   if(!isMe && (chCnt[c]||0) >= chLim(c)) return;
+   chCnt[c]=(chCnt[c]||0)+1; ch4.push(sgpRef(r));
+ });
+ const secRef = sec.winner && !top7ids.includes(sec.winner.id) ? sgpRef(sec.winner) : null;
+ const used=new Set([...top7ids, ...ch4.map(x=>x.id), ...(secRef?[secRef.id]:[])]);
+ /* Dzikie karty Komisji na kolejny sezon dobiera się już z uwzględnieniem tego,
+    ile miejsc dana federacja ma zaklepane z kwalifikacji i Challenge. */
+ const already=ctryCount([...nextTop7, ...ch4, ...(secRef?[secRef]:[])], x=>x);
+ const wildCaps={};
+ Object.keys(SGP.natCap).forEach(c=>{ wildCaps[c]=Math.max(0, SGP.natCap[c]-(already[c]||0)); });
+ const wilds=capPick(worldRanking(r=>!isJun(r)).filter(r=>!used.has(r.id)),
+   wildCaps, SGP.natCapDef, 4).map(sgpRef);
+ G.sgp={top7:nextTop7, ch4, sec:secRef, wilds, champ:ims.champion, champYear:G.year, seeded:true};
+ G.imsHist=(G.imsHist||[]).concat([{year:G.year, champ:ims.champion, ctry:ims.championCtry,
+   mePos:ims.mePos, mePts:ims.mePts}]).slice(-30);
+ return {ims, imsj, qual:Q, sec};
+}
+
 /* --- BARAŻE + AWANSE/SPADKI --- */
 function twoLeg(a,b){ // a = wyżej notowany
  const M1=simMeeting(a.name,b.name,null,null), M2=simMeeting(b.name,a.name,null,null);
  if(!M1||!M2) return {legs:[],agA:0,agB:0,win:a,lose:b};
  const agA=M1.hs+M2.as, agB=M1.as+M2.hs;
- return {legs:[{h:a.name,aw:b.name,hs:M1.hs,as:M1.as},{h:b.name,aw:a.name,hs:M2.hs,as:M2.as}],
+ return {legs:[{h:a.name,aw:b.name,hs:M1.hs,as:M1.as,heats:M1.heats,box:M1.box},
+               {h:b.name,aw:a.name,hs:M2.hs,as:M2.as,heats:M2.heats,box:M2.box}],
    agA, agB, win: agA>=agB?a:b, lose: agA>=agB?b:a};
 }
 /* ============================================================
@@ -3132,6 +3989,7 @@ function makeRenewOffer(){
  const p=G.p;
  if(!p || p.retired || !p.club) return null;
  if(p.contract.years<1) return null;                       // i tak wchodzisz na rynek
+ if((p.longInjury||0)>0) return null;                      // po operacji nikt nie przedłuża w ciemno
  if(p.loyalty<=70) return null;                            // warunek z założenia: lojalność > 70
  if(p.next.noRenew) return null;
  if(p.next.lockTransfer>0) return null;                    // masz już dziesięciolatkę od prezesa
@@ -3160,7 +4018,7 @@ function makeRenewOffer(){
 function acceptRenew(o){
  const p=G.p;
  p.contract={type:o.type, years:o.years, rate:o.rate, bonus:o.bonus};
- p.budget += o.bonus; p.career.earned += o.bonus;
+ /* jak wyżej: premia leci co sezon, nie raz przy podpisie */
  p.loyalty = cl(p.loyalty+14, 0, 100);
  p.prof    = cl(p.prof+2, 0, 99);
  p.next.noRenew=false;
@@ -3176,6 +4034,32 @@ function makeOffers(){
  const p=G.p, cands=[];
  let oldMiss=null;                 // dlaczego stary klub odpadł z listy
  G.noRenew=null;
+ /* ============================================================
+    ZERWANE WIĘZADŁA / ZŁAMANE UDO — RYNEK SIĘ ZAMYKA
+    ------------------------------------------------------------
+    Zgłoszenie gracza: „przy dłuższej kontuzji, o ile nie pojedziemy
+    w następnym sezonie, żaden klub nie powinien nam zaproponować kontraktu".
+    Do tej pory zawodnik z p.longInjury>0 (czyli taki, który CAŁY nadchodzący
+    sezon spędzi po operacji) dostawał normalne oferty i podpisywał umowę,
+    z której klub nie miał ani jednego biegu. Żaden zarząd tego nie zrobi:
+    zawodnik nie ma licencji na sezon, w którym leży w gipsie.
+    Teraz rynek jest dla niego zamknięty — zostaje "PRZECZEKAJ ROK"
+    (rehabilitacja odlicza sezon) albo praca u mechanika.
+    ============================================================ */
+ if((p.longInjury||0)>0){
+   G.market={rating:0, parts:[], maxOffers:0,
+     maxWhy:[{d:0, w:'kontuzja długoterminowa — w sezonie '+G.year+' nie odjedziesz ani jednego biegu'}],
+     lastAvg:null, interested:0, checked:allClubs().length, floor:null,
+     age:p.age, prof:p.prof, med:p.med, ovr:p.ovr, longInjury:true};
+   G.noRenew={code:'injury', club:p.club||'—', lk:p.lk,
+     t:'NIKT NIE PODPISUJE KONTRAKTU Z ZAWODNIKIEM PO OPERACJI',
+     x:'Masz za sobą zerwane więzadła / złamaną kość udową. Cały sezon '+G.year+' to rehabilitacja — '+
+       'w rubryce startowej nie pojawisz się ani razu. Kluby zgłaszają skład na cały rok i nie zamrażają '+
+       'miejsca dla kogoś, kto wróci najwcześniej za dwanaście miesięcy.',
+     quote:'Wracaj na tor, wtedy pogadamy. Teraz nie mam czym cię zgłosić.',
+     tip:'Przeczekaj rok — rehabilitacja odlicza sezon, a po nim rynek otworzy się normalnie.'};
+   return [];
+ }
  const lastAvg = G.history.length ? (G.history[G.history.length-1].avg||0) : 1.4;
  const MV = marketValue(p, lastAvg);
  const rating = MV.rating;
@@ -3354,8 +4238,9 @@ function signContract(o){
  p.club=o.club; p.lk=o.lk; p.next.noRenew=false; p.idleYears=0; p.idleLog=[];
  const meR=G.riders.find(r=>r.me); if(meR){meR.club=o.club; meR.age=p.age; meR.ovr=p.ovr;}
  p.contract={type:o.type, years:o.years, rate:o.rate, bonus:o.bonus};
- p.budget += o.bonus;
- p.career.earned += o.bonus;
+ /* PREMIA ZA PODPIS NIE JEST JUŻ JEDNORAZOWA — wypłaca się na starcie KAŻDEGO
+    sezonu objętego umową (patrz startSeason w engine.js). Dlatego tu nic nie
+    dopisujemy do budżetu; pierwsza rata wpłynie razem z pierwszym sezonem. */
  if(o.type==='Amatorski'){
    const c=getClub(p);
    /* NAPRAWA SPRZĘTOWA: warunek czytał się jako "pierwszy kontrakt w karierze",

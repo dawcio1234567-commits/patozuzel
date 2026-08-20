@@ -9,9 +9,75 @@
    Wyświetlane na ekranie tytułowym (scCreate w index.html).
    Najnowszy wpis na górze.
    ============================================================ */
-const GAME_UPDATE='20.08.2026';
+const GAME_UPDATE='21.08.2026';
 const GAME_X='@polskizuzlowiec';
 const CHANGELOG=[
+ {v:'21.08.2026 · HOTFIX', t:'HOTFIX: KLIKANIE W WYNIK MECZU I ZBYT WIELU POLAKÓW W CYKLACH ŚWIATOWYCH', l:[
+  'NAPRAWA: KLIKNIĘCIE W WYNIK MECZU NIC NIE ROBIŁO. Argumenty przycisku szły przez JSON.stringify(), który opakowuje napisy w PODWÓJNY cudzysłów — a cały handler siedzi w atrybucie onclick="...". Pierwszy taki cudzysłów zamykał atrybut, więc przeglądarka dostawała połamany HTML i przycisk był po prostu martwy. Argumenty składane są teraz ręcznie, w apostrofach. Przetestowane automatem, który wyciąga z wygenerowanego HTML wszystkie klikalne wyniki i naprawdę je klika: 192 na 192 otwierają kartę meczową z tabelą punktów wszystkich zawodników i przebiegiem bieg po biegu.',
+
+  'NAPRAWA BALANSU: W CYKLACH MIĘDZYNARODOWYCH BYŁO ZA DUŻO POLAKÓW — realnie 11 do 13 miejsc na 15 w składzie Grand Prix. Powód był czysto statystyczny, nie sportowy: polska liga to ponad 250 zawodników w bazie, a każda federacja zagraniczna miała ich kilkanaście, więc przy doborze "po prostu najlepszych" Polska brała stawkę samą masą. Wprowadzone zostały LIMITY KRAJOWE, tak jak w prawdziwym cyklu: Polska 5 miejsc, Dania 3, Szwecja 3, Anglia 2, pozostałe federacje po 2. Efekt po kilkunastu przetestowanych sezonach: skład to zwykle 5 Polaków, 3 Duńczyków, 3 Szwedów, 1-2 Anglików i 1-2 zawodników z Czech, Niemiec, Finlandii czy USA, a tytuł mistrza świata wędruje między federacjami.',
+
+  'Limit działa W KOLEJNOŚCI PIERWSZEŃSTWA i nikomu nie odbiera wywalczonego miejsca: kwalifikacja z poprzedniego cyklu, awans z Challenge i tytuł Mistrza Europy są nietykalne — przydział przycina wyłącznie dobór uznaniowy, czyli dzikie karty Komisji. Dodatkowo przydział z Challenge liczy się DYNAMICZNIE (jako reszta limitu federacji po odliczeniu tych, którzy już mają kwalifikację), żeby liczba zawodników jednego kraju nie pełzła w górę z roku na rok.',
+
+  'WYJĄTEK DLA GRACZA: jeżeli wjedziesz do czwórki SGP Challenge, miejsce w cyklu dostajesz ZAWSZE, nawet gdy limit Polski jest już wypełniony — to twoja główna droga do Grand Prix i nie zamyka jej arytmetyka przydziałów.',
+
+  'NOWE: KAŻDA RUNDA GRAND PRIX MA GOSPODARZA. Rundy jadą kolejno w Polsce, Szwecji, Danii, Anglii, Niemczech, znowu w Polsce, Czechach, Szwecji, Danii i Polsce — a dziką kartę rundy dostaje zawodnik GOSPODARZY. Wcześniej brało się najlepszego z rankingu poza stawką, więc dziką kartę rundy niemal zawsze dostawał Polak. Nazwa kraju widoczna jest teraz w tytule każdej rundy.',
+
+  'ZBALANSOWANE: reszta świata mocniejsza i głębsza. Czołowe federacje mają teraz po 16 zawodników z łagodniejszą drabinką (Dania 97, Szwecja 96, Anglia 93 na czele), pozostałe po 10. Korekta poziomu federacji między sezonami jest ostrzejsza (próg z 4 na 2 punkty) — bez tego Szwecja albo Anglia potrafiły zapaść się na kilkanaście sezonów, gdy jedno pokolenie kończyło kariery naraz.',
+
+  'NAPRAWA: KAŻDA FEDERACJA MA WŁASNY NARYBEK. Zdarzało się, że cały rocznik danego kraju kończył kariery w tym samym czasie i przez kilka sezonów nie było KOGO wystawić do IMŚJ2 — wtedy limity krajowe nie miały czego przycinać i cykl juniorski robił się polski (potrafiło być 9-11 Polaków na 15). Każdy kraj trzyma teraz minimum trzech zawodników do 21 lat, a przy generowaniu świata cztery ostatnie miejsca każdej federacji to z założenia juniorzy. IMŚJ2 jest po tej poprawce równie międzynarodowe jak cykl seniorski.',
+
+  'Bez zmian: Puchar PALET zostaje cyklem z dużym udziałem Polaków — to było wprost w zgłoszeniu i tak ma zostać.'
+ ]},
+ {v:'21.08.2026', t:'PATCH: MISTRZOSTWA ŚWIATA, STATYSTYKI INDYWIDUALNE LIG, PODGLĄD MECZÓW I PORZĄDKI W PUNKTACH BONUSOWYCH', l:[
+  'Największy patch od premiery. Poniżej wszystko, co się zmieniło — z wyjaśnieniem, na czym polegał problem, tam gdzie to była realna naprawa, a nie sam balans.',
+
+  'NOWE: INDYWIDUALNE MISTRZOSTWA ŚWIATA (IMŚ). Pełny cykl, format jeden do jednego z regulaminu: 16 zawodników, 20 biegów zasadniczych (3-2-1-0, wykluczenie i defekt = 0 punktów), dwóch najlepszych z tabeli jedzie prosto do finału, miejsca 3-10 rozstawione są na dwa biegi ostatniej szansy LCQ1 i LCQ2, zwycięzcy dołączają do finału, a zwycięzca finału wygrywa rundę. Razem 23 biegi. Dziesięć rund w sezonie, klasyfikacja generalna liczona punktami za miejsca w rundach.',
+
+  'NOWE: SKŁAD CYKLU WEDŁUG REGULAMINU. Siedmiu najlepszych z poprzedniego roku ma kwalifikację automatyczną, czterech dochodzi z SGP Challenge, jedno miejsce jest gwarantowane dla Mistrza Europy (a jeżeli mistrz Europy i tak jest w czołowej siódemce, Komisja przyznaje czwartą stałą dziką kartę zamiast trzeciej). Szesnastkę każdej rundy dopełnia dzika karta rundy, do tego dwóch rezerwowych toru. W zakładce IMŚ widać przy każdym nazwisku, KTÓRĄ DROGĄ ten zawodnik wszedł do cyklu.',
+
+  'NOWE: ELIMINACJE DO CYKLU. W Polsce eliminacją jest ZŁOTY KASK — jego czterej najlepsi jadą do SGP Challenge. Anglia, Szwecja i Dania mają własne eliminacje krajowe (po trzy miejsca). Pozostałe federacje (Niemcy, Finlandia, Francja, USA, Ukraina, Argentyna, Czechy) jadą we WSPÓLNYCH eliminacjach i wyprowadzają z nich tylko trzech — stoją żużlowo słabiej i szerszy przydział rozwaliłby balans cyklu. Z Challenge do Grand Prix wchodzi czterech; jeżeli któryś z tej czwórki i tak kończy sezon w czołowej siódemce cyklu, jego miejsce bierze kolejny zawodnik Challenge bez kwalifikacji — dokładnie jak w regulaminie.',
+
+  'NOWE: INDYWIDUALNE MISTRZOSTWA ŚWIATA JUNIORÓW (IMŚJ2) — ten sam, 23-biegowy format, wyłącznie dla zawodników do 21 lat, ale na życzenie tylko TRZY RUNDY w sezonie.',
+
+  'NOWE: INDYWIDUALNE MISTRZOSTWA EUROPY (SEC) — osobny turniej finałowy, którego zwycięzca ma miejsce w cyklu Grand Prix na kolejny rok.',
+
+  'NOWE: RESZTA ŚWIATA. Do gry wchodzi trwała pula zawodników z Danii, Szwecji, Wielkiej Brytanii, Czech, Niemiec, Finlandii, USA, Francji, Argentyny i Ukrainy. Starzeją się, rozwijają i kończą kariery tak samo jak Polacy, a na ich miejsce wchodzą nowi — cykl światowy ma więc ciągłość między sezonami, a nie losuje sobie stawki od zera co rok.',
+
+  'NAPRAWA NAJŚMIESZNIEJSZEGO BŁĘDU W GRZE: mistrz świata dostawał mniej pieniędzy niż przeciętny ligowiec. Powód był prozaiczny — cyklu światowego w grze po prostu nie było, a wszystko, co indywidualne, płaciło ryczałtami PZM (500 zł startowego, 150 zł za punkt). Teraz Grand Prix płaci jak Grand Prix: ryczałt startowy za każdą rundę, nagroda za miejsce w rundzie i osobna, największa pula za miejsce w klasyfikacji końcowej. Mistrz świata zarabia w jednym sezonie więcej niż przeciętny ligowiec przez pół kariery.',
+
+  'ODPOWIEDŹ NA PYTANIE „czy każdy mecz jest symulowany wg silnika, z siódemką na drużynę": sprawdzone i rozpisane. Liga (14 kolejek × 4 mecze × 3 ligi) oraz CAŁA faza play-off, play-down, dwumecze o utrzymanie i baraże zawsze szły przez ten sam silnik — 7 zawodników w każdej drużynie, 15 biegów, numery 9-15 u gospodarza i 1-7 u gościa, rezerwa taktyczna i biegi nominowane włącznie. Audyt trzech pełnych sezonów: 612 spotkań, 15 biegów w każdym, zero wyników poza regulaminowym zakresem, zero zawodników z więcej niż pięcioma startami. Skład 7-osobowy w 1207 przypadkach na 1224; pozostałe 17 to sytuacja regulaminowa, a nie błąd — klub, któremu na daną kolejkę zabrakło DRUGIEGO zdrowego zawodnika U21 (kontuzje, bunt płacowy, zbiorowa kraksa kadry), jedzie z pustym numerem młodzieżowym, bo seniora nie wolno tam wpisać. To zachowanie było w grze od zawsze i zostaje. Turnieje indywidualne jadą tabelą 20-biegową (16 zawodników po 5 startów) i tak ma być. JEDYNYM miejscem, gdzie wynik brał się z rzutu kością na poziom drużyny zamiast z przejechanych biegów, było DMPJ — i to zostało naprawione (niżej).',
+
+  'NAPRAWA: DMPJ jest teraz symulowane biegami. Czwórmecz to 4 drużyny po 4 juniorów (16 zawodników), 24 biegi, w każdym po jednym zawodniku z każdej drużyny, po 6 startów na zawodnika, z defektami i wykluczeniami liczonymi jak w lidze. Punkty meczowe 4/3/2/1 wg sumy punktów biegowych, przy remisie dzielone po równo (art. 804 ust. 3).',
+
+  'NAPRAWA: W LIDZE NIE BYŁO WIDAĆ, KTÓRY BIEG DAŁ PUNKT BONUSOWY. Silnik liczył bonus poprawnie, ale do kodów biegu wpisywał samą liczbę punktów — gwiazdka „2★"/„1★" istniała WYŁĄCZNIE w uproszczonym generatorze DMPJ, czyli dokładnie tam, gdzie punktów bonusowych w ogóle być nie powinno. Teraz jest odwrotnie i zgodnie z regulaminem: bonus zapisuje się przy biegu ligowym (i w play-offie), a z turniejów indywidualnych i z DMPJ gwiazdki zniknęły — w czwórmeczu i w turnieju indywidualnym nie ma pary klubowej, więc nie ma za kogo jechać.',
+
+  'ZMIANA: PUNKTY BONUSOWE LICZĄ SIĘ DO ŚREDNIEJ BIEGOPUNKTOWEJ. To punkty zdobyte na torze dla drużyny, więc wchodzą do średniej — w lidze, w play-offie i w dorobku łącznym. Do wyniku spotkania nadal nie wchodzą, bo tam liczy się goła punktacja biegowa.',
+
+  'NOWE: PODGLĄD SPOTKANIA. Kliknięcie w dowolny wynik — ligowy, play-off, play-down albo barażowy — otwiera kartę meczową: tabelę ze zdobyczą punktową WSZYSTKICH zawodników obu drużyn (numer startowy, starty, punkty, bonusy, kody biegów) oraz przebieg bieg po biegu z wynikiem narastająco. W zakładce LIGA doszła sekcja ze wszystkimi wynikami wszystkich trzech lig, kolejka po kolejce.',
+
+  'NOWE: STATYSTYKI INDYWIDUALNE DLA KAŻDEJ Z LIG. Osobna zakładka z klasyfikacją średnich w Ekstralidze, 2. Ekstralidze i Krajowej Lidze Żużlowej — juniorzy (U21) i seniorzy klasyfikowani ODDZIELNIE. Zdjęcie robione jest po rundzie zasadniczej, minimum 12 startów, średnia liczona razem z bonusami.',
+
+  'NOWE: OCENA SEZONU BIERZE POD UWAGĘ MIEJSCE W TEJ KLASYFIKACJI. Ta sama średnia znaczy co innego w Ekstralidze i co innego w Krajowej Lidze, i co innego u 17-latka niż u 30-latka — dlatego junior porównywany jest z juniorami, senior z seniorami, i to w obrębie własnej ligi. Pierwsze miejsce daje pełną premię, środek stawki jest neutralny, ogon klasyfikacji zabiera punkty. Osobna, wyraźnie wyższa premia leci za medale i czołową ósemkę cyklu światowego.',
+
+  'NOWE: ROZWIJANA LISTA „CO WPŁYNĘŁO NA TWÓJ OVR W TYM SEZONIE" na ekranie podsumowania. Widać w niej każdą zmianę OVR co do punktu: skutek zdarzenia, kontuzję z konkretnej kolejki i pełną rozpiskę rozwoju po sezonie (wiek, profesjonalizm, dyspozycja, atmosfera, budżet klubu, zaległości, poziom kolegów z kadry, sufit talentu).',
+
+  'NAPRAWA: zdarzenia dodające OVR faktycznie dodawały OVR (fxO zmienia kartę zawodnika od razu), ale KONTROLA WYKONANIA o tym milczała — nie było takiej rubryki. Stąd zgłoszenie „to się nie wyświetla". Teraz OVR ze zdarzenia ma własny wiersz w kontroli wykonania, razem ze stanem OVR na start sezonu.',
+
+  'ZMIANA: OVR ROZWIJA SIĘ SZYBCIEJ W KLUBIE Z LEPSZĄ ATMOSFERĄ I WIĘKSZYM BUDŻETEM. Do tej pory otoczenie nie miało z rozwojem nic wspólnego: 16-latek w klubie z pustą kasą, zaległościami i szatnią na noże rósł dokładnie tak samo jak ten sam 16-latek w mistrzowskim zespole ze sprzętem na miejscu i fizjoterapeutą. Teraz atmosfera, zamożność klubu, jego zaległości wobec ciebie i poziom kolegów z kadry liczą się jawnie — i widać je w rozpisce OVR.',
+
+  'ZMIANA: PREMIA ZA PODPIS WYPŁACANA JEST CO SEZON, a nie raz przy podpisaniu kontraktu. Wcześniej przy umowie na cztery lata trzy sezony szły bez grosza premii. Teraz rata premii wpływa na starcie każdego sezonu objętego umową — i tak jak stawka za punkt podlega wypłacalności klubu (klub bez kasy dopisze ją sobie do zaległości).',
+
+  'BALANS: SPRZĘT ZA MILION MUSI ROBIĆ RÓŻNICĘ. Zgłoszenie: „najdroższa część daje tylko +40, co jest kompletnie niezbalansowane". Racja — skala sprzętu ma 99 punktów, zużycie zabiera 16-26 punktów w KAŻDYM sezonie, a górna półka kosztuje 1,15 mln zł. Cała drabinka tunerów przeskalowana (z 3/7/10/12/16/21/26/32/40 na 6/12/18/24/32/42/52/64/78): najtańszy złom z OLX to dalej łatanie dziur, ale pełen program u tunera na wyłączność realnie wsadza zawodnika na sprzęt klasy mistrzowskiej.',
+
+  'ZMIANA: PRZY KONTUZJI DŁUGOTERMINOWEJ ŻADEN KLUB NIE ZŁOŻY CI OFERTY. Zawodnik po zerwanych więzadłach / złamanym udzie, który cały nadchodzący sezon spędza na rehabilitacji, dostawał do tej pory normalne oferty i podpisywał umowę, z której klub nie miał ani jednego biegu. Żaden zarząd tego nie zrobi. Rynek jest teraz dla niego zamknięty (razem z przedłużeniem „one-club man"), zostaje przeczekanie roku — rehabilitacja odlicza sezon — albo praca u mechanika.',
+
+  'ZMIANA: TURNIEJE SZKOLENIOWE TO CYKL OŚMIU TURNIEJÓW, nie jeden. Wcześniej gra rozgrywała jedną rundę i uznawała sprawę za zamkniętą, tłumacząc, że reszta cyklu toczy się bez twojego udziału — przy ośmiu turniejach w kalendarzu to była po prostu nieprawda. Klasyfikacja końcowa to suma punktów z ośmiu rund, przy remisie wyżej ten, kto lepiej pojechał w turnieju rozegranym później.',
+
+  'ZMIANA: PUCHAR MACEC NAZYWA SIĘ TERAZ PUCHAR PALET. Druga poprawka z tego samego zgłoszenia: w cyklu jeżdżą TEŻ POLACY. Wcześniej stawkę robiło piętnastu obcokrajowców i samotny Gracz — teraz obok niego startuje kilku krajowych zawodników z tej samej półki, a resztę uzupełniają rywale ze Słowacji, Czech, Rumunii, Bułgarii, Węgier i Ukrainy.',
+
+  'DROBNE: karta kariery ma nowe gabloty (Indywidualne Mistrzostwa Świata, IMŚJ2, cykl Turniejów Szkoleniowych, Puchar PALET), rozliczenie sezonu pokazuje osobne rubryki na ratę premii za podpis i na pieniądze z cyklu światowego, a legendy wyników i turniejów zostały przepisane pod nowe zasady punktów bonusowych.'
+ ]},
  {v:'20.08.2026', t:'PATCH: TRYBUNAŁ PZM, PUCHAR MACEC, TURNIEJE SZKOLENIOWE I NAPRAWY ZGŁOSZONE PRZEZ GRACZY', l:[
   'Duży patch po zbiorczym feedbacku. Poniżej, co dokładnie się zmieniło — z konkretnym wyjaśnieniem, na czym polegał problem, tam gdzie to była realna naprawa, nie tylko balans.',
 
@@ -88,6 +154,9 @@ const BAL={
  home    : 2.4,    // atut własnego toru
  rounds  : 14      // kolejek w sezonie zasadniczym
 };
+
+/* Ile turniejów liczy CYKL TURNIEJÓW SZKOLENIOWYCH (patch 21.08.2026 — było: jeden). */
+const SZK_ROUNDS = 8;
  
 /* ============================================================
    WIEK EMERYTALNY — DYNAMICZNY (czyta go retireAgeOf() w engine.js)
@@ -232,7 +301,24 @@ const GRADE={
  medal   : [0, 0.34, 0.20, 0.12],  // złoto / srebro / brąz w turnieju indywidualnym
  injW    : 0.025, // za każde spotkanie opuszczone przez kontuzję (do injMax)
  injMax  : 0.14,
- bonusPts: 0.06   // za sezon z 8+ punktami bonusowymi (jazda na kolegę)
+ bonusPts: 0.06,  // za sezon z 8+ punktami bonusowymi (jazda na kolegę)
+ /* ------------------------------------------------------------
+    POZYCJA W STATYSTYKACH INDYWIDUALNYCH LIGI (patch 21.08.2026)
+    Sezon ocenia się nie tylko po własnej średniej, ale też po tym, JAK
+    WYPADŁEŚ NA TLE KONKURENCJI Z TEJ SAMEJ LIGI I TEJ SAMEJ KATEGORII
+    WIEKOWEJ — junior porównywany z juniorami, senior z seniorami.
+    Średnia 1,60 w Ekstralidze i średnia 1,60 w Krajowej Lidze to dwie
+    zupełnie różne rzeczy; ranking to wreszcie widzi.
+    indRankW  — maksymalna premia za 1. miejsce w swojej kategorii,
+    indRankP  — maksymalna kara za ostatnie miejsce,
+    indRankMin— minimalna liczba startów, żeby ranking w ogóle liczył.
+    ------------------------------------------------------------ */
+ indRankW  : 0.34,
+ indRankP  : -0.16,
+ indRankMin: 12,
+ /* SUKCESY W CYKLU ŚWIATOWYM — inna półka niż mistrzostwa Polski */
+ imsMedal  : [0, 0.60, 0.40, 0.26],
+ imsTop8   : 0.12
 };
  
 /* `budget` = z czym wchodzisz w dorosłość. U większości klas jest UJEMNY:
@@ -291,16 +377,27 @@ const LKEYS=['EL','E2','KL'];
    ma gotówkę: tuner nie odda czterech silników komuś, kto gubi termin przeglądu,
    a sztab z Anglii nie podpisze się pod zawodnikiem, który śpi w busie do 11:00.
    `risk` = szansa, że zapłacisz i dostaniesz bubla. */
+/* ------------------------------------------------------------
+   BALANS 21.08.2026 — SPRZĘT ZA MILION MUSI ROBIĆ RÓŻNICĘ
+   Zgłoszenie gracza: "najdroższa część daje tylko +40, co jest kompletnie
+   niezbalansowane". Racja. Skala sprzętu ma 99 punktów, zużycie zabiera
+   16-26 punktów W KAŻDYM sezonie, a górna półka kosztuje 1,15 mln zł —
+   przy +40 pełen program u tunera na wyłączność ledwo odrabiał dwa lata
+   zajeżdżania i nigdy nie dawał sprzętu klasy mistrzowskiej. Cała drabinka
+   przeskalowana tak, żeby CENA szła w parze z EFEKTEM: najtańszy złom z OLX
+   to dalej łatanie dziur, ale komplet od topowego tunera realnie wsadza
+   zawodnika na sprzęt 90+.
+   ------------------------------------------------------------ */
 const TUNERS=[
- {n:'Używany silnik z OLX ("mało jeżdżony, garażowany")',  c:22000,   e:3,  risk:35, prof:0},
- {n:'Szlif u Ryśka "Turbo" z Gorzowa',                     c:60000,   e:7,  risk:18, prof:0},
- {n:'Kadłub po sezonie od kolegi z 2. Ekstraligi',         c:95000,   e:10, risk:12, prof:15},
- {n:'Rama Ellis + komplet nowych kół',                     c:145000,  e:12, risk:0,  prof:20},
- {n:'Silnik po tuningu u R. Kowalskiego',                  c:215000,  e:16, risk:4,  prof:30},
- {n:'Dwa silniki od Kowalskiego + serwis w trakcie sezonu',c:340000,  e:21, risk:2,  prof:42},
- {n:'Pakiet GM prosto od angielskiego tunera',             c:480000,  e:26, risk:0,  prof:55},
- {n:'Cztery silniki od topowego tunera + skrzynia części', c:720000,  e:32, risk:0,  prof:66},
- {n:'Pełen program: 6 silników, dwie ramy, tuner na wyłączność', c:1150000, e:40, risk:0, prof:78}
+ {n:'Używany silnik z OLX ("mało jeżdżony, garażowany")',  c:22000,   e:6,  risk:35, prof:0},
+ {n:'Szlif u Ryśka "Turbo" z Gorzowa',                     c:60000,   e:12, risk:18, prof:0},
+ {n:'Kadłub po sezonie od kolegi z 2. Ekstraligi',         c:95000,   e:18, risk:12, prof:15},
+ {n:'Rama Ellis + komplet nowych kół',                     c:145000,  e:24, risk:0,  prof:20},
+ {n:'Silnik po tuningu u R. Kowalskiego',                  c:215000,  e:32, risk:4,  prof:30},
+ {n:'Dwa silniki od Kowalskiego + serwis w trakcie sezonu',c:340000,  e:42, risk:2,  prof:42},
+ {n:'Pakiet GM prosto od angielskiego tunera',             c:480000,  e:52, risk:0,  prof:55},
+ {n:'Cztery silniki od topowego tunera + skrzynia części', c:720000,  e:64, risk:0,  prof:66},
+ {n:'Pełen program: 6 silników, dwie ramy, tuner na wyłączność', c:1150000, e:78, risk:0, prof:78}
 ];
 const MECHS=[
  {n:'Szwagier Mirek (pomaga po godzinach)',            q:15, c:14000,   prof:0},
@@ -487,6 +584,7 @@ const fxLongInj = (what) => {
  p.longInjury = Math.max(p.longInjury||0, INJ.catSeasons);
  const dmg = R(INJ.catDmgMin, INJ.catDmgMax);
  p.ovr = cl(p.ovr-dmg, 1, 99);
+ if(typeof logOvr==='function') logOvr(-dmg, 'zerwane więzadła / złamane udo (zdarzenie)');
  G.S.forcedEnd = true;
  G.S.longInjuryNew = (what||'Zerwane więzadła krzyżowe.');
  G.S.longInjuryDmg = dmg;
@@ -2633,20 +2731,147 @@ const NAZW=['Nowak','Wiśniewski','Wójcik','Kamiński','Zieliński','Szymański
  'Kaźmierczak','Sobczak','Czerwiński','Konieczny','Kaczmarek','Głowacki','Bednarek','Ziółkowski'];
 
 /* ============================================================
-   PULA NAZWISK ZAGRANICZNYCH — PUCHAR MACEC
-   Fikcyjne imiona i nazwiska z krajów startujących w Pucharze MACEC
-   (Słowacja, Czechy, Rumunia, Bułgaria, Węgry, Ukraina), używane WYŁĄCZNIE
-   do wygenerowania stawki rywali w simMacecCup() (engine.js). Żadna z tych
-   osób nie odpowiada realnemu zawodnikowi.
+   PULA NAZWISK ZAGRANICZNYCH — PUCHAR PALET (dawniej "MACEC")
+   ------------------------------------------------------------
+   ZMIANA 21.08.2026: cykl nazywa się teraz PUCHAR PALET. Druga poprawka
+   ze zgłoszenia: w tym cyklu jeżdżą TEŻ POLACY — wcześniej stawkę robiło
+   piętnastu obcokrajowców i samotny Gracz, co nie miało sensu przy cyklu,
+   do którego Polska wystawia własnych zawodników. Teraz część stawki to
+   krajowi zawodnicy z rankingu (patrz simIndividual w engine.js), a poniższa
+   pula uzupełnia ją o rywali z zagranicy. Nikt z tej listy nie odpowiada
+   realnemu zawodnikowi.
    ============================================================ */
-const MACEC_NAMES=[
+const PALET_NAMES=[
  {n:'Ján Baláž',        c:'SVK'}, {n:'Tomáš Vrba',        c:'SVK'}, {n:'Filip Krajčí',    c:'SVK'},
  {n:'Ondřej Novotný',   c:'CZE'}, {n:'Václav Beneš',      c:'CZE'}, {n:'Jakub Procházka', c:'CZE'},
  {n:'Cristian Dumitrescu', c:'ROU'}, {n:'Andrei Popescu', c:'ROU'},
  {n:'Ivan Georgiev',    c:'BGR'}, {n:'Dimitar Petrov',    c:'BGR'},
  {n:'Bálint Kovács',    c:'HUN'}, {n:'Zsolt Nagy',        c:'HUN'},
- {n:'Andrij Kovalenko', c:'UKR'}, {n:'Roman Tkachenko',   c:'UKR'}, {n:'Ołeksandr Bondar', c:'UKR'}
+ {n:'Andrij Kovalenko', c:'UKR'}, {n:'Roman Tkachenko',   c:'UKR'}, {n:'Ołeksandr Bondar', c:'UKR'},
+ {n:'Miroslav Hlaváč',  c:'SVK'}, {n:'Petr Šimek',        c:'CZE'}, {n:'Marius Ionescu',  c:'ROU'},
+ {n:'Krasimir Iliev',   c:'BGR'}, {n:'Gábor Szabó',       c:'HUN'}, {n:'Serhij Melnyk',   c:'UKR'}
 ];
+/* Zgodność wsteczna: stare zapisy i ewentualne mody wołające MACEC_NAMES. */
+const MACEC_NAMES=PALET_NAMES;
+
+/* ============================================================
+   ŚWIAT — PULE IMION I NAZWISK DO CYKLU INDYWIDUALNYCH MISTRZOSTW ŚWIATA
+   ------------------------------------------------------------
+   Cykl IMŚ (w papierach FIM: "Speedway Grand Prix") potrzebuje stawki spoza
+   Polski. Zagraniczni zawodnicy generują się raz, na starcie gry, i żyją
+   dalej razem z resztą świata: starzeją się, rozwijają, kończą kariery,
+   a na ich miejsce wchodzą nowi (patrz worldInit()/worldAge() w engine.js).
+   Imiona i nazwiska losowane są z par poniżej — podobieństwo do realnych
+   zawodników jest przypadkowe.
+   ============================================================ */
+const WORLD_NAMES = {
+ GBR:{f:['Daniel','Robert','Craig','Tai','Adam','Charles','Lewis','Scott','Kyle','Jordan','Nathan','Tom','Harry','Connor'],
+      l:['Woodward','Blackwell','Fairhurst','Kentwell','Marsden','Hollingworth','Prescott','Ashcroft','Ravenscroft','Whitmore','Dunhill','Cartwright']},
+ SWE:{f:['Fredrik','Anton','Jonas','Oskar','Kim','Linus','Pontus','Viktor','Hampus','Elias','Melker','Anders'],
+      l:['Lindqvist','Hagberg','Sjöström','Wikander','Norling','Öberg','Fahlström','Bergqvist','Almgren','Rundqvist','Hjalmarsson','Sundell']},
+ DEN:{f:['Mikkel','Rasmus','Jonas','Anders','Frederik','Kasper','Emil','Nikolaj','Mads','Lasse','Benjamin','Oliver'],
+      l:['Vestergaard','Kjeldsen','Thorup','Bjerregaard','Holmgaard','Frandsen','Lindgren','Overgaard','Skovgaard','Nyborg','Ravn','Hjort']},
+ GER:{f:['Kevin','Martin','Sebastian','Erik','Tobias','Lukas','Dominik','Norick','Sandro','Marius'],
+      l:['Wiesenthal','Brockmann','Steinhauer','Kuhnert','Hellwig','Rothbauer','Faltermeier','Vogelsang','Reinhold','Dittmann']},
+ FIN:{f:['Timo','Jesse','Tero','Antti','Joonas','Ville','Niko','Eetu','Mika','Aleksi'],
+      l:['Lahtinen','Virtanen','Koskinen','Rautio','Mäkinen','Salminen','Heikkilä','Nurminen','Ranta','Ojala']},
+ FRA:{f:['Dimitri','Mathieu','Steven','Gaëtan','Lucas','David','Théo','Kevin','Antoine','Jules'],
+      l:['Berger','Rousseau','Lemaitre','Chapelle','Vandenberg','Ducloux','Marchand','Perrault','Fontaine','Renaudin']},
+ USA:{f:['Billy','Ryan','Broc','Dalton','Luke','Chad','Austin','Cameron','Tanner','Bryce'],
+      l:['Stancil','Whitmore','Kellerman','Rooney','Baldwin','Hendricks','Prescott','Colter','Rankin','Vandell']},
+ UKR:{f:['Andrij','Ołeksandr','Serhij','Marko','Bohdan','Wołodymyr','Ihor','Wiktor','Denys','Rusłan'],
+      l:['Kovalenko','Tkaczenko','Bondarenko','Melnyk','Szewczenko','Klymenko','Dorosz','Hrycenko','Lysenko','Romaniuk']},
+ ARG:{f:['Facundo','Emiliano','Nicolás','Joaquín','Matías','Ignacio','Tomás','Lautaro','Franco','Bruno'],
+      l:['Vergara','Quiroga','Ferreyra','Balbuena','Sandoval','Rivadavia','Ocampo','Cardozo','Peralta','Maldonado']},
+ CZE:{f:['Ondřej','Václav','Jakub','Petr','Daniel','Marek','Vojtěch','Adam','Michal','Tomáš'],
+      l:['Novotný','Beneš','Procházka','Šimek','Havlíček','Dvořák','Kučera','Zeman','Pospíšil','Vávra']},
+ AUS:{f:['Jason','Max','Brady','Rohan','Jaimon','Cooper','Declan','Zach','Mitchell','Kai'],
+      l:['Fricke','Harwood','Kurtz','Bellingham','Trelawney','Mansfield','Cadwell','Buckley','Hargraves','Nettleton']},
+ LAT:{f:['Andžejs','Ričards','Oļegs','Kaspars','Jānis','Mareks'],
+      l:['Ļebedevs','Vasiļjevs','Ozoliņš','Bērziņš','Kalniņš','Zvirbulis']},
+ SVK:{f:['Ján','Tomáš','Filip','Martin','Adam','Michal'],
+      l:['Baláž','Vrba','Krajčí','Hlaváč','Bartoš','Kováč']}
+};
+/* Nazwy krajów po polsku — do tabel i podium. */
+const WORLD_CTRY = {POL:'Polska', GBR:'Wielka Brytania', SWE:'Szwecja', DEN:'Dania', GER:'Niemcy',
+ FIN:'Finlandia', FRA:'Francja', USA:'USA', UKR:'Ukraina', ARG:'Argentyna', CZE:'Czechy',
+ AUS:'Australia', LAT:'Łotwa', SVK:'Słowacja'};
+
+/* ============================================================
+   INDYWIDUALNE MISTRZOSTWA ŚWIATA — REGULAMIN I KASA
+   ------------------------------------------------------------
+   Format jeden do jednego z regulaminu cyklu:
+     · 16 zawodników w każdej rundzie, 20 biegów zasadniczych,
+     · 3 pkt za wygrany bieg, 2 za drugie miejsce, 1 za trzecie, 0 za czwarte,
+       wykluczenie albo nieukończenie biegu,
+     · dwóch najlepszych z tabeli jedzie prosto do FINAŁU,
+     · miejsca 3-10 trafiają do biegów ostatniej szansy LCQ1 i LCQ2,
+       zwycięzca każdego z nich dołącza do finału,
+     · zwycięzca finału wygrywa rundę. Razem 23 biegi.
+   Skład cyklu (art. "Line-up"):
+     · 7 najlepszych z poprzedniego roku — kwalifikacja automatyczna,
+     · 4 najlepszych z Challenge (ostatniej rundy eliminacji do cyklu),
+     · Mistrz Europy (SEC) — miejsce gwarantowane,
+     · 3 stałe dzikie karty od Komisji (4, gdy mistrz Europy jest w czołowej
+       siódemce cyklu),
+     · plus jedna dzika karta rundy — ona dopełnia szesnastkę,
+     · dwóch rezerwowych toru na każdą rundę.
+   NAJŚMIESZNIEJSZE W POPRZEDNIEJ WERSJI GRY BYŁO TO, ŻE MISTRZ ŚWIATA
+   DOSTAWAŁ MNIEJ PIENIĘDZY NIŻ PRZECIĘTNY LIGOWIEC. Stawki niżej to
+   naprawiają: sam ryczałt startowy w jednej rundzie cyklu jest wyższy niż
+   dniówka w Krajowej Lidze, a klasyfikacja końcowa płaci jak mistrzostwo świata.
+   ============================================================ */
+const SGP = {
+ rounds    : 10,          // rund Grand Prix w sezonie
+ roundsJun : 3,           // IMŚJ2 (juniorzy) — na życzenie: tylko trzy rundy
+ /* punkty do klasyfikacji generalnej za miejsce 1-16 w rundzie */
+ pts       : [20,18,16,14,12,11,10,9,8,7,6,5,4,3,2,1],
+ /* nagroda za miejsce w POJEDYNCZEJ rundzie (zł) */
+ prize     : [90000,70000,55000,45000,38000,33000,29000,26000,23000,20000,18000,16000,14000,12000,10000,9000],
+ startFee  : 15000,       // ryczałt startowy za każdą rundę, niezależnie od wyniku
+ /* nagroda za miejsce w KLASYFIKACJI KOŃCOWEJ cyklu (zł) */
+ series    : [1250000,820000,560000,410000,320000,265000,215000,175000,145000,120000,100000,84000,70000,60000,52000,45000],
+ /* IMŚJ2 — ta sama drabinka, ale młodzieżowe stawki */
+ junPrizeMul : 0.30,
+ junSeriesMul: 0.26,
+ /* SGP CHALLENGE — ostatnia runda eliminacji, awans do cyklu dla TOP4 */
+ chPrize   : [140000,105000,80000,62000,50000,42000,36000,31000,27000,23000,20000,17000,15000,13000,11000,10000],
+ chStartFee: 9000,
+ /* MISTRZOSTWA EUROPY (SEC) — zwycięzca ma gwarantowane miejsce w cyklu */
+ secPrize  : [220000,150000,110000,85000,70000,58000,49000,42000,36000,31000,27000,24000,21000,18000,16000,14000],
+ /* ------------------------------------------------------------
+    LIMITY KRAJOWE W CYKLU (hotfix 21.08.2026)
+    ------------------------------------------------------------
+    Zgłoszenie: „w cyklach międzynarodowych występuje za dużo Polaków".
+    Powód był czysto statystyczny: polska liga to ponad 250 zawodników
+    w bazie, a każda federacja zagraniczna miała ich kilkanaście — więc
+    przy doborze „po prostu najlepszych" Polska brała 11-13 miejsc z 15
+    samą masą, a nie klasą. Prawdziwy cykl działa inaczej: Komisja pilnuje,
+    żeby stawka była MIĘDZYNARODOWA, a federacje mają przydziały.
+    Poniżej twarde limity na skład cyklu — Polska zostaje najsilniejszą
+    federacją (5 z 15), ale przestaje być całą stawką.
+    ------------------------------------------------------------ */
+ natCap    : {POL:5, DEN:3, SWE:3, GBR:2},
+ natCapDef : 2,           // limit dla pozostałych federacji
+ chNatCap  : 2,           // ile miejsc z jednego kraju może dać jeden Challenge
+ secNatCap : {POL:4},     // Mistrzostwa Europy — obsada 16, Polaków maksymalnie tylu
+ secNatDef : 3,
+ /* GOSPODARZE RUND — każda runda jedzie się w innym kraju, a dziką kartę rundy
+    dostaje zawodnik gospodarzy. Bez tego dzika karta rundy zawsze szła do Polaka
+    (bo ranking polski jest najliczniejszy) i cykl robił się jeszcze bardziej polski. */
+ hosts     : ['POL','SWE','DEN','GBR','GER','POL','CZE','SWE','DEN','POL'],
+ hostsJun  : ['POL','DEN','SWE'],
+ /* OBSADA ELIMINACJI DO CHALLENGE — ile miejsc daje która droga (razem 16).
+    Polska: TOP4 Złotego Kasku. Anglia, Szwecja i Dania mają własne eliminacje.
+    Reszta świata (Niemcy, Finlandia, Francja, USA, Ukraina, Argentyna, Czechy)
+    jedzie w JEDNYCH wspólnych eliminacjach i wyprowadza z nich tylko trzech —
+    bo to jednak słabsze żużlowo kraje i inaczej rozwaliłyby balans cyklu. */
+ qual      : {POL:4, GBR:3, SWE:3, DEN:3, REST:3},
+ restCtry  : ['GER','FIN','FRA','USA','UKR','ARG','CZE'],
+ /* liczebność świata poza Polską (generowana na starcie gry) */
+ worldSize : 96
+};
+
 
 /* ============================================================
    PULA IMION I NAZWISK DLA PROPOZYCJI NA EKRANIE TWORZENIA POSTACI

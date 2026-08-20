@@ -213,7 +213,7 @@ function infoBox(){
   <div class="p-4 space-y-2 text-[12px] text-zinc-200 leading-relaxed">
    <div><b style="color:#eab308">Wszelkie bugi proszę zgłaszać, oznaczając profil twórcy
      <span class="text-zinc-100">${GAME_X}</span> na X.</b></div>
-<div><b style="color:#eab308">Gra jest w wersji beta. Brakuje wiele ważnych turniejów, takich jak Turniej Szkoleniowy, reprezentacji narodowej, czy choćby Indywidualnych Mistrzostw Świata. Wszystko będzie dodawane sukcesywnie w updateach.
+<div><b style="color:#eab308">Gra jest w wersji beta. Od patcha 21.08.2026 w grze jeżdżą już Indywidualne Mistrzostwa Świata (z eliminacjami krajowymi, Challenge i Mistrzostwami Europy), Indywidualne Mistrzostwa Świata Juniorów, pełny cykl ośmiu Turniejów Szkoleniowych i Puchar PALET. Wciąż brakuje m.in. rozgrywek reprezentacyjnych — będą dodawane sukcesywnie w updateach.
    <div class="text-zinc-300">Podobieństwo do wszelkich wydarzeń, nazwisk i klubów do rzeczywistości jest przypadkowe.</div>
    <div class="text-[11px] text-zinc-400">Ostatni update: <b class="text-zinc-300">${GAME_UPDATE}</b></div>
   </div></div>`;
@@ -242,6 +242,8 @@ function doCreate(){
  const c=document.querySelector('input[name=cls]:checked').value;
  G.p=newPlayer(n,c);
  genAllSquads();
+ worldInit();                       // reszta świata (cykl IMŚ) rodzi się razem z nową karierą
+ ensureSgpSeed();                   // pierwszy skład Grand Prix — zanim ruszy pierwszy sezon
  const meR=makeRider(G.p.age, G.p.ovr); meR.me=true; meR.name=G.p.name; G.riders.push(meR);
  G.screen='sign'; render();
 }
@@ -253,7 +255,7 @@ function doCreate(){
    ============================================================ */
 function noRenewBox(){
  const n=G.noRenew; if(!n) return '';
- const col={behave:'#dc2626', sport:'#f59e0b', money:'#f59e0b', gone:'#dc2626', squad:'#a1a1aa'}[n.code]||'#a1a1aa';
+ const col={behave:'#dc2626', sport:'#f59e0b', money:'#f59e0b', gone:'#dc2626', squad:'#a1a1aa', injury:'#dc2626'}[n.code]||'#a1a1aa';
  return `<div class="brut mb-3" style="border-color:${col}">
   <div class="brut-h px-3 py-1.5 text-[11px] font-bold" style="border-color:${col};color:${col}">
     BEZ PRZEDŁUŻENIA — ${esc(n.club)} ${n.lk?'· '+G.leagues[n.lk].short:''}</div>
@@ -280,7 +282,12 @@ function scSign(){
    return head()+`<div class="brut border-red-900 fade">
    <div class="brut-h px-3 py-1.5 text-[11px] text-red-500 font-bold" style="border-color:#7f1d1d">RYNEK TRANSFEROWY ${G.year} // BRAK OFERT</div>
    <div class="p-5">
-   <div class="text-zinc-300 mb-3">Żaden klub w Polsce nie chce cię widzieć na torze. Telefon milczy.</div>
+   ${(p.longInjury||0)>0
+     ? `<div class="text-zinc-300 mb-3">Rynek jest dla ciebie zamknięty — nie przez formę, tylko przez papiery.
+        Po zerwanych więzadłach / złamanym udzie cały sezon ${G.year} spędzisz na rehabilitacji, a klub nie zgłosi do rozgrywek
+        zawodnika, który nie odjedzie ani jednego biegu.</div>`
+     : `<div class="text-zinc-300 mb-3">Żaden klub w Polsce nie chce cię widzieć na torze. Telefon milczy.</div>`}
+   ${longInjuryWarnHtml()}
    ${marketBox()}
    ${noRenewBox()}
    <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
@@ -330,7 +337,7 @@ function scSign(){
    <div class="mt-2 grid grid-cols-3 gap-2 text-[11px]">
      <div><div class="text-zinc-400">KONTRAKT</div><div class="${o.type==='Zawodowy'?'text-emerald-400':'text-zinc-300'}">${o.type}</div></div>
      <div><div class="text-zinc-400">ZA PUNKT</div><div class="text-zinc-100">${zl(o.rate)}</div></div>
-     <div><div class="text-zinc-400">ZA PODPIS</div><div class="text-zinc-100">${o.bonus?zl(o.bonus):'—'}</div></div>
+     <div><div class="text-zinc-400">PREMIA CO SEZON</div><div class="text-zinc-100">${o.bonus?zl(o.bonus):'—'}</div></div>
    </div>
    <div class="mt-2">
      <div class="flex justify-between text-[11px]"><span class="text-zinc-400">SZANSA NA JAZDĘ W SKŁADZIE</span>
@@ -629,6 +636,37 @@ function playerStrip(){
 }
 
 /* ---- EKRAN: HUB / MIĘDZYSEZONIE ---- */
+/* ---- HUB: STATUS W CYKLU ŚWIATOWYM ----
+   Gracz musi wiedzieć PRZED sezonem, czy ma miejsce w Grand Prix i którą drogą
+   może się do niego dostać — inaczej cykl światowy jest niewidzialny do momentu
+   podsumowania sezonu. */
+function worldStatusBox(){
+ try{
+  if(typeof ensureSgpSeed!=='function') return '';
+  const meR=G.riders.find(r=>r.me); if(!meR) return '';
+  ensureSgpSeed();
+  const perm=sgpLineup();
+  const mine=perm.find(x=>x.r.id===meR.id);
+  const champ=(G.imsHist&&G.imsHist.length)?G.imsHist[G.imsHist.length-1]:null;
+  const jun=isJun(G.p);
+  return `<div class="brut mb-3" style="border-color:#a16207">
+   <div class="brut-h px-3 py-1.5 text-[11px] font-bold" style="border-color:#a16207;color:#eab308">
+     CYKL ŚWIATOWY ${G.year} — INDYWIDUALNE MISTRZOSTWA ŚWIATA</div>
+   <div class="p-3 text-[11px] leading-relaxed">
+    ${mine
+      ? `<div class="text-[13px] font-extrabold" style="color:#eab308">MASZ MIEJSCE W CYKLU GRAND PRIX ${G.year}.</div>
+         <div class="text-zinc-300">Podstawa: ${esc(mine.how)}. ${SGP.rounds} rund, 16 zawodników w każdej, 23 biegi na rundę.</div>`
+      : `<div class="text-zinc-300">Nie masz stałego miejsca w cyklu Grand Prix ${G.year}.
+         Droga do niego: <b class="text-zinc-200">TOP 4 Złotego Kasku → SGP Challenge → TOP 4 Challenge</b>,
+         tytuł Mistrza Europy albo dzika karta Komisji. Zdarza się też dzika karta pojedynczej rundy.</div>`}
+    ${jun?`<div class="text-pink-400 mt-1">Jako zawodnik U21 jesteś w puli nominacyjnej IMŚJ2 — trzy rundy, ten sam format.</div>`:''}
+    ${champ?`<div class="text-zinc-400 mt-1">Aktualny mistrz świata (${champ.year}): <b class="text-zinc-300">${esc(champ.champ||'—')}</b>
+      ${champ.ctry?'('+esc(ctryName(champ.ctry))+')':''}.</div>`:''}
+    <div class="text-zinc-400 mt-1">Nagrody: ${zl(SGP.startFee)} ryczałtu za każdą rundę, ${zl(SGP.prize[0])} za wygraną rundę,
+     ${zl(SGP.series[0])} za mistrzostwo świata w klasyfikacji końcowej.</div>
+   </div></div>`;
+ }catch(_){ return ''; }
+}
 function scHub(){
  const p=G.p, club=getClub(p);
  const banInfo = p.banSeasons>0 ? `<div class="brut p-3 mb-3 border-red-900"><div class="text-red-500 font-bold tracking-widest blink">ZAWIESZENIE AKTYWNE: ${p.banSeasons} sezon(y)</div><div class="text-[11px] text-zinc-300">Nie wolno ci startować. Sezon przeleci obok ciebie.</div></div>`:'';
@@ -638,6 +676,7 @@ function scHub(){
  ${longInjuryWarnHtml()}
  ${squadHtml()}
  ${outlookBox()}
+ ${worldStatusBox()}
  ${warnings()}
  ${p.contract.type==='Zawodowy'?workshop():amateurNote()}
  ${G.history.length?historyBox():''}
@@ -719,13 +758,13 @@ function squadHtml(){
 /* ---- ŚREDNIE ZAWODNIKÓW KADRY ZA SEZON ---- */
 function squadStatsHtml(r){
  const sq=squadOf(r.club).filter(x=>x.sea&&x.sea.starts>0)
-   .sort((a,b)=>(b.sea.pts/b.sea.starts)-(a.sea.pts/a.sea.starts));
+   .sort((a,b)=>((b.sea.pts+b.sea.bon)/b.sea.starts)-((a.sea.pts+a.sea.bon)/a.sea.starts));
  if(!sq.length) return '';
  return `<div class="brut mt-3"><div class="brut-h px-3 py-1.5 text-[11px] text-orange-500 font-bold">ŚREDNIE ZAWODNIKÓW — ${esc(r.club)}</div>
  <div class="p-2 overflow-x-auto"><table class="w-full text-[11px]">
  <thead><tr class="text-[11px] text-zinc-400 tracking-widest border-b border-zinc-700">
   <th class="text-left">ZAWODNIK</th><th>WIEK</th><th>KAT.</th><th>M</th><th>BIEGI</th><th>PKT</th><th>BON</th><th>DEF</th><th>WYK</th><th>ZMIAN</th><th>FORMA</th><th>ŚR.</th></tr></thead>
- <tbody>${sq.map(x=>{const s=x.sea, av=(s.pts/s.starts);
+ <tbody>${sq.map(x=>{const s=x.sea, av=((s.pts+s.bon)/s.starts);
    return `<tr class="${x.me?'rowhl':''} border-b border-zinc-700/60">
    <td class="${x.me?'text-orange-400 font-bold':'text-zinc-200'} truncate max-w-[200px]">${esc(x.name)}${x.me?' (TY)':''}</td>
    <td class="text-center text-zinc-300">${x.age}</td>
@@ -736,7 +775,7 @@ function squadStatsHtml(r){
    <td class="text-center text-[11px] ${(x.form||0)>0.5?'text-emerald-400':(x.form||0)<-0.5?'text-red-400':'text-zinc-400'}">${(x.form||0)>0?'+':''}${Math.round((x.form||0)*10)/10}</td>
    <td class="text-center ${av>=2?'text-emerald-400':av>=1.4?'text-lime-400':'text-zinc-300'} font-bold">${av.toFixed(2)}</td></tr>`;}).join('')}
  </tbody></table>
- <div class="text-[11px] text-zinc-400 mt-1.5">Kolumna ZMIAN = ile razy zawodnik był zdejmowany na rzecz rezerwy — te biegi nie wchodzą do jego startów ani do średniej.
+ <div class="text-[11px] text-zinc-400 mt-1.5">Średnia = (punkty + bonusy) ÷ biegi. Kolumna ZMIAN = ile razy zawodnik był zdejmowany na rzecz rezerwy — te biegi nie wchodzą do jego startów ani do średniej.
   FORMA = dyspozycja na koniec sezonu (−12…+12); to ona, razem z OVR, decydowała o numerach startowych w kolejnych meczach.</div>
  </div></div>`;
 }
@@ -954,7 +993,7 @@ function scRenew(){
      <div class="text-[12px] text-zinc-100">${o.type}</div>
      <div class="text-[12px] text-orange-400 font-bold">${zl(o.rate)} za punkt <span class="text-[11px] ${up>=0?'text-emerald-400':'text-red-400'}">(${up>=0?'+':''}${up}%)</span></div>
      <div class="text-[12px] text-zinc-100">${o.years} ${lataTxt(o.years)} — do końca sezonu ${G.year+o.years-1}</div>
-     <div class="text-[12px] text-zinc-300">za podpis: ${o.bonus?zl(o.bonus):'—'}</div>
+     <div class="text-[12px] text-zinc-300">premia co sezon: ${o.bonus?zl(o.bonus):'—'}</div>
     </div>
    </div>
    ${o.ratingParts?`<details class="mb-4 border border-zinc-700">
@@ -1063,6 +1102,7 @@ function scEvSum(){
 /* ---- EKRAN: PODSUMOWANIE SEZONU ---- */
 function seasonTabs(r){
  const t=[{k:'sezon',n:'PODSUMOWANIE'},{k:'liga',n:'LIGA'},{k:'po',n:'PLAY-OFF'}];
+ if(r.leagueStats) t.push({k:'stats',n:'STATYSTYKI INDYWIDUALNE'});
  if(r.dmpj&&r.dmpj.eligible) t.push({k:'dmpj',n:'DMPJ'});
  const I=r.ind||{};
  if(I.imp&&I.imp.rode)   t.push({k:'imp', n:'IMP'});
@@ -1070,8 +1110,13 @@ function seasonTabs(r){
  if(I.zk&&I.zk.rode)     t.push({k:'zk',  n:'ZŁOTY KASK'});
  if(I.sk&&I.sk.rode)     t.push({k:'sk',  n:'SREBRNY KASK'});
  if(I.bk&&I.bk.rode)     t.push({k:'bk',  n:'BRĄZOWY KASK'});
- if(I.szk&&I.szk.rode)   t.push({k:'szk', n:'TURNIEJ SZKOLENIOWY'});
- if(I.macec&&I.macec.rode) t.push({k:'macec', n:'PUCHAR MACEC'});
+ if(I.szk&&I.szk.rode)   t.push({k:'szk', n:'TURNIEJE SZKOLENIOWE'});
+ if(I.palet&&I.palet.rode) t.push({k:'palet', n:'PUCHAR PALET'});
+ /* --- CYKL ŚWIATOWY --- */
+ const W=r.world;
+ if(W&&W.ims)  t.push({k:'ims', n:'IMŚ'+(W.ims.rode?'':' (świat)')});
+ if(W&&W.imsj) t.push({k:'imsj',n:'IMŚJ2'+(W.imsj.rode?'':' (świat)')});
+ if(W&&W.qual) t.push({k:'chal',n:'ELIMINACJE / CHALLENGE'});
  return t;
 }
 function setTab(k){G.tabView=k;render();}
@@ -1090,10 +1135,16 @@ function scSummary(){
   <button onclick="retire()" class="btn-d px-5 py-3 font-bold tracking-widest text-red-400">ZAKOŃCZ KARIERĘ</button>
  </div></div>`;
  const V=G.tabView;
- if(V==='liga')  return head()+`<div class="fade">${bar}${ligaView(r)}${foot}`;
- if(V==='po')    return head()+`<div class="fade">${bar}${phaseHtml(r)}${playoffHtml()}${foot}`;
+ /* PODGLĄD SPOTKANIA — wisi nad każdą zakładką, dopóki go nie zamkniesz */
+ const mv = G.matchView ? matchModalHtml() : '';
+ if(V==='liga')  return head()+`<div class="fade">${bar}${mv}${ligaView(r)}${foot}`;
+ if(V==='po')    return head()+`<div class="fade">${bar}${mv}${phaseHtml(r)}${playoffHtml()}${foot}`;
+ if(V==='stats') return head()+`<div class="fade">${bar}${leagueStatsHtml(r)}${foot}`;
  if(V==='dmpj')  return head()+`<div class="fade">${bar}${dmpjHtml(r)}${foot}`;
- if(['imp','mimp','zk','sk','bk','szk','macec'].includes(V)) return head()+`<div class="fade">${bar}${indHtml(r.ind[V],r)}${foot}`;
+ if(V==='ims')   return head()+`<div class="fade">${bar}${imsHtml(r.world?r.world.ims:null,r)}${foot}`;
+ if(V==='imsj')  return head()+`<div class="fade">${bar}${imsHtml(r.world?r.world.imsj:null,r)}${foot}`;
+ if(V==='chal')  return head()+`<div class="fade">${bar}${imsQualHtml(r)}${foot}`;
+ if(['imp','mimp','zk','sk','bk','szk','palet','macec'].includes(V)) return head()+`<div class="fade">${bar}${indHtml(r.ind[V],r)}${foot}`;
  return head()+`<div class="fade">
  ${bar}
  <div class="brut mb-3"><div class="brut-h px-3 py-1.5 text-[11px] text-orange-500 font-bold">PODSUMOWANIE SEZONU ${r.year} // ${esc(r.club)} (${r.league})</div>
@@ -1122,9 +1173,10 @@ function scSummary(){
    <div class="text-[11px] text-zinc-400 border border-zinc-700 px-3 py-2">
    biegi ukończone = ${r.heats} − (${r.defects} + ${r.exclusions}) = <b class="text-zinc-300">${r.completed}</b> ·
    maks. możliwe punkty = ${r.completed}×3 = <b class="text-zinc-300">${r.completed*3}</b> ·
-   średnia = ${r.pts} ÷ ${r.heats} = <b class="text-zinc-300">${r.avgTxt}</b>
+   średnia = (${r.pts} pkt + ${r.bonus} bonusowych) ÷ ${r.heats} = <b class="text-zinc-300">${r.avgTxt}</b>
    ${r.replaced?` · byłeś zmieniany przez rezerwę <b class="text-zinc-300">${r.replaced}×</b> — te biegi nie wchodzą do liczby startów`:''} ·
-   punkty bonusowe (${r.bonus}) nie wchodzą do dorobku drużyny ani do średniej — <b class="text-sky-400">wchodzą do twojego portfela</b>
+   <b class="text-sky-400">PUNKTY BONUSOWE LICZĄ SIĘ DO ŚREDNIEJ BIEGOPUNKTOWEJ</b> (zmiana z 21.08.2026): to punkty zdobyte na torze dla drużyny,
+   więc wchodzą do średniej i do portfela — do wyniku spotkania nie wchodzą, bo tam liczy się goła punktacja biegowa
   </div>`)}</div>
   <div class="grid md:grid-cols-2 gap-3">
    <div class="brut p-3">
@@ -1144,6 +1196,7 @@ function scSummary(){
     ${evEffectsHtml(r)}
    </div>
   </div>
+  ${ovrLogHtml(r)}
   ${careerOverHtml(r)}
   ${longInjuryHtml(r)}
   ${bankruptHtml(r)}
@@ -1165,6 +1218,12 @@ function evEffectsHtml(r){
  const ok=(t)=>L.push({t, c:'text-emerald-400'});
  const bad=(t)=>L.push({t, c:'text-red-400'});
  const neu=(t)=>L.push({t, c:'text-zinc-300'});
+ /* OVR ZE ZDARZENIA — rubryka, której tu brakowało. Zdarzenia typu „+2 OVR"
+    naprawdę dodawały OVR (fxO zmienia G.p.ovr od razu), ale kontrola wykonania
+    o tym milczała, więc wyglądało to na błąd. Teraz widać to czarno na białym,
+    a pełna rozpiska jest w boksie „CO WPŁYNĘŁO NA TWÓJ OVR". */
+ if(E.ovrEvent)     (E.ovrEvent>0?ok:bad)('OVR ze zdarzenia: '+(E.ovrEvent>0?'+':'')+E.ovrEvent+
+   ' — zapisane na stałe w twojej karcie (OVR na start sezonu: '+(E.ovrFrom!=null?E.ovrFrom:'—')+')');
  if(E.fines)        bad('Kary finansowe pobrane z budżetu: '+zl(E.fines));
  if(E.rateMul!==1)  (E.rateMul>1?ok:bad)('Stawka za punkt w tym sezonie: ×'+E.rateMul.toFixed(2)+' — rozliczona przy każdej kolejce');
  if(E.noEarnings)   bad('Zrzeczenie się wynagrodzenia wykonane: z ligi nie wpłynął ani grosz');
@@ -1217,9 +1276,14 @@ function ligaView(r){
  return `<div class="grid lg:grid-cols-2 gap-3">
   <div class="brut"><div class="brut-h px-3 py-1.5 text-[11px] text-orange-500 font-bold">RUNDA ZASADNICZA — ${r.leagueName} · TY: ${r.posReg}. → PO PLAY-OFF: ${r.pos}.</div>
   <div class="p-2 overflow-x-auto">${tableHtml(r.lk)}</div></div>
-  <div class="brut"><div class="brut-h px-3 py-1.5 text-[11px] text-orange-500 font-bold">WYNIKI SPOTKAŃ — ${esc(r.club)}</div>
+  <div class="brut"><div class="brut-h px-3 py-1.5 text-[11px] text-orange-500 font-bold">WYNIKI SPOTKAŃ — ${esc(r.club)} <span class="text-zinc-400">· kliknij wynik, żeby zobaczyć przebieg meczu</span></div>
   <div class="p-2 max-h-[420px] overflow-y-auto">${myResultsHtml(r)}</div></div>
  </div>
+ <div class="brut mt-3"><div class="brut-h px-3 py-1.5 text-[11px] text-orange-500 font-bold">
+   WSZYSTKIE WYNIKI — KOLEJKA PO KOLEJCE <span class="text-zinc-400">· kliknij dowolny wynik, żeby zobaczyć tabelę punktów i biegi</span></div>
+ <div class="p-2 grid lg:grid-cols-3 gap-3">
+  ${LKEYS.map(k=>`<div><div class="text-[11px] text-zinc-400 tracking-widest mb-1">${G.leagues[k].name}</div>${allResultsHtml(k)}</div>`).join('')}
+ </div></div>
  <div class="brut mt-3"><div class="brut-h px-3 py-1.5 text-[11px] text-orange-500 font-bold">POZOSTAŁE LIGI</div>
  <div class="p-2 grid lg:grid-cols-2 gap-3">
   ${LKEYS.filter(k=>k!==r.lk).map(k=>`<div><div class="text-[11px] text-zinc-400 tracking-widest mb-1">${G.leagues[k].name}</div>${tableHtml(k)}</div>`).join('')}
@@ -1297,25 +1361,28 @@ function settleHtml(r){
  <div class="text-[11px] text-orange-600 tracking-widest mb-2">ROZLICZENIE Z KLUBEM</div>
  <table class="w-full text-[11px]">
   ${row('Punkty ligowe: '+r.pts+' × '+zl(Math.round(r.earned/Math.max(1,r.pts))), zl(r.earned))}
-  ${r.bonus?row('Punkty bonusowe: '+r.bonus+' (nie liczą się drużynie)', zl(r.earnedBon),'text-sky-400'):''}
+  ${r.bonus?row('Punkty bonusowe: '+r.bonus+' (liczą się do twojej średniej, nie do wyniku meczu)', zl(r.earnedBon),'text-sky-400'):''}
+  ${r.signBonusOwed?row('PREMIA ZA PODPIS — rata za ten sezon'+((r.signBonusOwed>r.signBonus)?' (klub wypłacił część)':''), '+'+zl(r.signBonus||0),'text-emerald-400'):''}
   ${r.earnedPo?row('Faza play-off ('+r.po.p+' pkt + '+r.po.b+' bon.), stawka 150%', zl(r.earnedPo)):''}
   ${row('NALEŻNOŚĆ ZA SEZON', zl(s.owed),'text-zinc-100')}
   ${row('Klub przelał ('+s.ratio+'%)', zl(s.paid),'text-emerald-400')}
   ${s.unpaid?row('Klub NIE przelał — nowa zaległość', '−'+zl(s.unpaid),'text-red-500'):''}
   ${s.pzmEarned?row('Startowe i kilometrówka PZM (DMPJ / Indywidualne)', '+'+zl(s.pzmEarned),'text-emerald-400'):''}
+  ${r.imsEarned?row('CYKL ŚWIATOWY (IMŚ / Challenge / Mistrzostwa Europy)', '+'+zl(r.imsEarned),'text-yellow-400'):''}
   ${r.fines?row('Kary i grzywny', '−'+zl(r.fines),'text-red-500'):''}
   ${r.serviceCost?row('Serwis posezonowy sprzętu'+(r.equipWear?' (zużycie -'+r.equipWear+' pkt)':''), '−'+zl(r.serviceCost),'text-red-500'):''}
   ${r.living?row('Koszty życia i utrzymania busa', '−'+zl(r.living),'text-red-500'):''}
   ${r.alimony?`<tr class="border-b border-zinc-700/60" style="background:rgba(220,38,38,.10)">
      <td class="text-red-500 font-bold">Alimenty do Argentyny${r.alimonyLeft!=null?' <span class="text-[11px] text-zinc-400 font-normal">(pozostało rat: '+r.alimonyLeft+')</span>':''}</td>
      <td class="text-right text-red-500 font-bold whitespace-nowrap blink">−${zl(r.alimony)}</td></tr>`:''}
-  ${row('BILANS ROKU (do kieszeni)',
-     ((s.paid+(s.pzmEarned||0)-(r.fines||0)-(r.serviceCost||0)-(r.living||0)-(r.alimony||0))>=0?'+':'')+
-     zl(s.paid+(s.pzmEarned||0)-(r.fines||0)-(r.serviceCost||0)-(r.living||0)-(r.alimony||0)),
-     (s.paid+(s.pzmEarned||0)-(r.fines||0)-(r.serviceCost||0)-(r.living||0)-(r.alimony||0))>=0?'text-emerald-400':'text-red-500')}
+  ${(function(){const bal=s.paid+(s.pzmEarned||0)+(r.imsEarned||0)+(r.signBonus||0)-(r.fines||0)-(r.serviceCost||0)-(r.living||0)-(r.alimony||0);
+     return row('BILANS ROKU (do kieszeni)', (bal>=0?'+':'')+zl(bal), bal>=0?'text-emerald-400':'text-red-500');})()}
  </table>
  ${r.alimony?`<div class="text-[11px] text-red-500 font-bold mt-1">Alimenty do Argentyny: −${zl(r.alimony)}${r.alimonyLeft?' — do zapłaty jeszcze '+zl(r.alimony*r.alimonyLeft)+' w '+r.alimonyLeft+' ratach.':' — to była ostatnia rata.'}</div>`:''}
  ${s.pzmEarned?`<div class="text-[11px] text-zinc-400 mt-1">PZM płaci od ręki, niezależnie od kondycji klubu: ${s.pzmStarts||0} × ${zl(500)} startowego + ${s.pzmPts||0} pkt × ${zl(150)}.</div>`:''}
+ ${(r.imsParts&&r.imsParts.length)?`<div class="mt-2"><div class="text-[11px] tracking-widest mb-0.5" style="color:#eab308">PIENIĄDZE Z CYKLU ŚWIATOWEGO</div>
+   ${r.imsParts.map(x=>`<div class="text-[11px] text-yellow-400">${esc(x.w)}: +${zl(x.v)}</div>`).join('')}
+   <div class="text-[11px] text-zinc-400">Grand Prix płaci niezależnie od klubu — i płaci najwięcej ze wszystkiego w tej grze.</div></div>`:''}
  ${(r.payLog&&r.payLog.length)?`<div class="mt-2"><div class="text-[11px] text-zinc-400 tracking-widest mb-0.5">SPŁATY ZALEGŁOŚCI W TRAKCIE SEZONU</div>
    ${r.payLog.map(x=>`<div class="text-[11px] text-emerald-400">kolejka ${x.round}: +${zl(x.amount)}${x.left?' (zostaje '+zl(x.left)+')':' — czysto'}</div>`).join('')}</div>`:''}
  ${debtNow>0?`<div class="text-[11px] mt-2 ${refusalChance(G.p.age,debtNow)>0?'text-red-500 blink':'text-yellow-500'}">
@@ -1375,6 +1442,357 @@ function moreFromSeasonHtml(r){
  return acc('WIĘCEJ Z TEGO SEZONU', parts.join(''),
    {badge:parts.length+' '+(parts.length===1?'sekcja':parts.length<5?'sekcje':'sekcji'), tone:'text-orange-600'});
 }
+/* ============================================================
+   PODGLĄD MECZU — KTO ILE ZDOBYŁ I JAK SZŁY BIEGI
+   ------------------------------------------------------------
+   Zgłoszenie gracza: „dodaj możliwość popatrzenia na wyniki meczów ligowych
+   jak i play-off/play-out; po kliknięciu w wynik powinno się zobaczyć tabelkę
+   ze zdobytymi punktami przez wszystkich zawodników biorących udział w meczu
+   oraz wyniki bieg po biegu". Silnik i tak liczy każdy mecz biegami (patrz
+   simMeeting), więc wystarczyło przestać wyrzucać te dane do kosza: każde
+   spotkanie ma teraz zamrożoną kartę meczową (M.box) i komplet biegów.
+   ============================================================ */
+function openMatch(src, a, b, c){
+ G.matchView={src, a, b, c};
+ render();
+}
+function closeMatch(){ G.matchView=null; render(); }
+function matchData(){
+ const V=G.matchView; if(!V) return null;
+ try{
+  if(V.src==='league'){
+    const row=(G.results[V.a]||[])[V.b]; if(!row) return null;
+    return {h:row.h, a:row.a||row.aw, hs:row.hs, as:row.as, heats:row.heats||[], box:row.box||[],
+      label:(G.leagues[V.a]?G.leagues[V.a].name:'')+' · '+V.c, walk:row.walk||null};
+  }
+  if(V.src==='po'){
+    const t=(G.phase[V.a]&&G.phase[V.a].ties)?G.phase[V.a].ties[V.b]:null; if(!t) return null;
+    const L=t.legs[V.c]; if(!L) return null;
+    return {h:L.h, a:L.aw, hs:L.hs, as:L.as, heats:L.heats||[], box:L.box||[],
+      label:t.stage+' · '+(V.c===0?'pierwszy mecz':'rewanż')};
+  }
+  if(V.src==='bar'){
+    const b=(G.playoff||[])[V.a]; if(!b) return null;
+    const L=b.legs[V.b]; if(!L) return null;
+    return {h:L.h, a:L.aw, hs:L.hs, as:L.as, heats:L.heats||[], box:L.box||[],
+      label:'BARAŻ O AWANS/UTRZYMANIE · '+(V.b===0?'pierwszy mecz':'rewanż')};
+  }
+ }catch(_){ return null; }
+ return null;
+}
+function matchModalHtml(){
+ const M=matchData(); if(!M) return '';
+ const H=M.box.filter(x=>x.side==='h'), A=M.box.filter(x=>x.side==='a');
+ const sum=arr=>arr.reduce((a,x)=>a+x.pts,0);
+ const sumB=arr=>arr.reduce((a,x)=>a+(x.bon||0),0);
+ const rider=x=>`<tr class="${x.me?'rowhl':''} border-b border-zinc-700/60">
+   <td class="text-zinc-400 w-8 text-center">${x.num||'—'}</td>
+   <td class="truncate max-w-[170px] ${x.me?'text-orange-400 font-bold':'text-zinc-200'}">${esc(x.name)}${x.me?' (TY)':''}</td>
+   <td class="text-center text-zinc-400">${x.starts}</td>
+   <td class="text-center font-bold text-orange-400">${x.pts}</td>
+   <td class="text-center text-sky-400">${x.bon||0}</td>
+   <td class="text-center font-bold text-zinc-100">${x.pts+(x.bon||0)}</td>
+   <td class="text-zinc-300 text-[11px] whitespace-nowrap">${codesHtml(x.codes||[])}</td></tr>`;
+ const team=(name,arr,score)=>`<div class="brut p-2">
+   <div class="text-[11px] tracking-widest mb-1 flex justify-between gap-2">
+     <span class="text-orange-500 font-bold truncate">${esc(name)}</span>
+     <span class="text-zinc-100 font-extrabold">${score}</span></div>
+   <table class="w-full text-[11px]">
+    <thead><tr class="text-[11px] text-zinc-400 tracking-widest border-b border-zinc-700">
+     <th>NR</th><th class="text-left">ZAWODNIK</th><th>ST.</th><th>PKT</th><th>BON</th><th>RAZEM</th><th class="text-left">BIEGI</th></tr></thead>
+    <tbody>${arr.map(rider).join('')}</tbody>
+    <tfoot><tr class="border-t border-zinc-600">
+      <td colspan="3" class="text-zinc-400 text-[11px] tracking-widest">RAZEM</td>
+      <td class="text-center font-extrabold text-orange-400">${sum(arr)}</td>
+      <td class="text-center font-bold text-sky-400">${sumB(arr)}</td>
+      <td class="text-center font-extrabold text-zinc-100">${sum(arr)+sumB(arr)}</td><td></td></tr></tfoot>
+   </table></div>`;
+ /* --- BIEG PO BIEGU --- */
+ let rh=0, ra=0;
+ const heatRows=(M.heats||[]).map(ht=>{
+   const res=ht.res||[];
+   res.forEach(x=>{ if(x.side==='h') rh+=x.pts; else ra+=x.pts; });
+   const cell=x=>`<span class="${x.side==='h'?'text-orange-300':'text-sky-300'}">${esc(x.name)}</span>
+     <b class="${x.out?'text-red-500':'text-zinc-100'}">${x.out==='d'?'d':x.out==='w'?'w':x.pts}${x.bon?'<span class="text-sky-400">★</span>':''}</b>`;
+   const ord=res.slice().sort((a,b)=> (a.out?9:0)-(b.out?9:0) || b.pts-a.pts);
+   return `<tr class="border-b border-zinc-700/60">
+     <td class="text-zinc-400 w-10 text-[11px]">${typeof ht.label==='number'?'B'+ht.label:esc(String(ht.label))}${ht.nominated?'<span class="text-yellow-600" title="bieg nominowany">*</span>':''}</td>
+     <td class="text-[11px] leading-relaxed">${ord.map(cell).join(' <span class="text-zinc-600">·</span> ')}</td>
+     <td class="text-right text-[11px] font-bold text-zinc-200 whitespace-nowrap">${rh}:${ra}</td></tr>`;
+ }).join('');
+ return `<div class="brut mb-3" style="border-color:#f97316">
+  <div class="brut-h px-3 py-1.5 text-[11px] font-bold flex justify-between items-center gap-2" style="border-color:#f97316;color:#f97316">
+    <span>PODGLĄD SPOTKANIA — ${esc(M.label||'')}</span>
+    <button onclick="closeMatch()" class="btn px-2 py-0.5 text-[11px] text-zinc-300">ZAMKNIJ ✕</button></div>
+  <div class="p-3">
+   <div class="text-center mb-3">
+     <div class="text-[12px] text-zinc-300 truncate">${esc(M.h)} — ${esc(M.a)}</div>
+     <div class="text-3xl font-extrabold ${M.hs>M.as?'text-emerald-400':M.hs<M.as?'text-red-500':'text-yellow-500'}">${M.hs}:${M.as}</div>
+     ${M.walk?`<div class="text-[11px] text-red-500 font-bold">WALKOWER — spotkanie nie zostało rozegrane</div>`:''}
+   </div>
+   <div class="grid lg:grid-cols-2 gap-2 mb-3">
+     ${team(M.h,H,M.hs)}
+     ${team(M.a,A,M.as)}
+   </div>
+   ${heatRows?`<div class="brut p-2">
+     <div class="text-[11px] text-orange-600 tracking-widest mb-1">BIEG PO BIEGU</div>
+     <div class="max-h-[360px] overflow-y-auto"><table class="w-full text-[11px]">${heatRows}</table></div>
+     <div class="text-[11px] text-zinc-400 mt-1.5 leading-relaxed">
+      Kolejność w wierszu = kolejność na mecie · <span class="text-orange-300">pomarańczowy</span> = gospodarz,
+      <span class="text-sky-300">niebieski</span> = gość · <span class="text-sky-400">★</span> = punkt bonusowy w tym biegu (art. 720) ·
+      <span class="text-red-500">d</span> = defekt, <span class="text-red-500">w</span> = wykluczenie ·
+      <span class="text-yellow-600">*</span> przy numerze biegu = bieg nominowany (XIV/XV) · ostatnia kolumna to wynik narastająco.</div>
+   </div>`:'<div class="text-[11px] text-zinc-400">Brak zapisu biegów dla tego spotkania.</div>'}
+  </div></div>`;
+}
+/* Klikalny wynik — jeden wzorzec dla wszystkich tabel z wynikami. */
+/* ------------------------------------------------------------
+   NAPRAWA (21.08.2026, hotfix): KLIKNIĘCIE W WYNIK NIC NIE ROBIŁO.
+   Argumenty do onclick szły przez JSON.stringify(), które opakowuje napisy
+   w PODWÓJNY cudzysłów — a cały handler siedzi w atrybucie
+   onclick="...". Pierwszy taki cudzysłów zamykał atrybut, więc przeglądarka
+   dostawała połamany HTML i przycisk był martwy. Argumenty składamy teraz
+   ręcznie, w apostrofach (liczby lecą gołe).
+   ------------------------------------------------------------ */
+const jsArg = v => (typeof v==='number' || v===null || v===undefined)
+  ? String(v===null||v===undefined ? "''" : v)
+  : "'"+String(v).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;')+"'";
+function scoreBtn(hs,as,src,a,b,c,cls){
+ return `<button type="button" onclick="openMatch(${jsArg(src)},${jsArg(a)},${jsArg(b)},${jsArg(c)})"
+   class="underline decoration-dotted underline-offset-2 hover:text-orange-400 cursor-pointer ${cls||''}" title="pokaż przebieg spotkania">${hs}:${as}</button>`;
+}
+/* ---- WSZYSTKIE WYNIKI KOLEJKI PO KOLEJCE (każda liga) ---- */
+function allResultsHtml(lk){
+ const RS=G.results[lk]||[];
+ if(!RS.length) return '<div class="text-[11px] text-zinc-400">brak danych</div>';
+ const byRound={};
+ RS.forEach((row,i)=>{ (byRound[row.round]=byRound[row.round]||[]).push({row,i}); });
+ const rounds=Object.keys(byRound).map(Number).sort((a,b)=>a-b);
+ return `<div class="max-h-[460px] overflow-y-auto pr-1">${rounds.map(rd=>`
+   <div class="mb-2">
+    <div class="text-[11px] text-zinc-400 tracking-widest border-b border-zinc-700 mb-1">KOLEJKA ${rd}</div>
+    ${byRound[rd].map(({row,i})=>{
+      const mine = row.h===G.p.club || row.a===G.p.club;
+      return `<div class="flex justify-between gap-2 text-[11px] ${mine?'text-orange-300':'text-zinc-300'}">
+       <span class="truncate">${esc(row.h)} — ${esc(row.a)}</span>
+       <span class="font-bold whitespace-nowrap">${scoreBtn(row.hs,row.as,'league',lk,i,'kolejka '+rd, mine?'text-orange-300':'text-zinc-100')}</span></div>`;
+    }).join('')}
+   </div>`).join('')}</div>`;
+}
+/* ============================================================
+   STATYSTYKI INDYWIDUALNE LIG
+   ============================================================ */
+function statsTableHtml(rows, min, title, col){
+ if(!rows.length) return '';
+ return `<div class="brut p-2">
+  <div class="text-[11px] ${col} tracking-widest mb-1">${title}</div>
+  <div class="max-h-[420px] overflow-y-auto"><table class="w-full text-[11px]">
+   <thead><tr class="text-[11px] text-zinc-400 tracking-widest border-b border-zinc-700">
+    <th class="text-left">#</th><th class="text-left">ZAWODNIK</th><th class="text-left">KLUB</th><th>W</th>
+    <th>M</th><th>BIEGI</th><th>PKT</th><th>BON</th><th>ŚR.</th></tr></thead>
+   <tbody>${rows.map(x=>`<tr class="${x.me?'rowhl':''} border-b border-zinc-700/60">
+     <td class="${x.catPos===1?'text-yellow-400 font-bold':x.catPos&&x.catPos<=3?'text-emerald-400 font-bold':'text-zinc-400'} w-7">${x.catPos||'—'}</td>
+     <td class="truncate max-w-[170px] ${x.me?'text-orange-400 font-bold':'text-zinc-200'}">${esc(x.name)}${x.me?' (TY)':''}</td>
+     <td class="truncate max-w-[150px] text-zinc-400 text-[11px]">${esc(x.club)}</td>
+     <td class="text-center text-zinc-400">${x.age}</td>
+     <td class="text-center text-zinc-300">${x.m}</td>
+     <td class="text-center text-zinc-300">${x.starts}</td>
+     <td class="text-center text-orange-400 font-bold">${x.pts}</td>
+     <td class="text-center text-sky-400">${x.bon}</td>
+     <td class="text-center font-bold ${x.avg>=2?'text-emerald-400':x.avg>=1.4?'text-lime-400':'text-zinc-300'}">${x.avg.toFixed(2)}</td></tr>`).join('')}
+   </tbody></table></div>
+  <div class="text-[11px] text-zinc-400 mt-1">Klasyfikowani są zawodnicy z minimum <b class="text-zinc-300">${min}</b> startami. Średnia = (punkty + bonusy) ÷ biegi.</div>
+ </div>`;
+}
+function leagueStatsHtml(r){
+ const ST=r.leagueStats; if(!ST) return '<div class="brut p-3 text-[11px] text-zinc-400">Brak statystyk — w tym sezonie nie rozegrano rundy zasadniczej.</div>';
+ const mine=r.myRank;
+ const head = mine ? `<div class="brut p-3 mb-3 border-orange-800">
+   <div class="text-[11px] text-orange-600 tracking-widest mb-1">TWOJE MIEJSCE W KLASYFIKACJI ${G.leagues[r.lk].short}</div>
+   ${mine.qual && mine.pos
+     ? `<div class="text-2xl font-extrabold ${mine.pos===1?'text-yellow-400':mine.pos<=3?'text-emerald-400':'text-zinc-100'}">${mine.pos}. <span class="text-sm text-zinc-400">na ${mine.n} w klasyfikacji ${mine.cat}</span></div>
+        <div class="text-[11px] text-zinc-300">Średnia <b class="text-emerald-400">${mine.avg.toFixed(2)}</b> z ${mine.starts} biegów · w całej lidze (bez podziału na kategorie): ${mine.overall}. na ${mine.total}.</div>
+        <div class="text-[11px] text-zinc-400 mt-1">To miejsce wchodzi do OCENY SEZONU: junior porównywany jest z juniorami, senior z seniorami — bo ta sama średnia znaczy co innego w każdej lidze i w każdym wieku.</div>`
+     : `<div class="text-[12px] text-zinc-300">Za mało startów (${mine.starts}), żeby wejść do klasyfikacji — minimum ${mine.min}.</div>`}
+  </div>` : '';
+ return head + LKEYS.map(k=>{
+   const L=ST[k]; if(!L) return '';
+   const sen=L.rows.filter(x=>!x.jun), jun=L.rows.filter(x=>x.jun);
+   return `<div class="brut mb-3"><div class="brut-h px-3 py-1.5 text-[11px] text-orange-500 font-bold">
+     STATYSTYKI INDYWIDUALNE — ${G.leagues[k].name} ${r.year}${k===r.lk?' <span class="text-zinc-400">· twoja liga</span>':''}</div>
+    <div class="p-2 grid lg:grid-cols-2 gap-2">
+     ${statsTableHtml(sen, L.min, 'SENIORZY', 'text-zinc-300')}
+     ${statsTableHtml(jun, L.min, 'JUNIORZY (U21)', 'text-pink-400')}
+    </div></div>`;
+ }).join('') + `<div class="text-[11px] text-zinc-400">Klasyfikacja liczona jest po RUNDZIE ZASADNICZEJ — do play-offu wchodzi tylko połowa stawki, więc doliczanie tamtych biegów robiłoby z tej tabeli loterię.</div>`;
+}
+/* ============================================================
+   CO RUSZYŁO TWÓJ OVR
+   ============================================================ */
+function ovrLogHtml(r){
+ const log=r.ovrLog||[], parts=r.growthParts||[];
+ if(!log.length && !parts.length) return '';
+ const sgn=v=>(v>0?'+':'')+v;
+ const col=v=>v>0?'text-emerald-400':v<0?'text-red-400':'text-zinc-400';
+ const body = `
+  <div class="text-[11px] text-zinc-400 mb-2">OVR ${r.ovrFrom} → <b class="${r.ovrTo>=r.ovrFrom?'text-emerald-400':'text-red-400'}">${r.ovrTo}</b>
+   ${r.ovrTo!==r.ovrFrom?`(${sgn(r.ovrTo-r.ovrFrom)})`:'(bez zmian)'}</div>
+  ${log.length?`<div class="brut p-2 mb-2">
+   <div class="text-[11px] text-zinc-400 tracking-widest mb-1">ZDARZENIA I ZMIANY W TRAKCIE SEZONU</div>
+   <ul class="text-[11px] space-y-0.5">${log.map(x=>`<li class="flex justify-between gap-2">
+     <span class="text-zinc-300">${esc(x.w)}</span><b class="${col(x.d)} whitespace-nowrap">${sgn(x.d)}</b></li>`).join('')}</ul></div>`:''}
+  ${parts.length?`<div class="brut p-2">
+   <div class="text-[11px] text-zinc-400 tracking-widest mb-1">ROZWÓJ PO SEZONIE — SKŁADNIKI (suma: ${sgn(r.growthRaw||0)} pkt przed zaokrągleniem)</div>
+   <ul class="text-[11px] space-y-0.5">${parts.map(x=>`<li class="flex justify-between gap-2">
+     <span class="text-zinc-300">${esc(x.w)}</span><b class="${col(x.d)} whitespace-nowrap">${sgn(x.d)}</b></li>`).join('')}</ul>
+   <div class="text-[11px] text-zinc-400 mt-2 leading-relaxed">
+    <b class="text-zinc-300">OTOCZENIE MA ZNACZENIE:</b> ten sam zawodnik rozwija się szybciej w klubie z dobrą atmosferą
+    i pełną kasą (sprzęt na miejscu, fizjoterapeuta, tor treningowy) niż w klubie, który zalega z wypłatami i ma szatnię na noże.
+    Ujemna pozycja „sufit talentu" oznacza, że jesteś już blisko swojego potencjału i każdy kolejny punkt OVR kosztuje więcej.</div>
+  </div>`:''}`;
+ return acc('CO WPŁYNĘŁO NA TWÓJ OVR W TYM SEZONIE', body,
+   {badge:(r.ovrTo>=r.ovrFrom?'+':'')+(r.ovrTo-r.ovrFrom)+' pkt', tone:'text-sky-500'});
+}
+
+/* ============================================================
+   INDYWIDUALNE MISTRZOSTWA ŚWIATA — EKRAN
+   ============================================================ */
+const flag = c => `<span class="text-zinc-500 text-[11px]">${esc(c||'POL')}</span>`;
+function gpHeatHtml(X){
+ if(!X) return '';
+ return `<div class="text-[11px] mb-1">
+   <span class="text-yellow-600 tracking-widest">${esc(X.label)}:</span>
+   ${X.rows.map(r=>`<span class="${r.me?'text-orange-400 font-bold':'text-zinc-300'}">${r.pos}. ${esc(r.name)}${r.out?' <span class="text-red-500">('+r.out+')</span>':''}</span>`).join(' <span class="text-zinc-600">·</span> ')}
+ </div>`;
+}
+function gpRoundHtml(rd, i){
+ const top=rd.rows.slice(0,3).map(x=>x.name).join(' · ');
+ const body=`
+  ${rd.wild?`<div class="text-[11px] text-zinc-400 mb-1">Dzika karta rundy: <b class="text-zinc-300">${esc(rd.wild.name)}</b> ${flag(rd.wild.ctry)}</div>`:''}
+  ${rd.me?`<div class="text-[12px] mb-2">Twój przejazd: <b class="text-orange-400">${rd.me.chartPts} pkt</b> w tabeli (${rd.me.chartPos}. miejsce)
+    <span class="text-zinc-300">(${codesHtml(rd.me.codes)})</span> → <b class="${rd.me.pos===1?'text-yellow-400':rd.me.pos<=3?'text-emerald-400':'text-zinc-200'}">${rd.me.pos}. miejsce w rundzie</b>
+    <span class="text-zinc-400">· ${SGP.pts[rd.me.pos-1]||0} pkt do klasyfikacji</span></div>`:''}
+  ${gpHeatHtml(rd.L1)}${gpHeatHtml(rd.L2)}${gpHeatHtml(rd.F)}
+  <table class="w-full text-[11px] mt-2">
+   <thead><tr class="text-[11px] text-zinc-400 tracking-widest border-b border-zinc-700">
+    <th class="text-left">#</th><th class="text-left">ZAWODNIK</th><th>KRAJ</th><th>TABELA</th><th>PKT GP</th></tr></thead>
+   <tbody>${rd.rows.map(x=>`<tr class="${x.me?'rowhl':''} border-b border-zinc-700/60">
+     <td class="w-6 font-bold ${x.pos===1?'text-yellow-400':x.pos<=3?'text-emerald-400':'text-zinc-400'}">${x.pos}</td>
+     <td class="truncate max-w-[200px] ${x.me?'text-orange-400 font-bold':'text-zinc-200'}">${esc(x.name)}</td>
+     <td class="text-center">${flag(x.ctry)}</td>
+     <td class="text-center text-zinc-300">${x.chart}</td>
+     <td class="text-center text-orange-400 font-bold">${x.gp}</td></tr>`).join('')}
+   </tbody></table>`;
+ return accLite(esc(rd.title), body, {badge:top, tone:'text-yellow-600', open:!!(rd.me && i===0)});
+}
+function imsHtml(c, r){
+ if(!c) return '<div class="brut p-3 text-[11px] text-zinc-400">Ten cykl nie został w tym sezonie rozegrany.</div>';
+ const mine=c.rode;
+ return `<div class="brut"><div class="brut-h px-3 py-1.5 text-[11px] font-bold" style="color:#eab308">
+   ${esc(c.name)} ${r.year}</div>
+ <div class="p-3">
+  <div class="text-[11px] text-zinc-400 tracking-widest mb-3">${esc(c.sub||'')}</div>
+  <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2 mb-3">
+   ${kpi('TWOJE MIEJSCE', mine&&c.mePos?c.mePos+'.':'—', medalCol(mine?c.mePos:0))}
+   ${kpi('PUNKTY W CYKLU', mine?c.mePts:'—','text-orange-400')}
+   ${kpi('RUNDY Z TWOIM UDZIAŁEM', mine?c.meStat.rounds:0)}
+   ${kpi('FINAŁY RUND', mine?c.meStat.finals:0,'text-sky-400')}
+   ${kpi('WYGRANE RUNDY', mine?c.meStat.roundWins:0,'text-yellow-400')}
+   ${kpi('ZAROBEK', mine?zl(c.money):'—','text-emerald-400')}
+  </div>
+  ${!mine?`<div class="brut p-3 mb-3 border-red-900"><div class="text-[11px] text-red-400">
+    W tym sezonie nie miałeś miejsca w cyklu. Droga do Grand Prix prowadzi przez ${c.jun?'ranking juniorów świata':'eliminacje krajowe i turniej SGP Challenge (zakładka ELIMINACJE)'} —
+    albo przez dziką kartę, którą Komisja przyznaje najlepszym zawodnikom spoza cyklu.</div></div>`:''}
+  <div class="grid lg:grid-cols-2 gap-3 mb-3">
+   <div class="brut p-3">
+    <div class="text-[11px] text-yellow-600 tracking-widest mb-1">KLASYFIKACJA KOŃCOWA CYKLU</div>
+    <div class="max-h-[420px] overflow-y-auto"><table class="w-full text-[11px]">
+     <thead><tr class="text-[11px] text-zinc-400 tracking-widest border-b border-zinc-700">
+      <th class="text-left">#</th><th class="text-left">ZAWODNIK</th><th>KRAJ</th><th>WYGR.</th><th>PKT</th></tr></thead>
+     <tbody>${c.classification.map((x,i)=>`<tr class="${x.me?'rowhl':''} border-b border-zinc-700/60">
+       <td class="w-6 font-bold ${i===0?'text-yellow-400':i<3?'text-emerald-400':'text-zinc-400'}">${i+1}</td>
+       <td class="truncate max-w-[190px] ${x.me?'text-orange-400 font-bold':'text-zinc-200'}">${esc(x.name)}</td>
+       <td class="text-center">${flag(x.ctry)}</td>
+       <td class="text-center text-zinc-400">${x.wins}</td>
+       <td class="text-center font-bold text-orange-400">${x.pts}</td></tr>`).join('')}</tbody></table></div>
+    <div class="text-[11px] text-zinc-400 mt-1">Punkty za miejsce w rundzie: ${SGP.pts.slice(0,6).join(' / ')} … ${SGP.pts[SGP.pts.length-1]}.</div>
+   </div>
+   <div class="brut p-3">
+    <div class="text-[11px] text-yellow-600 tracking-widest mb-1">SKŁAD CYKLU — SKĄD SIĘ WZIĄŁ</div>
+    <div class="max-h-[300px] overflow-y-auto"><table class="w-full text-[11px]">
+     ${(c.lineup||[]).map((x,i)=>`<tr class="border-b border-zinc-700/60">
+      <td class="w-6 text-zinc-400">${i+1}</td>
+      <td class="truncate max-w-[150px] ${x.name===r.pname?'text-orange-400 font-bold':'text-zinc-200'}">${esc(x.name)}</td>
+      <td class="text-center">${flag(x.ctry)}</td>
+      <td class="text-[11px] text-zinc-400 text-right truncate max-w-[220px]">${esc(x.how)}</td></tr>`).join('')}
+    </table></div>
+    <div class="text-[11px] text-zinc-400 mt-2 leading-relaxed">
+     Piętnastu stałych uczestników plus jedna dzika karta rundy = szesnastka na starcie każdej rundy.
+     Do tego dwóch rezerwowych toru, którzy wchodzą za zawodnika wykluczonego za przekroczenie taśmy albo wycofanego po kraksie.</div>
+   </div>
+  </div>
+  ${mine&&c.moneyParts&&c.moneyParts.length?`<div class="brut p-3 mb-3">
+    <div class="text-[11px] text-emerald-500 tracking-widest mb-1">TWOJE PIENIĄDZE Z CYKLU</div>
+    <table class="w-full text-[11px]">${c.moneyParts.map(x=>`<tr class="border-b border-zinc-700/60">
+      <td class="text-zinc-300">${esc(x.w)}</td><td class="text-right text-emerald-400 font-bold whitespace-nowrap">${zl(x.v)}</td></tr>`).join('')}
+      <tr><td class="text-zinc-200 font-bold">RAZEM</td><td class="text-right text-emerald-400 font-extrabold">${zl(c.money)}</td></tr></table>
+    <div class="text-[11px] text-zinc-400 mt-1">Ryczałt startowy ${zl(c.jun?Math.round(SGP.startFee*SGP.junPrizeMul):SGP.startFee)} za każdą rundę leci niezależnie od wyniku.</div>
+   </div>`:''}
+  <div class="space-y-2">${(c.rounds||[]).map((rd,i)=>gpRoundHtml(rd,i)).join('')}</div>
+  <div class="text-[11px] text-zinc-400 mt-3 leading-relaxed">
+   FORMAT RUNDY: 16 zawodników, 20 biegów zasadniczych (każdy po 5 startów), 3-2-1-0 · dwóch z czoła tabeli jedzie prosto do finału ·
+   miejsca 3-10 rozstawione są na LCQ1 i LCQ2, zwycięzca każdego z nich dołącza do finału · zwycięzca finału wygrywa rundę. Razem 23 biegi.
+   <b class="text-zinc-300">W turniejach indywidualnych nie ma punktów bonusowych</b> — nie ma par klubowych, nie ma za kogo jechać.</div>
+ </div></div>`;
+}
+/* ---- ELIMINACJE DO CYKLU: kwalifikacje krajowe + Challenge + SEC ---- */
+function imsQualHtml(r){
+ const W=r.world; if(!W||!W.qual) return '';
+ const Q=W.qual, CH=Q.challenge, SEC=W.sec;
+ const tbl=(rows,cols)=>`<table class="w-full text-[11px]">
+  ${rows.map(x=>`<tr class="${x.me?'rowhl':''} border-b border-zinc-700/60">
+   <td class="w-6 font-bold ${x.through?'text-emerald-400':x.pos<=3?'text-zinc-200':'text-zinc-400'}">${x.pos}</td>
+   <td class="truncate max-w-[190px] ${x.me?'text-orange-400 font-bold':'text-zinc-200'}">${esc(x.name)}</td>
+   <td class="text-center">${flag(x.ctry)}</td>
+   ${x.pts!=null?`<td class="text-right text-zinc-300">${x.pts}</td>`:'<td></td>'}
+   ${cols?`<td class="text-right text-[11px] ${x.through?'text-emerald-500':'text-zinc-600'}">${x.through?'AWANS':''}</td>`:''}</tr>`).join('')}
+ </table>`;
+ return `<div class="brut"><div class="brut-h px-3 py-1.5 text-[11px] font-bold" style="color:#eab308">
+   DROGA DO GRAND PRIX ${r.year} — ELIMINACJE, CHALLENGE, MISTRZOSTWA EUROPY</div>
+ <div class="p-3">
+  <div class="text-[11px] text-zinc-400 leading-relaxed mb-3">
+   Kwalifikacja do cyklu prowadzi przez eliminacje krajowe, a te kończą się turniejem <b class="text-zinc-300">SGP CHALLENGE</b> —
+   czterech najlepszych z Challenge dostaje miejsca w cyklu na kolejny rok. W Polsce eliminacją jest
+   <b class="text-zinc-300">ZŁOTY KASK</b>: jego czterej najlepsi jadą do Challenge. Anglia, Szwecja i Dania mają własne eliminacje.
+   Pozostałe federacje (Niemcy, Finlandia, Francja, USA, Ukraina, Argentyna, Czechy) jadą we wspólnym turnieju i wyprowadzają z niego
+   tylko trzech — stoją żużlowo słabiej i szerszy przydział rozwaliłby balans cyklu.
+   Osobną drogą jest tytuł <b class="text-zinc-300">Mistrza Europy</b>: jego zdobywca ma miejsce w cyklu z automatu.
+  </div>
+  <div class="brut p-3 mb-3" style="border-color:#eab308">
+   <div class="text-[11px] tracking-widest mb-1" style="color:#eab308">${esc(CH.title)}</div>
+   ${CH.rode?`<div class="text-[12px] mb-2">Twój wynik: <b class="text-orange-400">${CH.mePts} pkt</b> · <b class="${CH.mePos<=4?'text-emerald-400':'text-zinc-200'}">${CH.mePos}. miejsce</b>
+     ${CH.mePos<=4?' — <b class="text-emerald-400">MASZ MIEJSCE W CYKLU NA KOLEJNY ROK!</b>':''} · nagroda ${zl(CH.money)}</div>`
+    :'<div class="text-[11px] text-zinc-400 mb-2">Nie zakwalifikowałeś się do Challenge.</div>'}
+   ${tbl(CH.table.map((x,i)=>({...x, through:i<4})), true)}
+   <div class="text-[11px] text-zinc-400 mt-1">Awans do cyklu: cztery pierwsze miejsca. Jeżeli któryś z tej czwórki i tak kończy sezon
+    w czołowej siódemce Grand Prix, jego miejsce bierze kolejny zawodnik Challenge bez kwalifikacji.</div>
+  </div>
+  <div class="grid md:grid-cols-2 gap-2 mb-3">
+   ${Q.quals.map(q=>`<div class="brut p-2">
+     <div class="text-[11px] text-zinc-300 tracking-widest">${esc(q.title)}</div>
+     <div class="text-[11px] text-zinc-400 mb-1">${esc(q.note)}</div>
+     ${tbl(q.table.slice(0,10), true)}</div>`).join('')}
+  </div>
+  <div class="brut p-3">
+   <div class="text-[11px] tracking-widest mb-1" style="color:#38bdf8">${esc(SEC.title)} ${r.year}</div>
+   <div class="text-[11px] text-zinc-300 mb-1">Mistrz Europy: <b class="text-sky-400">${esc(SEC.winner?SEC.winner.name:'—')}</b> ${flag(SEC.winner?SEC.winner.ctry:'')}
+    — miejsce w cyklu Grand Prix ${r.year+1} z automatu.</div>
+   ${SEC.rode?`<div class="text-[12px] mb-1">Twoje miejsce: <b class="${SEC.mePos===1?'text-yellow-400':'text-zinc-200'}">${SEC.mePos}.</b> · nagroda ${zl(SEC.money)}</div>`:''}
+   ${tbl(SEC.table.slice(0,8).map((x,i)=>({...x, through:i===0})), true)}
+  </div>
+ </div></div>`;
+}
+
 function kpi(l,v,c='text-zinc-100'){
  return `<div class="brut p-2.5"><div class="text-[11px] text-zinc-400 tracking-widest leading-tight">${l}</div><div class="text-xl font-extrabold ${c}">${v}</div></div>`;
 }
@@ -1418,7 +1836,12 @@ function myResultsHtml(r){
    <td class="text-zinc-400 text-[11px]">${m.home?'DOM':'WYJ'}</td>
    <td class="truncate max-w-[150px] text-zinc-300">${esc(m.opp)}</td>
    <td class="text-[11px] text-right whitespace-nowrap">${ch}</td>
-   <td class="text-right font-bold ${m.walk?'text-red-500':w} whitespace-nowrap">${m.walk==='void'?'—':m.teamFor+':'+m.teamAgn}</td>
+   <td class="text-right font-bold ${m.walk?'text-red-500':w} whitespace-nowrap">${m.walk==='void'?'—':(function(){
+     const idx=(G.results[r.lk]||[]).findIndex(x=>x.round===m.round && (x.h===G.p.club||x.a===G.p.club));
+     const sc=(m.home?m.teamFor+':'+m.teamAgn:m.teamAgn+':'+m.teamFor);
+     return idx>=0 ? scoreBtn(m.home?m.teamFor:m.teamAgn, m.home?m.teamAgn:m.teamFor,'league',r.lk,idx,'kolejka '+m.round, m.walk?'text-red-500':w)
+                   : (m.teamFor+':'+m.teamAgn);
+   })()}</td>
    <td class="text-right whitespace-nowrap pl-2">${line}</td>
    <td class="text-[11px] text-zinc-400 text-right whitespace-nowrap">${m.rode&&m.num?'nr '+m.num:''}</td>
    <td class="text-[11px] text-right whitespace-nowrap pl-2">${cash}</td></tr>${surRow}`;}).join('');
@@ -1438,15 +1861,15 @@ function myResultsHtml(r){
  a do tabeli wpisano wynik administracyjny (0:75, 75:0 albo 0:0 przy walkowerze obustronnym)</div>`;
 }
 /* ---- FAZA PLAY-OFF / PLAY-DOWN ---- */
-function tieBox(t,club){
+function tieBox(t,club,lk,ti){
  const mine=t.a===club||t.b===club;
  const col=t.stage==='FINAŁ'?'text-orange-400':t.stage==='DWUMECZ O UTRZYMANIE'?'text-red-500'
    :t.stage==='PLAY-DOWN'?'text-yellow-500':'text-zinc-300';
  return `<div class="brut p-2.5 ${mine?'border-orange-800':''}">
   <div class="text-[11px] ${col} tracking-widest mb-1">${t.stage}${t.draw?' · BIEG DODATKOWY':''}</div>
-  ${t.legs.map(L=>`<div class="text-[11px]">
+  ${t.legs.map((L,li)=>`<div class="text-[11px]">
     <div class="flex justify-between gap-2"><span class="truncate text-zinc-300">${esc(L.h)} — ${esc(L.aw)}</span>
-    <span class="text-zinc-100 font-bold whitespace-nowrap">${L.hs}:${L.as}</span></div>
+    <span class="text-zinc-100 font-bold whitespace-nowrap">${L.box?scoreBtn(L.hs,L.as,'po',lk,ti,li,'text-zinc-100'):(L.hs+':'+L.as)}</span></div>
     ${L.me&&L.me.starts?`<div class="text-[11px] text-right"><span class="text-zinc-300">${esc(G.p.name)}:</span>
       <span class="text-orange-400 font-bold">*${L.me.pts}</span>
       <span class="text-zinc-300">(${codesHtml(L.me.codes||[])})</span>
@@ -1470,7 +1893,7 @@ function phaseHtml(r){
       ${kpi('BONUSOWE',r.po.b,'text-sky-400')}${kpi('DEF / WYK',r.po.d+' / '+r.po.w,'text-red-500')}${kpi('ŚREDNIA',r.po.avgTxt,'text-emerald-400')}
     </div>${r.earnedPo?`<div class="text-[11px] text-zinc-300 mt-2">Stawka play-off 150%: <b class="text-orange-400">${zl(r.earnedPo)}</b></div>`:''}</div>`
    :'<div class="text-[11px] text-zinc-400 mb-3">W fazie play-off nie pojechałeś ani jednego spotkania.</div>'}
-  <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-2 mb-3">${ph.ties.map(t=>tieBox(t,club)).join('')}</div>
+  <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-2 mb-3">${ph.ties.map((t,ti)=>tieBox(t,club,r.lk,ti)).join('')}</div>
   <div class="brut p-3">
    <div class="text-[11px] text-zinc-400 tracking-widest mb-1">KLASYFIKACJA KOŃCOWA ${r.leagueName}</div>
    <table class="w-full text-[11px]">${ph.order.map((n,i)=>{
@@ -1508,7 +1931,7 @@ function indHtml(c,r){
    ${c.podium.map((n,i)=>`<div class="text-[12px] ${medalCol(i+1)} ${n===r.pname?'font-bold':''}">${i+1}. ${esc(n)}</div>`).join('')}
   </div>`:''}
   ${c.classification?`<div class="brut p-3 mb-3">
-   <div class="text-[11px] text-zinc-400 tracking-widest mb-1">KLASYFIKACJA KOŃCOWA (suma punktów z trzech turniejów finałowych, bez biegów półfinałowych)</div>
+   <div class="text-[11px] text-zinc-400 tracking-widest mb-1">${esc(c.clsLabel||'KLASYFIKACJA KOŃCOWA (suma punktów z trzech turniejów finałowych, bez biegów półfinałowych)')}</div>
    <table class="w-full text-[11px]">${c.classification.map((x,i)=>`<tr class="${x.me?'rowhl':''} border-b border-zinc-700/60">
      <td class="w-6 font-bold ${i<3?medalCol(i+1):'text-zinc-400'}">${i+1}</td>
      <td class="truncate max-w-[240px] ${x.me?'text-orange-400 font-bold':'text-zinc-200'}">${esc(x.name)}</td>
@@ -1527,7 +1950,9 @@ function indHtml(c,r){
   </div>
   <div class="text-[11px] text-zinc-400 mt-3 tracking-wide">Tabela 20-biegowa: 16 zawodników, po 5 startów ·
    <span class="text-zinc-300">-</span> = zero · <span class="text-red-400">w</span> = wykluczenie ·
-   <span class="text-red-500">d</span> = defekt · <span class="text-sky-400">2★/1★</span> = bonus · <span class="text-zinc-300">F:</span> = bieg finałowy</div>
+   <span class="text-red-500">d</span> = defekt · <span class="text-zinc-300">F:</span> = bieg finałowy ·
+   <b class="text-zinc-300">W TURNIEJACH INDYWIDUALNYCH NIE MA PUNKTÓW BONUSOWYCH</b> — nie ma par klubowych, więc nie ma za kogo jechać
+   (punkt bonusowy z art. 720 istnieje wyłącznie w lidze).</div>
  </div></div>`;
 }
 
@@ -1577,7 +2002,10 @@ function dmpjHtml(r){
     <div>ĆWIERĆFINAŁY — 4 grupy po 4, awans z miejsc 1–2</div>
     <div>PÓŁFINAŁY — 2 grupy po 4, awans z miejsc 1–2</div>
     <div>FINAŁ — cztery turnieje tej samej czwórki</div>
-    <div class="text-[11px] text-zinc-400 pt-1">Punktacja meczowa: 4 / 3 / 2 / 1 pkt, plus punkty biegowe zawodników.</div>
+    <div class="text-[11px] text-zinc-400 pt-1">Każdy czwórmecz to <b class="text-zinc-300">24 biegi</b>: 4 drużyny po 4 juniorów,
+     w każdym biegu po jednym zawodniku z drużyny, 6 startów na zawodnika. Punktacja meczowa 4 / 3 / 2 / 1 pkt wg sumy punktów
+     biegowych (przy remisie dzielone po równo — art. 804 ust. 3).
+     <b class="text-zinc-300">W czwórmeczu nie ma punktów bonusowych</b> — nie ma pary klubowej, za którą można finiszować.</div>
    </div></div>`}
  </div></div></div>`;
 }
@@ -1611,9 +2039,9 @@ function playoffHtml(){
  if(!G.playoff||!G.playoff.length) return bankruptcyBoardHtml(r);
  return bankruptcyBoardHtml(r)+`<div class="brut mt-3"><div class="brut-h px-3 py-1.5 text-[11px] text-yellow-500 font-bold">BARAŻE O AWANS/UTRZYMANIE + RUCH MIĘDZY LIGAMI</div>
  <div class="p-3 grid md:grid-cols-2 gap-3">
- ${G.playoff.map(b=>`<div class="brut p-3">
+ ${G.playoff.map((b,bi)=>`<div class="brut p-3">
    <div class="text-[11px] text-zinc-400 tracking-widest mb-1">${G.leagues[b.hi].short} (7.) vs ${G.leagues[b.lo].short} (2.)</div>
-   ${b.legs.map(l=>`<div class="text-[11px] flex justify-between gap-2"><span class="truncate text-zinc-300">${esc(l.h)} — ${esc(l.aw)}</span><span class="text-zinc-100 font-bold">${l.hs}:${l.as}</span></div>`).join('')}
+   ${b.legs.map((l,li)=>`<div class="text-[11px] flex justify-between gap-2"><span class="truncate text-zinc-300">${esc(l.h)} — ${esc(l.aw)}</span><span class="text-zinc-100 font-bold">${l.box?scoreBtn(l.hs,l.as,'bar',bi,li,'','text-zinc-100'):(l.hs+':'+l.as)}</span></div>`).join('')}
    <div class="text-[11px] mt-1 border-t border-zinc-700 pt-1">Dwumecz: <b class="text-zinc-200">${b.agA}:${b.agB}</b> · wygrywa <b class="text-emerald-400">${esc(b.winner)}</b></div>
  </div>`).join('')}
  </div>
@@ -1927,7 +2355,14 @@ const SM_TROPHY = [
  {k:'mimp', n:'MŁODZIEŻOWE IND. MISTRZOSTWA POLSKI', s:'MIMP', gold:'Młodzieżowy Ind. Mistrz Polski'},
  {k:'zk',   n:'ZŁOTY KASK',    s:'ZK', gold:'Zwycięzca Złotego Kasku'},
  {k:'sk',   n:'SREBRNY KASK',  s:'SK', gold:'Zwycięzca Srebrnego Kasku'},
- {k:'bk',   n:'BRĄZOWY KASK',  s:'BK', gold:'Zwycięzca Brązowego Kasku'}
+ {k:'bk',   n:'BRĄZOWY KASK',  s:'BK', gold:'Zwycięzca Brązowego Kasku'},
+ {k:'szk',  n:'TURNIEJE SZKOLENIOWE (CYKL)', s:'TSZ', gold:'Zwycięzca cyklu Turniejów Szkoleniowych'},
+ {k:'palet',n:'PUCHAR PALET',  s:'PALET', gold:'Zdobywca Pucharu PALET'}
+];
+/* Cykl światowy trzymamy osobno: nie siedzi w h.ind, tylko w h.world. */
+const SM_WORLD = [
+ {k:'ims',  n:'INDYWIDUALNE MISTRZOSTWA ŚWIATA', s:'IMŚ',  gold:'INDYWIDUALNY MISTRZ ŚWIATA'},
+ {k:'imsj', n:'IND. MISTRZOSTWA ŚWIATA JUNIORÓW', s:'IMŚJ2', gold:'Indywidualny Mistrz Świata Juniorów'}
 ];
 /* Pozycja drużyny gracza w finale DMPJ (0 = nie było jej w finałowej czwórce). */
 function smDmpjPos(h){
@@ -1956,9 +2391,13 @@ function smTrophies(){
    if(pos===1) r.g.push(year); else if(pos===2) r.si.push(year); else if(pos===3) r.b.push(year);
    if(pos>0 && (!r.best || pos<r.best)){ r.best=pos; r.bestYear=year; }
  };
+ const wrows = SM_WORLD.map(d=>Object.assign(mk(d.n,d.s), {k:d.k, gold:d.gold}));
  G.history.forEach(h=>{
    const I=h.ind||{};
    rows.forEach(r=>{ const c=I[r.k]; if(!c || !c.rode) return;
+     r.starts++; note(r, c.mePos||0, h.year); });
+   const W=h.world||{};
+   wrows.forEach(r=>{ const c=W[r.k]; if(!c || !c.rode) return;
      r.starts++; note(r, c.mePos||0, h.year); });
    const dp=smDmpjPos(h);
    if(dp!==null){ dmpj.starts++; note(dmpj, dp, h.year); }
@@ -1969,7 +2408,7 @@ function smTrophies(){
      target.starts++; note(target, h.pos<=3?h.pos:0, h.year);
    }
  });
- return [...rows, dmpj, dmp, dmp2, dmpKl];
+ return [...wrows, ...rows, dmpj, dmp, dmp2, dmpKl];
 }
 /* "1 klub", "2 kluby", "7 klubów" — portal ma wyglądać poważnie. */
 const smKlub = n => n===1 ? 'klub'

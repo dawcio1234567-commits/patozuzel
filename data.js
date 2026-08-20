@@ -12,6 +12,47 @@
 const GAME_UPDATE='21.08.2026';
 const GAME_X='@polskizuzlowiec';
 const CHANGELOG=[
+ {v:'22.08.2026 · WIELKI MECZ', t:'NOWY TRYB: NAJWAŻNIEJSZY MECZ SEZONU JEDZIESZ SAM — ZĘBATKA, PARK MASZYN I DECYZJE CO ŁUK', l:[
+  'To największa zmiana od premiery i pierwsza, która wychodzi poza zasadę „jedno kliknięcie = jeden sezon". RAZ (a najwyżej trzy razy) w sezonie, przed NAJWAŻNIEJSZYM spotkaniem roku, gra zatrzymuje się i pyta, co chcesz z nim zrobić: PRZESYMULOWAĆ tak jak dotąd, POJECHAĆ GO OSOBIŚCIE — albo ROZPŁAKAĆ SIĘ I NIE PRZEPROSIĆ OJCA.',
+
+  'CO LICZY SIĘ JAKO NAJWAŻNIEJSZY MECZ. Gra sama go wskazuje i porządkuje według wagi: FINAŁ play-off > DWUMECZ O UTRZYMANIE > PÓŁFINAŁ i MECZ O 3. MIEJSCE > PLAY-DOWN i OSTATNIA KOLEJKA O WEJŚCIE DO PLAY-OFF. Ta ostatnia liczy się tylko wtedy, gdy naprawdę o czymś decyduje: przed ostatnią kolejką rundy zasadniczej twój klub musi wisieć na granicy czwórki (miejsca 3-6). Jeżeli w fazie play-off nie ma dla ciebie nic (albo jest, ale pojechałeś już coś ważniejszego), pytanie wraca przy cyklach indywidualnych: OSTATNIA RUNDA GRAND PRIX, SGP CHALLENGE, SGP2 CHALLENGE i TRZECI TURNIEJ FINAŁOWY IMP. Pytanie pada tylko wtedy, gdy naprawdę wjeżdżasz do składu — jeżeli trener nie wpisał cię na mecz, nie ma o czym rozmawiać. W jednym sezonie gra zapyta najwyżej trzy razy i wyłącznie o mecz WAŻNIEJSZY od tego, o który już pytała, więc półfinał nie zablokuje ci finału.',
+
+  'JAZDA: ZĘBATKA I TOR. Przed każdym swoim biegiem ustawiasz przełożenie — zębatkę od 0 (najkrótsza, wyrywa z taśmy, kończy się powietrze na prostej) do 5 (najdłuższa, albo bagno, albo wstyd). PRZYCZEPNOŚĆ TORU ZMIENIA SIĘ CO BIEG: od BETONU po BAGNO, sześć stanów, każdy z własnym opisem. Do każdego stanu toru pasuje inna zębatka i tej idealnej NIE WIDZISZ. Widzisz tor i mechanika.',
+
+  'MECHANIK JEST DOKŁADNIE TAK DOBRY, JAK ZA NIEGO ZAPŁACIŁEŚ. Przed każdym biegiem mówi, czy zostawić ustawienia, czy zmienić je na konkretne przełożenie — i mówi to zawsze z pełnym przekonaniem. Trafność podpowiedzi liczy się wprost z jego jakości (p.mech): mechanik z łapanki ma rację w 45% przypadków, tuner na wyłączność w 96%. Procent widać na ekranie, więc wiesz, ile warta jest ta rada. Dobre dopasowanie zębatki daje do +3,8 pkt siły w biegu, kompletnie chybione zabiera 9,2 i podnosi ryzyko defektu.',
+
+  'DECYZJE CO ŁUK. Bieg dzieli się na cztery momenty: taśma, pierwszy łuk, walka w środku dystansu i ostatni łuk. Na taśmie wybierasz między atakiem na taśmę (wystrzał albo wykluczenie), czystym startem i spokojnym wyjazdem. Potem, w każdym łuku, wybierasz linię: KREDA (wąsko, po krawężniku), ZEWNĘTRZNA (po dmuchawie, na świeżym torze), PIKA (wjazd pod rywala), OBRONA (trzymam linię) albo ŁADUJEMY W PŁOT. Przy każdej opcji widać PROCENT POWODZENIA, liczony z twojej dyspozycji w tym biegu, profesjonalizmu, dopasowania zębatki i stanu toru — kreda jedzie na suchym i szklistym torze, zewnętrzna na ciężkim i mokrym. Po każdym łuku widzisz kolejność na torze i to, co się właśnie stało.',
+
+  'BALANS: DECYZJE MAJĄ ZNACZYĆ, ALE NIE MAJĄ ROBIĆ Z CIEBIE KOGOŚ INNEGO. Wszystko liczy się na tej samej skali, co zwykły bieg silnika (rideStr z pełną losowością toru), więc udany manewr przesuwa cię o kilka punktów, a nie o pół tabeli. Przetestowane na kilkuset spotkaniach z jedną, powtarzaną w kółko strategią: przesymulowany mecz daje graczowi ok. 1,62 pkt na bieg, jazda „zawsze obroną" 1,51, „zawsze kredą" 1,67, „zawsze piką" 1,37, a jazda w płot 0,01. Kto podejmuje decyzje z głową, jest do przodu; kto klika na oślep, jest do tyłu; nikt nie dostaje nic za darmo.',
+
+  'PARK MASZYN MIĘDZY BIEGAMI. Biegi bez twojego udziału przepuszczasz jednym przyciskiem („PRZESYMULUJ BIEGI DO TWOJEGO STARTU"), ale w tym czasie możesz też: PODEJRZEĆ SPRZĘT RYWALA (50% — dowiadujesz się, jaka zębatka jedzie dziś na tym torze; 50% — żółta kartka i 3 500 zł, a trzy żółte w jednych zawodach robią czerwoną), WYWRZEĆ PRESJĘ NA TRENERZE, ŻEBY WPUŚCIŁ CIĘ ZA KOGOŚ (procent liczony z medialności, atmosfery, lojalności i tego, o ile jesteś lepszy od kolegi, którego chcesz wygryźć), PRZYJEBAĆ RYWALOWI W PARKU MASZYN (prawie zawsze czerwona kartka: koniec startów, 30 000 zł kary, -14 profesjonalizmu, ryzyko zawieszenia i rozmowy z prezesem) albo OPUŚCIĆ PARK MASZYN W TRAKCIE ZAWODÓW (zmieniony do końca spotkania, 150 000 zł kary umownej, -22 profesjonalizmu, -30 atmosfery, -45 lojalności i ponad połowa szans, że klub rozwiąże kontrakt).',
+
+  'NAGRODA ZA PRESJĘ NA TRENERZE BYWA IRONICZNA. Udana presja wsadza cię do najbliższego biegu zamiast kolegi. Nieudana kończy się różnie: zwykle zbyciem jednym zdaniem, ale w 30% przypadków tekstem „skoro tak ci się chce jeździć, to popatrz, jak się to robi" — i to CIEBIE trener zdejmuje z twojego własnego biegu. W najgorszym wariancie wpisuje kogoś innego do wszystkich twoich pozostałych startów.',
+
+  'TRENER TEŻ MA COŚ DO POWIEDZENIA. Jeżeli drużyna traci co najmniej 6 punktów, a ty w tym spotkaniu nie dowozisz, kierownik przychodzi z programem w ręku, żeby wpisać na twoje miejsce rezerwę taktyczną. Możesz ZSIĄŚĆ BEZ SŁOWA (tracisz start, zyskujesz spokój), KŁÓCIĆ SIĘ (procent z medialności, atmosfery i lojalności — udana kłótnia daje ci ten bieg, nieudana i tak kończy się zmianą, tylko szatnia już cię nie lubi) albo WYZYWAĆ TRENERA (działa częściej, ale kosztuje 20-26 punktów atmosfery, 6-12 profesjonalizmu, a przy porażce jest niemal 40% szans, że prezes zamknie temat kontraktu).',
+
+  'KRAKSA BOLI NAPRAWDĘ. Upadek to zero punktów, od 2 do 7 punktów zużycia sprzętu, a w 11% przypadków także 1-3 punkty OVR — do końca sezonu jeździsz na przeciwbólowych. Wjazd w rywala kończy się wykluczeniem CIEBIE, bo sędzia szuka winnego, a nie poszkodowanego. „Ładujemy w płot" to w 62% przypadków dokładnie to, na co wygląda; w 20% jakimś cudem przejeżdżasz i zyskujesz na medialności; w 12% zabierasz ze sobą rywala.',
+
+  'ROZPŁAKAĆ SIĘ I NIE PRZEPROSIĆ OJCA — trzecia opcja, dokładnie taka, jak brzmi. Siadasz w parku maszyn i już nie wstajesz. NIE DOJEŻDŻASZ SEZONU DO KOŃCA (odpadają pozostałe kolejki, faza play-off i wszystkie turnieje indywidualne), klub rozwiązuje umowę, płacisz 50 000 zł kary, tracisz 50 punktów profesjonalizmu, 40 lojalności i 25 atmosfery. Medialność rośnie o 9, bo nagranie ma dwa miliony wyświetleń. Tej decyzji nie da się cofnąć i gra uprzedza o tym na ekranie.',
+
+  'TURNIEJ INDYWIDUALNY NA ŻYWO działa tak samo, tylko bez drużyny: nie ma trenera, nie ma rezerwy taktycznej i nie ma za kogo jechać, więc nie ma punktów bonusowych. Jedziesz pełną tabelę 20-biegową, a potem biegi dodatkowe — w Grand Prix LCQ1, LCQ2 i finał rundy, w IMP półfinał i bieg finałowy według art. 634. Cała reszta gry (tabele, karta meczowa, statystyki, klasyfikacje cyklu, pieniądze) dostaje wynik w dokładnie tym samym formacie co z symulacji i nie ma pojęcia, że ktoś przejechał to ręcznie.',
+
+  'JAK TO ZROBIONO OD ŚRODKA (dla ciekawych): rozstrzygnięcie sezonu jest teraz GENERATOREM. Cały sezon liczył się dotąd w jednym, nieprzerywalnym wywołaniu — a tryb jazdy wymaga czegoś odwrotnego: symulacja musi zatrzymać się w środku, oddać sterowanie interfejsowi, poczekać na kliknięcie i ruszyć dalej z tego samego miejsca, ze wszystkimi zmiennymi lokalnymi. Rozbijanie tej funkcji na kawałki oznaczałoby przepisanie 600 linii i przeniesienie kilkudziesięciu zmiennych do wspólnego worka; generator robi to samo bez jednej linijki przenoszenia stanu. Wszystkie stare wejścia (resolveSeason, runPhase, tie, simIndividual, simWorldSeason, runGpSeries) zostały na miejscu jako zwykłe funkcje, więc reszta kodu działa bez zmian.',
+
+  'NOWE: KWALIFIKACJE DO IMŚJ2 NA WZÓR CHALLENGE. Skład cyklu juniorskiego brał się dotąd z gołego rankingu OVR — komputer wpisywał piętnastu najlepszych młodzieżowców świata („nominacja z rankingu juniorów") i tyle. Nikt niczego nie musiał wywalczyć, a Gracz nie miał ŻADNEJ drogi do IMŚJ2 poza czekaniem, aż jego OVR sam urośnie ponad stawkę. Teraz cykl juniorski ma tę samą strukturę co seniorski: czołowa siódemka poprzedniego cyklu zachowuje kwalifikację, czterech dochodzi z nowego turnieju SGP2 CHALLENGE, resztę dobiera Komisja dzikimi kartami, wszystko z limitami krajowymi. Do Challenge prowadzą eliminacje: w Polsce jest nimi SREBRNY KASK (czterej najlepsi), Anglia, Szwecja i Dania mają własne turnieje po trzy miejsca, pozostałe federacje wspólny o trzy miejsca.',
+
+  'W eliminacjach juniorskich obowiązuje OSTRZEJSZY LIMIT WIEKU niż w samym cyklu: jadą wyłącznie zawodnicy, którzy W KOLEJNYM SEZONIE wciąż będą młodzieżowcami, czyli dziś mają najwyżej 20 lat. Bez tego cała wywalczona czwórka traciła miejsce w tej samej zimie, kończąc 22 lata, a stawkę i tak wypełniały dzikie karty. Nowa zakładka ELIMINACJE / CHALLENGE pokazuje obie drogi — seniorską i juniorską — z pełnymi tabelami. Jeżeli wjedziesz do czwórki SGP2 Challenge, limit krajowy nigdy cię nie zatrzyma; to twoja droga do mistrzostw świata juniorów.',
+
+  'ZMIANA: WYŻSZE WIDEŁKI POTENCJAŁU DLA NIŻSZYCH KLAS. Zgłoszenie: „potencjał Okna życia jest ekstremalnie nisko". Racja — stary sufit 46 punktów oznaczał, że ta klasa NIGDY nie miała prawa wyjść poza Krajową Ligę, choćby gracz zrobił wszystko idealnie. Widełki wszystkich klas są teraz szersze i zachodzą na siebie: Okno życia 34-72 (było 22-46), Licencja 42-78 (34-60), Bezjajeczny grajek 54-84 (48-74), Jakiś potencjał 64-88 (60-84), Wielki talent 74-95 (72-93), Następca Zmarzliny 86-99 (84-99). Dolny koniec Okna życia to dalej dramat — górny daje realną, choć rzadką, drogę do ligowego średniaka.',
+
+  'NOWE: PROFESJONALIZM PRZESUWA SAM SUFIT. Potencjał przestaje być liczbą wylosowaną raz przy tworzeniu postaci i zamrożoną na całą karierę. Co sezon może urosnąć o ułamek punktu do dwóch, ale wyłącznie wtedy, gdy zawodnik na to zapracował: jeździ, dowozi wyniki ponad swoją półkę, dobija do własnego sufitu, zdobywa medale, jeździ w Grand Prix — i przede wszystkim żyje jak zawodowiec. Sam limit tego wzrostu zależy od profesjonalizmu: przy poziomie poniżej 55 zatrzymasz się w okolicach 78, przy 70 — na 92, a do 99 dojdzie tylko ktoś, kto przez lata trzyma profesjonalizm powyżej 85. Potencjał nigdy nie spada. Test: „Okno życia" prowadzone bez dbania o profesjonalizm (30) kończy karierę z tym samym sufitem, z jakim zaczęło; to samo „Okno życia" przy profesjonalizmie 90 potrafi po dwudziestu sezonach dobić do 98 potencjału i realnego OVR ponad 80. Zmiana z rozpiską „co przesunęło twój sufit" widoczna jest w podsumowaniu sezonu.',
+
+  'ZMIANA: SZERSZE OKNO POTENCJAŁU TAKŻE DLA MŁODZIEŻY W KLUBACH. Junior dostawał dotąd potencjał wylosowany wokół poziomu SWOJEGO klubu, więc w klubie Krajowej Ligi (OVR ~50) jego sufit siedział w okolicach 45-55 — nikt wychowany w niższej lidze nie miał prawa zostać gwiazdą, a każdy talent musiał urodzić się od razu w Ekstralidze. Tak to nie działa. Okno jest teraz szersze i ma własną loterię: mniej więcej co dziesiąty junior dostaje potencjał wyraźnie ponad poziom klubu, w którym się szkoli.',
+
+  'NOWE: TYTUŁY MISTRZA ŚWIATA WYSZCZEGÓLNIONE NA KARCIE KARIERY (PNG). Złoto IMŚ leżało dotąd w tej samej tabeli, co Brązowy Kask i cykl turniejów szkoleniowych — formalnie było, ale najważniejszy tytuł w tym sporcie ginął w wierszu numer jeden. Teraz ma własny złoty pas nad gablotą (z rocznikami tytułów w osobnych plakietkach, kompletem krążków IMŚ i IMŚJ2, liczbą sezonów w cyklu, najlepszym miejscem w klasyfikacji generalnej i sumą zarobków z cyklu światowego), własny kafelek MISTRZ ŚWIATA w profilu zawodnika oraz złotą linijkę tuż pod nazwiskiem — razem z osobnym oznaczeniem mistrzostwa świata juniorów.',
+
+  'DROBNE: skutki decyzji z wielkiego meczu (kartki, kary umowne, spadek profesjonalizmu po awanturze z trenerem, wzrost medialności po kraksie) mają w rubryce PROFESJONALIZM I MEDIALNOŚĆ własną linijkę zamiast doklejać się do zdarzenia losowego z początku sezonu. Podsumowanie sezonu dostało boks WIELKI MECZ SEZONU z wynikiem, twoim dorobkiem i rozwijanym przebiegiem „bieg po biegu" — łącznie z tym, co powiedziałeś trenerowi.'
+ ]},
  {v:'21.08.2026 · HOTFIX', t:'HOTFIX: KLIKANIE W WYNIK MECZU I ZBYT WIELU POLAKÓW W CYKLACH ŚWIATOWYCH', l:[
   'NAPRAWA: KLIKNIĘCIE W WYNIK MECZU NIC NIE ROBIŁO. Argumenty przycisku szły przez JSON.stringify(), który opakowuje napisy w PODWÓJNY cudzysłów — a cały handler siedzi w atrybucie onclick="...". Pierwszy taki cudzysłów zamykał atrybut, więc przeglądarka dostawała połamany HTML i przycisk był po prostu martwy. Argumenty składane są teraz ręcznie, w apostrofach. Przetestowane automatem, który wyciąga z wygenerowanego HTML wszystkie klikalne wyniki i naprawdę je klika: 192 na 192 otwierają kartę meczową z tabelą punktów wszystkich zawodników i przebiegiem bieg po biegu.',
 
@@ -324,13 +365,31 @@ const GRADE={
 /* `budget` = z czym wchodzisz w dorosłość. U większości klas jest UJEMNY:
    bus na kredyt, kevlar na raty, dług u ojca za pierwszy silnik. Pierwsze
    sezony to nie budowanie majątku, tylko wychodzenie na zero. */
+/* ------------------------------------------------------------
+   KLASY POSTACI — WIDEŁKI POTENCJAŁU (zmiana 22.08.2026)
+   ------------------------------------------------------------
+   Zgłoszenie: „zrób wyższe widełki potencjału dla zawodników niższych klas,
+   jak Okno życia, żeby nie było to ekstremalnie nisko". Racja — stary sufit
+   46 punktów przy Oknie życia oznaczał, że ta klasa NIGDY nie miała szansy
+   wyjść poza Krajową Ligę, choćby gracz zrobił wszystko idealnie: sufit
+   talentu obcinał rozwój na poziomie, na którym w Ekstralidze jeżdżą
+   młodzieżowcy. Widełki są teraz wyraźnie szersze i ZACHODZĄ NA SIEBIE —
+   dolny koniec Okna życia to dalej dramat, ale górny koniec daje realną,
+   choć rzadką, drogę do ligowego średniaka.
+   Do tego doszedł drugi mechanizm (patrz resolveSeason w engine.js):
+   PROFESJONALIZM PODNOSI SAM SUFIT. Zawodnik, który przez lata żyje jak
+   zawodowiec, przesuwa swój potencjał w górę o punkt, dwa na sezon —
+   dzięki temu „chłopak z rubryki" po dekadzie ciężkiej roboty może dobić
+   nawet w okolice 90. To ma być wyjątek nagradzający konsekwencję,
+   a nie standardowa ścieżka.
+   ------------------------------------------------------------ */
 const CLASSES=[
- {id:'okno', n:'Okno życia',                 ovr:[1,10],  pot:[22,46], prof:[5,30],  med:[0,15], budget:-14000, d:'Klub bierze cię, bo ktoś musi wypełnić rubrykę. Jeździsz dla siebie i dla mamy. Bus po dziadku, rata jeszcze leci.'},
- {id:'lic',  n:'Licencja żeby klub był bez kar', ovr:[11,25], pot:[34,60], prof:[10,40], med:[0,20], budget:-11000, d:'Istniejesz wyłącznie po to, żeby regulamin się zgadzał.'},
- {id:'bez',  n:'Bezjajeczny grajek',         ovr:[26,40], pot:[48,74], prof:[20,55], med:[5,30], budget:-8000, d:'Umiesz jeździć, ale w pierwszym łuku zawsze puszczasz gaz.'},
- {id:'pot',  n:'Jakiś potencjał jest',       ovr:[41,50], pot:[60,84], prof:[30,65], med:[10,40],budget:-5000, d:'Trener mówi "on ma to coś". Trener mówi tak od czterech lat.'},
- {id:'tal',  n:'Wielki talent',              ovr:[51,60], pot:[72,93], prof:[35,75], med:[20,55],budget:0, d:'Portale piszą o tobie w każdą środę. Ciśnienie rośnie.'},
- {id:'zma',  n:'Następca Zmarzliny',         ovr:[61,67], pot:[84,99], prof:[40,80], med:[35,75],budget:6000, d:'Etykieta cięższa niż silnik. Albo hala sław, albo hala odlotów.'}
+ {id:'okno', n:'Okno życia',                 ovr:[1,10],  pot:[34,72], prof:[5,30],  med:[0,15], budget:-14000, d:'Klub bierze cię, bo ktoś musi wypełnić rubrykę. Jeździsz dla siebie i dla mamy. Bus po dziadku, rata jeszcze leci.'},
+ {id:'lic',  n:'Licencja żeby klub był bez kar', ovr:[11,25], pot:[42,78], prof:[10,40], med:[0,20], budget:-11000, d:'Istniejesz wyłącznie po to, żeby regulamin się zgadzał.'},
+ {id:'bez',  n:'Bezjajeczny grajek',         ovr:[26,40], pot:[54,84], prof:[20,55], med:[5,30], budget:-8000, d:'Umiesz jeździć, ale w pierwszym łuku zawsze puszczasz gaz.'},
+ {id:'pot',  n:'Jakiś potencjał jest',       ovr:[41,50], pot:[64,88], prof:[30,65], med:[10,40],budget:-5000, d:'Trener mówi "on ma to coś". Trener mówi tak od czterech lat.'},
+ {id:'tal',  n:'Wielki talent',              ovr:[51,60], pot:[74,95], prof:[35,75], med:[20,55],budget:0, d:'Portale piszą o tobie w każdą środę. Ciśnienie rośnie.'},
+ {id:'zma',  n:'Następca Zmarzliny',         ovr:[61,67], pot:[86,99], prof:[40,80], med:[35,75],budget:6000, d:'Etykieta cięższa niż silnik. Albo hala sław, albo hala odlotów.'}
 ];
  
 /* ---------- BAZA KLUBÓW ---------- */
@@ -2868,6 +2927,29 @@ const SGP = {
     bo to jednak słabsze żużlowo kraje i inaczej rozwaliłyby balans cyklu. */
  qual      : {POL:4, GBR:3, SWE:3, DEN:3, REST:3},
  restCtry  : ['GER','FIN','FRA','USA','UKR','ARG','CZE'],
+ /* ------------------------------------------------------------
+    ELIMINACJE DO IMŚJ2 — WŁASNA DROGA JUNIORÓW (nowe 22.08.2026)
+    ------------------------------------------------------------
+    Zgłoszenie: „dodaj również kwalifikacje na wzór Challenge do IMŚ 2".
+    Do tej pory skład cyklu juniorskiego brał się z gołego rankingu OVR
+    („nominacja z rankingu juniorów") — czyli komputer wpisywał do stawki
+    piętnastu najlepszych i tyle. Nikt niczego nie musiał wywalczyć,
+    a gracz nie miał ŻADNEJ drogi do IMŚJ2 poza czekaniem, aż jego OVR
+    urośnie. Teraz cykl juniorski ma dokładnie tę samą strukturę co seniorski:
+      · kwalifikacja z poprzedniego cyklu (czołowa siódemka, o ile wciąż U21),
+      · SGP2 CHALLENGE — turniej finałowy eliminacji, awans dla czterech,
+      · miejsce gwarantowane dla Młodzieżowego Mistrza Europy,
+      · reszta to dzikie karty Komisji, już z limitami krajowymi.
+    Do SGP2 Challenge prowadzą eliminacje krajowe: w Polsce jest nimi
+    SREBRNY KASK (jego czterej najlepsi), Anglia, Szwecja i Dania mają
+    własne turnieje po trzy miejsca, a pozostałe federacje jadą we
+    wspólnych eliminacjach o trzy miejsca — jak u seniorów.
+    ------------------------------------------------------------ */
+ qualJun   : {POL:4, GBR:3, SWE:3, DEN:3, REST:3},
+ junTop    : 7,           // ilu z klasyfikacji IMŚJ2 zachowuje kwalifikację na kolejny rok
+ junCh     : 4,           // ilu wchodzi do cyklu z SGP2 Challenge
+ junWild   : 4,           // stałe dzikie karty Komisji w cyklu juniorskim
+ chJunMul  : 0.30,        // nagrody SGP2 Challenge to ułamek stawek seniorskich
  /* liczebność świata poza Polską (generowana na starcie gry) */
  worldSize : 96
 };
@@ -3786,4 +3868,90 @@ youngFast: { who:'SELEKCJONER', lines:[
  '„Sezon rewelacyjny jak na jego rocznik. Reszta zależy od zimy."'
 ]}
 
+};
+
+/* ============================================================
+   WIELKI MECZ — KONFIGURACJA I TEKSTY (patch 22.08.2026)
+   ------------------------------------------------------------
+   Wszystko, co gracz CZYTA w trybie jazdy na żywo, siedzi tutaj.
+   Silnik (engine.js) czyta z tego wyłącznie liczby i etykiety —
+   dzięki temu balans i teksty da się kręcić bez ruszania logiki.
+   ============================================================ */
+const BIGM = {
+ /* --- PRZYCZEPNOŚĆ TORU (0-5) ---
+    0 = beton, tor wyschnięty na wiór, koło ucieka przy każdym otwarciu gazu
+    5 = tor ciężki, mokry, trzyma jak dywan, ale wypłuca silnik
+    Do KAŻDEGO stanu toru pasuje inna zębatka. Im większa przyczepność,
+    tym „dłuższe" przełożenie ma sens — dlatego idealna zębatka rośnie
+    razem z przyczepnością (z drobnym marginesem, o którym wie tylko tor). */
+ grip:[
+  {n:'BETON',        d:'Tor wyschnięty na wiór. Twardy, szklisty, bez śladu wilgoci. Koło ucieka przy samej myśli o gazie.'},
+  {n:'SUCHO',        d:'Sucho i gładko. Ślizgawka na wejściu w łuk, ale da się jechać, jeśli ktoś umie kręcić gazem.'},
+  {n:'ŚREDNIO',      d:'Tor przeciętny. Nawierzchnia równa, przyczepność normalna, żadnych fajerwerków. Klasyka Ekstraligi.'},
+  {n:'PRZYCZEPNIE',  d:'Dołożyli wody i przeorali. Trzyma, wybija do przodu, ale wybacza mniej niż się wydaje.'},
+  {n:'CIĘŻKO',       d:'Tor ciężki, gruby, mokry po deszczu. Motocykl dławi się na wyjściu, ale przód trzyma jak przyklejony.'},
+  {n:'BAGNO',        d:'Bagno. Woda stoi na łuku, kluby dzwonią do sędziego, sędzia patrzy w niebo. Jedziemy.'}
+ ],
+ /* Skutek dopasowania zębatki: indeks = |zębatka - idealna| (0-5). */
+ fitStr : [ 3.8, 1.4, -1.2, -3.8, -6.4, -9.2 ],
+ fitDef : [ 0.000, 0.008, 0.020, 0.036, 0.055, 0.078 ],
+ fitTxt : ['ZĘBATKA IDEALNA','ZĘBATKA BLISKO','ZĘBATKA NIE TA','ZĘBATKA ZŁA','ZĘBATKA FATALNA','ZĘBATKA Z INNEGO TORU'],
+ gearTxt: [
+  '0 — najkrótsza. Wyrywa z taśmy jak petarda, na prostej kończy się powietrze.',
+  '1 — krótka. Start dobry, prosta średnia.',
+  '2 — kompromis. Nic nie wygrywa, nic nie przegrywa.',
+  '3 — dłuższa. Trochę cierpliwości z taśmy, ale ciągnie do bandy.',
+  '4 — długa. Na przyczepnym torze zjada rywali na prostej.',
+  '5 — najdłuższa. Albo bagno, albo wstyd.'
+ ],
+ /* --- MECHANIK ---
+    Trafność podpowiedzi liczy się z jakości mechanika (p.mech 0-99):
+    45% na dnie skali, 96% u tunera na wyłączność. Zły mechanik nie mówi
+    „nie wiem" — mówi z pełnym przekonaniem coś głupiego. */
+ mechMin : 45, mechMax : 96,
+ mechStay: ['„Zostaw. Ja bym nic nie ruszał."','„Jest dobrze. Nie psuj tego, co działa."',
+            '„Ja bym została przy tym. Serio."','„Nie dotykaj. Tor się nie zmienił aż tak."'],
+ mechMove: ['„Zmieniłbym na {g}. Zaufaj mi."','„Dawaj {g}. Widziałem, jak wychodzą z łuku."',
+            '„Na to bagno musi być {g}. Inaczej się udusisz."','„{g} i po sprawie. Dwie minuty roboty."'],
+ /* --- PARK MASZYN: KOSZTY I PROGI --- */
+ spyOk       : 50,        // % powodzenia podglądania sprzętu rywala
+ yellowCost  : 3500,      // żółta kartka regulaminowa
+ redFine     : 30000,     // czerwona kartka za rękoczyny
+ redProf     : 14,        // ...i ile zabiera profesjonalizmu
+ leaveFine   : 150000,    // opuszczenie parku maszyn w trakcie zawodów
+ leaveProf   : 22,
+ leaveAtm    : 30,
+ leaveLoy    : 45,
+ cryFine     : 50000,     // płacz przed meczem i brak telefonu do ojca
+ cryProf     : 50,
+ argueBase   : 46,        // % szans, że kłótnia z trenerem coś da
+ insultBase  : 62,        // wyzwiska działają częściej, kosztują nieporównanie więcej
+ pushBase    : 40,        // presja, żeby wpuścił cię za kolegę
+ /* --- START --- */
+ starts:[
+  {id:'tape', l:'ATAK NA TAŚMĘ', d:'Koło na taśmie, sprzęgło w połowie. Albo wyjeżdżasz pierwszy, albo sędzia zapala czerwoną i wykluczają cię z biegu.'},
+  {id:'clean',l:'CZYSTO Z TAŚMY', d:'Normalny start. Tyle, ile daje sprzęt, refleks i zębatka.'},
+  {id:'safe', l:'SPOKOJNIE, PO SWOJEMU', d:'Puszczasz taśmę bezpiecznie i liczysz, że rywale sami się pozabijają w pierwszym łuku.'}
+ ],
+ /* --- DECYZJE W BIEGU (co łuk) --- */
+ moves:[
+  {id:'kreda', l:'KREDA (do wewnątrz, po krawężniku)',
+   d:'Wąsko, po kredzie, koło przy krawężniku. Najkrótsza droga i najmniej miejsca na pomyłkę.'},
+  {id:'zewn',  l:'ZEWNĘTRZNA (po dmuchawie)',
+   d:'Szeroko, po świeżym torze przy bandzie. Dłuższa droga, za to prawdziwa przyczepność.'},
+  {id:'pika',  l:'PIKA (wjazd pod rywala)',
+   d:'Wchodzisz mu pod koło i zamykasz. Albo go wyprzedzasz, albo obaj lecicie po dmuchawie.'},
+  {id:'obrona',l:'OBRONA (trzymam linię)',
+   d:'Żadnych fajerwerków. Zamykasz wewnętrzną i pilnujesz tego, co masz.'},
+  {id:'plot',  l:'ŁADUJEMY W PŁOT',
+   d:'Gaz do dechy, kierunek banda, myślenie na potem. Ojciec by tego nie pochwalił. Ojciec nie odbiera.'}
+ ],
+ phases:['START','1. OKRĄŻENIE — ŁUK 1 i 2','2-3. OKRĄŻENIE — WALKA','OSTATNI ŁUK'],
+ /* --- KOMENTARZ SPIKERA (do smaku, losowany) --- */
+ crowd:[
+  'Sektor B stoi na krzesełkach.','Spiker urywa zdanie w połowie.',
+  'Ktoś z trybun rzuca kubkiem w płot.','Kamera pokazuje twarz prezesa. Prezes nie wygląda dobrze.',
+  'Trener chowa twarz w dłoniach.','Na trybunach zapala się race, choć nie wolno.',
+  'Mechanik ściska klucz tak, że bieleją mu palce.','Twoja matka ogląda to w telewizji i nie oddycha.'
+ ]
 };

@@ -158,6 +158,8 @@ function render(){
    s==='renew'   ? scRenew()  :
    s==='event'   ? scEvent()  :
    s==='evsum'   ? scEvSum()  :
+   s==='big'     ? scBig()    :
+   s==='live'    ? scLive()   :
    s==='winter'  ? scWinter() :
    s==='tribunal'? scTribunal():
    s==='mech'    ? scMech()   :
@@ -170,7 +172,9 @@ function head(){
  return `<div class="mb-4 border-b border-zinc-700 pb-2 flex items-end justify-between flex-wrap gap-2">
   <div><div class="text-orange-500 font-extrabold tracking-[.3em] text-lg glow">POLSKI ŻUŻLOWIEC SIMULATOR</div>
   <div class="text-[11px] text-zinc-400 tracking-[.25em]">SYMULATOR KARIERY // ROK ${G.year}</div></div>
-  <div class="text-[11px] text-zinc-400 text-right">jedno kliknięcie = jeden sezon</div></div>`;
+  <div class="text-[11px] text-zinc-400 text-right">${(G.screen==='live'||G.screen==='big')
+    ? '<span class="text-orange-500 font-bold">tego meczu nikt za ciebie nie przejedzie</span>'
+    : 'jedno kliknięcie = jeden sezon'}</div></div>`;
 }
 function statBar(l,v,col='#f97316'){
  return `<div class="mb-1.5"><div class="flex justify-between text-[11px] text-zinc-300 tracking-wider"><span>${l}</span><span class="text-zinc-200">${v}</span></div>
@@ -688,6 +692,12 @@ function scHub(){
    Powyżej 80% jeździsz praktycznie co tydzień; poniżej 60% to rotacja — jak forma nie wejdzie, sezon potrafi zejść na ławce.</span></div></div>
    <button onclick="startSeason()" class="btn px-7 py-3 font-extrabold tracking-[.2em] text-orange-500">SYMULUJ SEZON ${G.year} &gt;</button>
   </div>
+  <div class="px-4 pb-3 text-[11px] text-zinc-400 border-t border-zinc-700 pt-2">
+   <b class="text-orange-500">WIELKI MECZ:</b> przed najważniejszym spotkaniem sezonu — finałem, dwumeczem o utrzymanie,
+   półfinałem, a jeżeli w play-offie nie będzie dla ciebie nic, to przed ostatnią rundą Grand Prix, Challenge albo IMP —
+   gra zatrzyma się i zapyta, czy chcesz go <b class="text-zinc-300">przejechać osobiście</b>: zębatka pod tor przed każdym biegiem,
+   decyzje co łuk i park maszyn do twojej dyspozycji. Warunek jest jeden: musisz wjechać do składu.
+  </div>
   <div class="px-4 pb-3 text-[11px] ${p.contract.years>1?'text-zinc-400':'text-orange-500'} border-t border-zinc-700 pt-2">
    ${p.contract.years>1
      ? 'KONTRAKT: masz umowę jeszcze na '+p.contract.years+' '+lataTxt(p.contract.years)+' (do końca sezonu '+(G.year+p.contract.years-1)+'). '+
@@ -1070,12 +1080,315 @@ function chooseEv(i){
  }
  finishEv();
 }
-/* Zamknięcie zdarzenia: dopiero tutaj rozstrzygamy sezon. */
+/* ============================================================
+   ZAMKNIĘCIE ZDARZENIA → ROZSTRZYGNIĘCIE SEZONU
+   ------------------------------------------------------------
+   resolveSeason() nie jest już „jednym kliknięciem": od patcha 22.08.2026
+   może zatrzymać się w środku i poprosić o decyzję (wielki mecz, jazda
+   na żywo). Zwraca wtedy null, a szczegóły pauzy siedzą w G.pause.
+   seasonRoute() jest JEDYNYM miejscem, które to rozstrzyga — wszystkie
+   przyciski trybu jazdy przechodzą przez nie.
+   ============================================================ */
 function finishEv(){
  G.evSum=null;
- resolveSeason();
+ seasonRoute(resolveSeason());
+}
+function seasonRoute(r){
+ if(r===null && G.pause){
+   G.screen = G.pause.ui==='big' ? 'big' : 'live';
+   render(); return;
+ }
  G.screen='summary'; render();
 }
+/* Decyzja przed wielkim meczem: 'sim' | 'ride' | 'cry'. */
+function bigChoose(a){ seasonRoute(seasonStep({a})); }
+/* Każdy przycisk trybu jazdy: akcja + ewentualna wartość (zębatka, linia jazdy). */
+function liveAct(a, v){ seasonRoute(seasonStep({a, v})); }
+
+/* ============================================================
+   EKRAN: WIELKI MECZ — DECYZJA (patch 22.08.2026)
+   ------------------------------------------------------------
+   Trzy drogi. Dwie sportowe i jedna, po której nie ma już powrotu.
+   ============================================================ */
+function scBig(){
+ const B=(G.pause&&G.pause.big)||{};
+ const p=G.p;
+ const opp = B.opp ? esc(B.opp) : null;
+ const rideTxt = B.kind==='tie'
+   ? 'Siadasz na motocyklu. Przed każdym swoim biegiem ustawiasz zębatkę pod tor, w parku maszyn robisz to, co uważasz za stosowne, a w biegu decydujesz co łuk: kreda, zewnętrzna, pika, obrona albo płot. Dwa spotkania, piętnaście biegów każde.'
+   : 'Siadasz na motocyklu. Zębatka przed każdym swoim biegiem, decyzje co łuk, park maszyn do twojej dyspozycji. Dwadzieścia biegów tabeli, a potem biegi dodatkowe.';
+ return head()+`<div class="fade">
+ <div class="brut" style="border-color:#dc2626">
+  <div class="brut-h px-3 py-1.5 text-[11px] font-bold blink" style="border-color:#dc2626;color:#f87171">
+    NAJWAŻNIEJSZY MECZ SEZONU ${G.year}</div>
+  <div class="p-5">
+   <div class="text-[11px] text-zinc-500 tracking-[.25em] mb-1">${esc(B.lk?G.leagues[B.lk].name:'CYKL INDYWIDUALNY')}</div>
+   <div class="text-orange-500 font-extrabold tracking-wider text-[19px] leading-tight mb-1">${esc(B.title||B.stage||'WIELKI MECZ')}</div>
+   ${opp?`<div class="text-[13px] text-zinc-200 mb-3">${esc(B.myClub||'')} <span class="text-zinc-500">kontra</span> <b class="text-zinc-100">${opp}</b></div>`:''}
+   <div class="text-zinc-300 text-[12.5px] leading-relaxed mb-4 border-l-2 border-red-800 pl-4">${esc(B.why||'')}</div>
+
+   <div class="text-[11px] text-zinc-500 tracking-[.2em] mb-2">CO ROBISZ</div>
+   <div class="space-y-2">
+    <button onclick="bigChoose('sim')" class="btn w-full text-left px-4 py-3 text-[12px]">
+      <span class="text-orange-600 font-bold mr-2">1.</span><b>PRZESYMULUJ TO SPOTKANIE</b>
+      <div class="text-[11px] text-zinc-400 mt-1 ml-6">Tak jak zawsze. Komputer liczy wszystko według silnika, ty czytasz wynik w raporcie.
+      Bez ryzyka, bez zębatki, bez kartek. Twój OVR i forma robią swoje.</div></button>
+
+    <button onclick="bigChoose('ride')" class="btn w-full text-left px-4 py-3 text-[12px]" style="border-color:#f97316">
+      <span class="text-orange-600 font-bold mr-2">2.</span><b class="text-orange-400">JADĘ TO SPOTKANIE</b>
+      <div class="text-[11px] text-zinc-400 mt-1 ml-6">${esc(rideTxt)}
+      Wszystko, co robisz na torze, liczy się tym samym silnikiem co reszta sezonu — decyzje przesuwają cię o kilka punktów,
+      nie zamieniają cię w innego zawodnika. Kraksa boli naprawdę: sprzęt, czasem OVR.</div></button>
+
+    <button onclick="bigChoose('cry')" class="btn-d w-full text-left px-4 py-3 text-[12px]">
+      <span class="font-bold mr-2">3.</span><b>ROZPŁAKAĆ SIĘ I NIE PRZEPROSIĆ OJCA</b>
+      <div class="text-[11px] mt-1 ml-6" style="color:#fca5a5">Siadasz na kanapie w parku maszyn i już nie wstajesz.
+      Nie dojeżdżasz sezonu do końca. Klub rozwiązuje umowę. Kara ${zl(BIGM.cryFine)}, profesjonalizm −${BIGM.cryProf},
+      lojalność i atmosfera w gruzach. Materiał obejrzy dwa miliony ludzi.
+      <b>Tej decyzji nie da się cofnąć.</b></div></button>
+   </div>
+
+   <div class="text-[10.5px] text-zinc-500 mt-4 leading-relaxed">
+     Twój stan na dziś: OVR <b class="text-zinc-300">${p.ovr}</b> ·
+     forma <b class="text-zinc-300">${p.form>0?'+':''}${p.form}</b> ·
+     sprzęt <b class="text-zinc-300">${p.equip}/99</b> ·
+     mechanik <b class="text-zinc-300">${p.mech}/99</b> (${esc(p.mechName)}) ·
+     profesjonalizm <b class="text-zinc-300">${p.prof}</b>.
+     Mechanik podpowiada zębatkę tym celniej, im więcej za niego płacisz.
+   </div>
+  </div>
+ </div></div>`;
+}
+
+/* ============================================================
+   EKRAN: JAZDA NA ŻYWO
+   ------------------------------------------------------------
+   Jeden ekran obsługuje obie odmiany: mecz drużynowy (G.live.kind
+   niezdefiniowany) i turniej indywidualny (kind==='ind').
+   ============================================================ */
+function liveHeadBar(L){
+ const ind = L.kind==='ind';
+ return `<div class="brut-h px-3 py-2 flex justify-between items-center flex-wrap gap-2" style="border-color:#f97316">
+   <div>
+     <div class="text-[10px] text-zinc-500 tracking-[.25em]">${ind?'TURNIEJ NA ŻYWO':'MECZ NA ŻYWO'} // ${G.year}</div>
+     <div class="text-orange-500 font-extrabold tracking-wider text-[13px]">${esc(L.title||L.stage||'')}</div>
+   </div>
+   ${ind ? `<div class="text-right"><div class="text-[10px] text-zinc-500 tracking-widest">TWÓJ DOROBEK</div>
+     <div class="text-[20px] font-extrabold text-zinc-100">${L.me?L.me.pts:0} <span class="text-[11px] text-zinc-500">pkt</span></div></div>`
+   : `<div class="text-right">
+      <div class="text-[10px] text-zinc-500 tracking-widest">${esc(L.home)} — ${esc(L.away)}</div>
+      <div class="text-[22px] font-extrabold tracking-wider ${L.mySide==='h'?(L.hs>=L.as?'text-emerald-400':'text-red-400'):(L.as>=L.hs?'text-emerald-400':'text-red-400')}">
+        ${L.hs}:${L.as}</div></div>`}
+ </div>`;
+}
+/* Tor + zębatka + mechanik — pasek widoczny w parku maszyn i w biegu. */
+function liveTrackBox(L, editable){
+ if(L.grip==null) return '';
+ const fitCol = L.ideal!=null ? (L.fit<=0?'#22c55e':L.fit===1?'#84cc16':L.fit===2?'#eab308':'#ef4444') : '#71717a';
+ return `<div class="brut mb-3">
+  <div class="brut-h px-3 py-1 text-[10px] text-zinc-400 font-bold tracking-widest">TOR I MOTOCYKL</div>
+  <div class="p-3">
+   <div class="flex justify-between items-baseline flex-wrap gap-2 mb-1">
+     <div class="text-[13px] font-extrabold text-orange-400">PRZYCZEPNOŚĆ: ${esc(L.grip.n)}</div>
+     <div class="text-[10px] text-zinc-500 tracking-widest">stan toru zmienia się co bieg</div>
+   </div>
+   <div class="text-[11.5px] text-zinc-300 leading-relaxed mb-3">${esc(L.grip.d)}</div>
+   <div class="text-[10px] text-zinc-500 tracking-widest mb-1">ZĘBATKA (0 = najkrótsza, 5 = najdłuższa)</div>
+   <div class="flex gap-1 flex-wrap mb-2">
+     ${[0,1,2,3,4,5].map(i=>`<button ${editable?`onclick="liveAct('gear',${i})"`:'disabled'}
+       class="${i===L.gear?'btn':'btn'} px-3 py-2 text-[12px] font-bold"
+       style="${i===L.gear?'background:#f97316;color:#000;border-color:#fdba74':''}${editable?'':';opacity:.55;cursor:default'}">${i}</button>`).join('')}
+     <div class="text-[11px] text-zinc-400 self-center ml-2">${esc(BIGM.gearTxt[L.gear])}</div>
+   </div>
+   ${L.ideal!=null
+     ? `<div class="text-[11.5px] font-bold" style="color:${fitCol}">PODEJRZANE U RYWALA: dziś jedzie zębatka <b>${L.ideal}</b> — ${esc(BIGM.fitTxt[L.fit])}.</div>`
+     : `<div class="text-[11px] text-zinc-500">Idealnej zębatki nie widzisz. Widzisz tor i mechanika.</div>`}
+   ${L.mech?`<div class="text-[12px] text-zinc-200 mt-2 border-l-2 border-zinc-600 pl-3">
+     <b class="text-zinc-400">${esc(G.p.mechName)}:</b> ${esc(L.mech.txt)}
+     <div class="text-[10px] text-zinc-500 mt-0.5">trafność podpowiedzi tego mechanika: ok. ${L.mech.acc}%</div></div>`:''}
+  </div>
+ </div>`;
+}
+function liveMsgBox(L){
+ if(!L.msgs || !L.msgs.length) return '';
+ return `<div class="brut mb-3" style="border-color:#f97316">
+  <div class="p-3">${L.msgs.map(m=>`<div class="text-[12.5px] text-zinc-100 leading-relaxed mb-1.5">› ${esc(m)}</div>`).join('')}</div>
+ </div>`;
+}
+/* Wspólne akcje parku maszyn. */
+function livePitActions(L, full){
+ const b=[];
+ b.push(`<button onclick="liveAct('spy')" class="btn w-full text-left px-3 py-2 text-[12px]">
+   <b>PODEJRZYJ SPRZĘT RYWALA</b> <span class="text-zinc-500">— ${BIGM.spyOk}% powodzenia</span>
+   <div class="text-[10.5px] text-zinc-400 mt-0.5">Udane: wiesz, jaka zębatka jedzie dziś na tym torze (i jedziesz odrobinę pewniej).
+   Nieudane: żółta kartka i ${zl(BIGM.yellowCost)}. Trzy żółte w jednych zawodach robią czerwoną.</div></button>`);
+ if(full && L.push && L.push.show){
+   b.push(`<button onclick="liveAct('push')" class="btn w-full text-left px-3 py-2 text-[12px]">
+     <b>PRESJA NA TRENERZE, ŻEBY CIĘ WPUŚCIŁ ZA KOGOŚ</b> <span class="text-zinc-500">— ${L.push.chance}% powodzenia</span>
+     <div class="text-[10.5px] text-zinc-400 mt-0.5">Udane: wjeżdżasz w najbliższy bieg zamiast kolegi z kadry.
+     Nieudane: w najlepszym razie zbywa cię jednym zdaniem, w najgorszym to CIEBIE zdejmie z twojego własnego biegu.</div></button>`);
+ }
+ b.push(`<button onclick="liveAct('hit')" class="btn-d w-full text-left px-3 py-2 text-[12px]">
+   <b>PRZYJEBAĆ RYWALOWI W PARKU MASZYN</b>
+   <div class="text-[10.5px] mt-0.5" style="color:#fca5a5">Prawie zawsze czerwona kartka: koniec startów w tych zawodach,
+   ${zl(BIGM.redFine)} kary, profesjonalizm −${BIGM.redProf}, ryzyko zawieszenia i rozmowy z prezesem.
+   Medialność rośnie. Medialność zawsze rośnie.</div></button>`);
+ b.push(`<button onclick="liveAct('leave')" class="btn-d w-full text-left px-3 py-2 text-[12px]">
+   <b>OPUŚĆ PARK MASZYN</b>
+   <div class="text-[10.5px] mt-0.5" style="color:#fca5a5">Zmieniony do końca zawodów. Kara umowna ${zl(BIGM.leaveFine)},
+   profesjonalizm −${BIGM.leaveProf}, atmosfera −${BIGM.leaveAtm}, lojalność −${BIGM.leaveLoy},
+   ponad połowa szans, że klub rozwiąże kontrakt.</div></button>`);
+ return b.join('');
+}
+/* Tabela punktowa obu drużyn (mecz) albo tabela turnieju (indywidualne). */
+function liveTableBox(L){
+ if(L.kind==='ind'){
+   const rows=(L.table||[]).slice(0,16);
+   return `<div class="brut mb-3">
+    <div class="brut-h px-3 py-1 text-[10px] text-zinc-400 font-bold tracking-widest">TABELA TURNIEJU</div>
+    <div class="p-2 overflow-x-auto"><table class="w-full text-[11.5px]">
+     ${rows.map(r=>`<tr class="${r.me?'rowhl':''}">
+       <td class="text-zinc-500 w-6">${r.pos}.</td>
+       <td class="${r.me?'text-orange-400 font-bold':'text-zinc-300'}">${esc(r.name)}</td>
+       <td class="text-right font-bold text-zinc-100 w-8">${r.pts}</td>
+       <td class="text-right text-zinc-500 w-24">${codesHtml(r.codes||[])}</td></tr>`).join('')}
+    </table></div></div>`;
+ }
+ const side=(rows,name,score,mine)=>`<div>
+   <div class="text-[11px] font-bold ${mine?'text-orange-400':'text-zinc-300'} mb-1">${esc(name)} <span class="text-zinc-500">— ${score}</span></div>
+   <table class="w-full text-[11.5px]">
+   ${rows.map(r=>`<tr class="${r.me?'rowhl':''}">
+     <td class="text-zinc-500 w-6">${r.num}</td>
+     <td class="${r.me?'text-orange-400 font-bold':'text-zinc-300'}">${esc(r.name)}</td>
+     <td class="text-right font-bold text-zinc-100 w-7">${r.pts}</td>
+     <td class="text-right text-zinc-500 w-24">${codesHtml(r.codes||[])}</td></tr>`).join('')}
+   </table></div>`;
+ return `<div class="brut mb-3">
+  <div class="brut-h px-3 py-1 text-[10px] text-zinc-400 font-bold tracking-widest">ZDOBYCZ PUNKTOWA</div>
+  <div class="p-3 grid sm:grid-cols-2 gap-4">
+    ${side(L.rows.h, L.home, L.hs, L.mySide==='h')}
+    ${side(L.rows.a, L.away, L.as, L.mySide==='a')}
+  </div></div>`;
+}
+/* Kolejność w biegu — pokazywana co łuk. */
+function liveOrderBox(order, title){
+ return `<div class="brut mb-3">
+  <div class="brut-h px-3 py-1 text-[10px] text-zinc-400 font-bold tracking-widest">${esc(title||'KOLEJNOŚĆ NA TORZE')}</div>
+  <div class="p-3">
+   ${order.map((x,i)=>`<div class="flex justify-between text-[12.5px] py-0.5 ${x.me?'rowhl px-1':''}">
+     <span><b class="text-zinc-500 mr-2">${i+1}.</b><span class="${x.me?'text-orange-400 font-bold':'text-zinc-300'}">${esc(x.name)}</span>
+     ${x.num?`<span class="text-zinc-600 text-[10px] ml-1">(${x.num})</span>`:''}</span>
+     <span class="text-[11px] ${x.out?'text-red-500 font-bold':'text-zinc-600'}">${x.out==='d'?'DEFEKT':x.out==='w'?'WYKLUCZONY':''}</span>
+   </div>`).join('')}
+  </div></div>`;
+}
+function scLive(){
+ const L=G.live;
+ if(!L) return head()+`<div class="brut p-5 text-zinc-300">Mecz się zakończył. <button onclick="seasonRoute(seasonStep({a:'go'}))" class="btn px-4 py-2 ml-2">DALEJ</button></div>`;
+ const ind = L.kind==='ind';
+ let body='';
+ if(L.phase==='between'){
+   body = liveMsgBox(L) + `
+   <div class="brut mb-3">
+    <div class="brut-h px-3 py-1 text-[10px] text-zinc-400 font-bold tracking-widest">PARK MASZYN — CZEKASZ NA SWÓJ BIEG</div>
+    <div class="p-3">
+     <div class="text-[12.5px] text-zinc-300 mb-3">Najbliższe biegi jadą bez ciebie. Możesz je przepuścić jednym kliknięciem
+       — albo zrobić w tym czasie coś, czego regulamin nie przewiduje.</div>
+     <button onclick="liveAct('go')" class="btn w-full px-4 py-3 text-[13px] font-extrabold tracking-widest text-orange-500 mb-2">
+       PRZESYMULUJ BIEGI DO TWOJEGO STARTU ▸</button>
+     ${livePitActions(L, true)}
+    </div></div>` + liveTableBox(L);
+ } else if(L.phase==='pit'){
+   body = liveMsgBox(L) + `
+   <div class="brut mb-3" style="border-color:#f97316">
+    <div class="brut-h px-3 py-1 text-[10px] font-bold tracking-widest" style="border-color:#f97316;color:#fb923c">
+      BIEG ${L.next?L.next.label:''} — TWÓJ START. PARK MASZYN</div>
+    <div class="p-3">
+     ${L.field?`<div class="text-[12px] text-zinc-300 mb-3">W biegu: ${L.field.map(f=>
+        `<span class="${f.me?'text-orange-400 font-bold':'text-zinc-300'}">${esc(f.name)}</span>`).join(' · ')}</div>`:''}
+     <button onclick="liveAct('go')" class="btn w-full px-4 py-3 text-[13px] font-extrabold tracking-widest text-orange-500 mb-2">
+       WYJAZD NA TOR ▸</button>
+     ${livePitActions(L, false)}
+    </div></div>` + liveTrackBox(L, true) + liveTableBox(L);
+ } else if(L.phase==='coach'){
+   const C=L.coach;
+   body = liveMsgBox(L) + `
+   <div class="brut mb-3" style="border-color:#dc2626">
+    <div class="brut-h px-3 py-1 text-[10px] font-bold tracking-widest" style="border-color:#dc2626;color:#f87171">
+      TRENER CHCE CIĘ ZMIENIĆ</div>
+    <div class="p-4">
+     <div class="text-[12.5px] text-zinc-200 leading-relaxed mb-4">
+       Kierownik drużyny idzie w twoją stronę z programem w ręku. Do twojego biegu ma wpisać
+       <b class="text-zinc-100">${esc(C.who)}</b> (OVR ${C.ovr}) w ramach rezerwy taktycznej.
+       Drużyna traci, a ty w tym spotkaniu nie dowozisz.</div>
+     <div class="space-y-2">
+      <button onclick="liveAct('accept')" class="btn w-full text-left px-3 py-2 text-[12px]">
+        <b>ZSIADAM BEZ SŁOWA</b><div class="text-[10.5px] text-zinc-400 mt-0.5">Tracisz start, zyskujesz spokój w szatni.</div></button>
+      <button onclick="liveAct('argue')" class="btn w-full text-left px-3 py-2 text-[12px]">
+        <b>KŁÓCĘ SIĘ</b> <span class="text-zinc-500">— ${C.argue}% szans</span>
+        <div class="text-[10.5px] text-zinc-400 mt-0.5">Udana kłótnia: jedziesz. Nieudana: i tak cię zmienia, a atmosfera siada.</div></button>
+      <button onclick="liveAct('insult')" class="btn-d w-full text-left px-3 py-2 text-[12px]">
+        <b>WYZYWAM TRENERA</b> <span style="color:#fca5a5">— ${C.insult}% szans</span>
+        <div class="text-[10.5px] mt-0.5" style="color:#fca5a5">Działa częściej, kosztuje nieporównanie więcej:
+        atmosfera w gruzach, profesjonalizm w dół, spora szansa, że prezes zamknie temat kontraktu.</div></button>
+     </div>
+    </div></div>`;
+ } else if(L.phase==='race'){
+   const RC=L.race;
+   body = liveMsgBox(L) + liveOrderBox(RC.order, 'BIEG '+RC.label+' — '+(RC.ph===0?'USTAWIENIE NA TAŚMIE':'KOLEJNOŚĆ NA TORZE')) + `
+   <div class="brut mb-3" style="border-color:#f97316">
+    <div class="brut-h px-3 py-1 text-[10px] font-bold tracking-widest" style="border-color:#f97316;color:#fb923c">
+      ${esc(RC.phaseName)}${RC.pos?' · JEDZIESZ '+RC.pos+'.':''}</div>
+    <div class="p-3">
+     <div class="text-[11px] text-zinc-500 mb-2">
+       zębatka <b class="text-zinc-300">${RC.gear}</b> · ${esc(RC.fitTxt)} ·
+       tor: <b class="text-zinc-300">${esc(BIGM.grip[RC.grip].n)}</b>
+       ${RC.ph===0?'':' · procenty liczone z twojej dyspozycji, profesjonalizmu, zębatki i stanu toru'}</div>
+     <div class="space-y-2">
+      ${RC.options.map(o=>`<button onclick="liveAct('${RC.ph===0?'start':'move'}','${o.id}')"
+        class="${o.id==='plot'?'btn-d':'btn'} w-full text-left px-3 py-2 text-[12px]">
+        <b>${esc(o.l)}</b>${o.ch!=null?` <span class="${o.ch>=60?'text-emerald-400':o.ch>=35?'text-yellow-400':'text-red-400'}">— ${o.ch}%</span>`:''}
+        <div class="text-[10.5px] ${o.id==='plot'?'':'text-zinc-400'} mt-0.5" ${o.id==='plot'?'style="color:#fca5a5"':''}>${esc(o.d)}</div></button>`).join('')}
+     </div>
+    </div></div>`;
+ } else if(L.phase==='heatres'){
+   const RS=L.result;
+   body = liveMsgBox(L) + (RS&&RS.order?liveOrderBox(RS.order,'WYNIK BIEGU '+(L.next?L.next.label:'')):'') + `
+   <div class="brut mb-3"><div class="p-3">
+     <button onclick="liveAct('go')" class="btn w-full px-4 py-3 text-[13px] font-extrabold tracking-widest text-orange-500">DALEJ ▸</button>
+   </div></div>` + liveTableBox(L);
+ } else if(L.phase==='end'){
+   const RS=L.result||{};
+   const win = RS.mine>RS.theirs, draw=RS.mine===RS.theirs;
+   body = `<div class="brut mb-3" style="border-color:${win?'#22c55e':draw?'#a1a1aa':'#dc2626'}">
+    <div class="brut-h px-3 py-1 text-[10px] font-bold tracking-widest"
+      style="border-color:${win?'#22c55e':draw?'#a1a1aa':'#dc2626'};color:${win?'#4ade80':draw?'#d4d4d8':'#f87171'}">
+      KONIEC SPOTKANIA</div>
+    <div class="p-4 text-center">
+     <div class="text-[34px] font-extrabold tracking-wider ${win?'text-emerald-400':draw?'text-zinc-300':'text-red-400'}">${L.hs}:${L.as}</div>
+     <div class="text-[12px] text-zinc-400 mb-3">${esc(L.home)} — ${esc(L.away)}</div>
+     ${RS.me?`<div class="text-[13px] text-zinc-200">Twój dorobek: <b class="text-orange-400">${RS.me.pts}${RS.me.bon?'+'+RS.me.bon:''} pkt</b>
+       z ${RS.me.starts} startów <span class="text-zinc-500">(${RS.me.codes.join(', ')||'—'})</span></div>`
+       :`<div class="text-[13px] text-zinc-400">Nie dojechałeś tego spotkania do końca.</div>`}
+     <button onclick="liveAct('go')" class="btn px-8 py-3 mt-4 text-[13px] font-extrabold tracking-widest text-orange-500">DALEJ ▸</button>
+    </div></div>` + liveTableBox(L);
+ } else {
+   body = liveMsgBox(L)+`<div class="brut p-3"><button onclick="liveAct('go')" class="btn px-6 py-2 text-orange-500 font-bold">DALEJ ▸</button></div>`;
+ }
+ const cards = (L.cards&&(L.cards.y||L.cards.r))
+   ? `<div class="text-[11px] mb-2">${L.cards.y?`<span class="mr-3" style="color:#eab308">ŻÓŁTE KARTKI: ${L.cards.y}</span>`:''}
+      ${L.cards.r?`<span style="color:#ef4444">CZERWONA KARTKA — koniec startów</span>`:''}</div>` : '';
+ const story = (L.story&&L.story.length>1)
+   ? accLite('PRZEBIEG ZAWODÓW — CO SIĘ DZIAŁO', `<div class="text-[11.5px] text-zinc-400 leading-relaxed">
+       ${L.story.map(x=>`<div class="mb-1">› ${esc(x)}</div>`).join('')}</div>`) : '';
+ return head()+`<div class="fade">
+  <div class="brut mb-3" style="border-color:#f97316">${liveHeadBar(L)}</div>
+  ${cards}${body}
+  ${L.phase==='race'?liveTrackBox(L, false):''}
+  ${story}
+ </div>`;
+}
+
 /* ---- EKRAN: PULPIT PODSUMOWANIA ZDARZENIA (modal nad tłem zdarzenia) ---- */
 function scEvSum(){
  const e=G.ev, lines=G.evSum||[];
@@ -1196,7 +1509,9 @@ function scSummary(){
     ${evEffectsHtml(r)}
    </div>
   </div>
+  ${bigMatchHtml(r)}
   ${ovrLogHtml(r)}
+  ${potHtml(r)}
   ${careerOverHtml(r)}
   ${longInjuryHtml(r)}
   ${bankruptHtml(r)}
@@ -1452,6 +1767,51 @@ function moreFromSeasonHtml(r){
    simMeeting), więc wystarczyło przestać wyrzucać te dane do kosza: każde
    spotkanie ma teraz zamrożoną kartę meczową (M.box) i komplet biegów.
    ============================================================ */
+/* ============================================================
+   WIELKI MECZ — CO Z NIEGO ZOSTAŁO (patch 22.08.2026)
+   Osobny boks w podsumowaniu: wynik spotkania przejechanego osobiście,
+   pełny przebieg zawodów i — jeżeli tak się skończyło — notatka o płaczu.
+   ============================================================ */
+function bigMatchHtml(r){
+ const logs=r.bigLog||[];
+ if(!logs.length && !r.cryNote) return '';
+ const cry = r.cryNote ? `<div class="brut mb-3" style="border-color:#dc2626">
+   <div class="brut-h px-3 py-1.5 text-[11px] font-bold" style="border-color:#dc2626;color:#f87171">
+     ROZPŁAKAŁEŚ SIĘ PRZED NAJWAŻNIEJSZYM MECZEM SEZONU</div>
+   <div class="p-4 text-[12.5px] text-zinc-200 leading-relaxed">${esc(r.cryNote)}
+   <div class="text-[11px] text-zinc-400 mt-2">Do ojca nie zadzwoniłeś. Ojciec też nie zadzwonił.</div></div></div>` : '';
+ if(!logs.length) return cry;
+ const box = logs.map(b=>`<div class="brut mb-2">
+   <div class="brut-h px-3 py-1.5 text-[11px] font-bold" style="border-color:#f97316;color:#fb923c">
+     ${esc(b.title)}${b.ind?' — TURNIEJ PRZEJECHANY OSOBIŚCIE':' — MECZ PRZEJECHANY OSOBIŚCIE'}</div>
+   <div class="p-3">
+    ${b.ind ? '' : `<div class="text-[20px] font-extrabold ${b.mine>b.theirs?'text-emerald-400':b.mine===b.theirs?'text-zinc-300':'text-red-400'} mb-1">
+      ${b.mine}:${b.theirs}</div>`}
+    ${b.me?`<div class="text-[12px] text-zinc-300 mb-2">Twój dorobek: <b class="text-orange-400">${b.me.pts}${b.me.bon?'+'+b.me.bon:''} pkt</b>
+      z ${b.me.starts} startów <span class="text-zinc-500">(${(b.me.codes||[]).join(', ')||'—'})</span></div>`:''}
+    ${(b.story&&b.story.length)?accLite('PRZEBIEG — BIEG PO BIEGU',
+      `<div class="text-[11.5px] text-zinc-400 leading-relaxed">${b.story.map(x=>`<div class="mb-1">› ${esc(x)}</div>`).join('')}</div>`):''}
+   </div></div>`).join('');
+ return `<div class="mb-3">
+  <div class="text-[11px] text-orange-500 tracking-[.2em] font-bold mb-2">WIELKI MECZ SEZONU</div>
+  ${box}${cry}</div>`;
+}
+/* ---- SUFIT TALENTU: co się z nim stało w tym sezonie ---- */
+function potHtml(r){
+ if(r.potTo==null || r.potFrom==null) return '';
+ if(r.potTo===r.potFrom) return '';
+ return `<div class="brut mb-3" style="border-color:#a16207">
+  <div class="brut-h px-3 py-1.5 text-[11px] font-bold" style="border-color:#a16207;color:#eab308">
+    SUFIT TALENTU PRZESUNIĘTY: ${r.potFrom} → ${r.potTo}</div>
+  <div class="p-3">
+   <div class="text-[12px] text-zinc-300 mb-2">Potencjał nie jest liczbą wylosowaną raz przy tworzeniu postaci.
+     Zawodnik, który jeździ, dowozi i żyje jak zawodowiec, z roku na rok przesuwa własny sufit — o ułamek punktu,
+     ale przez całą karierę robi to różnicę między ligowym średniakiem a kimś, o kim się pamięta.</div>
+   ${(r.potParts||[]).map(x=>`<div class="text-[11.5px] text-zinc-300">
+     <b class="text-yellow-500">+${x.d.toFixed(2)}</b> — ${esc(x.w)}</div>`).join('')}
+  </div></div>`;
+}
+
 function openMatch(src, a, b, c){
  G.matchView={src, a, b, c};
  render();
@@ -1790,7 +2150,44 @@ function imsQualHtml(r){
    ${SEC.rode?`<div class="text-[12px] mb-1">Twoje miejsce: <b class="${SEC.mePos===1?'text-yellow-400':'text-zinc-200'}">${SEC.mePos}.</b> · nagroda ${zl(SEC.money)}</div>`:''}
    ${tbl(SEC.table.slice(0,8).map((x,i)=>({...x, through:i===0})), true)}
   </div>
+  ${junQualHtml(r, tbl)}
  </div></div>`;
+}
+/* ============================================================
+   DROGA DO IMŚJ2 — ELIMINACJE I SGP2 CHALLENGE (nowe 22.08.2026)
+   ------------------------------------------------------------
+   Ta sama struktura co u seniorów, tylko z ostrzejszym limitem wieku:
+   w eliminacjach jedzie ten, kto W KOLEJNYM SEZONIE wciąż będzie
+   młodzieżowcem. Polską eliminacją jest SREBRNY KASK.
+   ============================================================ */
+function junQualHtml(r, tbl){
+ const W=r.world; if(!W||!W.qualJun) return '';
+ const Q=W.qualJun, CH=Q.challenge;
+ return `<div class="brut p-3 mt-3" style="border-color:#22c55e">
+  <div class="text-[11px] tracking-widest mb-1" style="color:#4ade80">DROGA DO IMŚJ2 — ELIMINACJE I SGP2 CHALLENGE</div>
+  <div class="text-[11px] text-zinc-400 leading-relaxed mb-3">
+   Cykl juniorski ma od tego sezonu własne kwalifikacje, zbudowane jak seniorskie:
+   czołowa siódemka poprzedniego cyklu zachowuje miejsce (o ile nie skończyła 22 lat),
+   czterech dochodzi z turnieju <b class="text-zinc-300">SGP2 CHALLENGE</b>, resztę dobiera Komisja dzikimi kartami.
+   Polską eliminacją jest <b class="text-zinc-300">SREBRNY KASK</b> — jego czterej najlepsi jadą do Challenge.
+   Anglia, Szwecja i Dania mają własne turnieje, pozostałe federacje wspólny.
+   W eliminacjach startuje wyłącznie ten, kto w kolejnym sezonie wciąż będzie młodzieżowcem.
+  </div>
+  <div class="brut p-3 mb-3" style="border-color:#22c55e">
+   <div class="text-[11px] tracking-widest mb-1" style="color:#4ade80">${esc(CH.title)}</div>
+   ${CH.rode?`<div class="text-[12px] mb-2">Twój wynik: <b class="text-orange-400">${CH.mePts} pkt</b> ·
+      <b class="${CH.mePos<=4?'text-emerald-400':'text-zinc-200'}">${CH.mePos}. miejsce</b>
+      ${CH.mePos<=4?' — <b class="text-emerald-400">MASZ MIEJSCE W CYKLU IMŚJ2 NA KOLEJNY ROK!</b>':''} · nagroda ${zl(CH.money)}</div>`
+    :'<div class="text-[11px] text-zinc-400 mb-2">Nie jechałeś w tych eliminacjach (wiek albo brak awansu z kraju).</div>'}
+   ${tbl(CH.table.map((x,i)=>({...x, through:i<4})), true)}
+  </div>
+  <div class="grid md:grid-cols-2 gap-2">
+   ${Q.quals.map(q=>`<div class="brut p-2">
+     <div class="text-[11px] text-zinc-300 tracking-widest">${esc(q.title)}</div>
+     <div class="text-[11px] text-zinc-400 mb-1">${esc(q.note)}</div>
+     ${tbl(q.table.slice(0,10), true)}</div>`).join('')}
+  </div>
+ </div>`;
 }
 
 function kpi(l,v,c='text-zinc-100'){
@@ -2475,6 +2872,23 @@ function careerCardHtml(){
     ============================================================ */
  const GOLD='#b8860b', SILV='#71797e', BRNZ='#a0522d';
  const T=smTrophies();
+ /* ============================================================
+    TYTUŁY MISTRZA ŚWIATA — WŁASNA, OSOBNA RUBRYKA (patch 22.08.2026)
+    ------------------------------------------------------------
+    Zgłoszenie: „wyszczególnij w generowanym po karierze obrazie PNG tytuły
+    mistrza świata". Do tej pory złoto IMŚ leżało w tej samej tabeli, co
+    Brązowy Kask i cykl turniejów szkoleniowych — formalnie było, ale
+    najważniejszy tytuł w tym sporcie ginął w wierszu numer jeden.
+    Teraz ma własny, złoty pas nad gablotą, własny kafelek w profilu
+    i własną linijkę w nagłówku karty.
+    ============================================================ */
+ const wIms  = T.find(t=>t.k==='ims')  || {g:[],si:[],b:[],starts:0};
+ const wImsj = T.find(t=>t.k==='imsj') || {g:[],si:[],b:[],starts:0};
+ const worldGold = wIms.g.length, worldJunGold = wImsj.g.length;
+ const worldMed  = wIms.g.length+wIms.si.length+wIms.b.length;
+ const wTag=(y)=>`<span style="display:inline-block;border:2px solid ${GOLD};background:#fffbe8;
+    padding:7px 13px;margin:0 7px 7px 0;font-size:15px;font-weight:bold;color:#7a5c00;white-space:nowrap">★ ${y}</span>`;
+
  const rode=T.filter(t=>t.starts>0);
  const gAll =T.reduce((a,t)=>a+t.g.length,0);
  const siAll=T.reduce((a,t)=>a+t.si.length,0);
@@ -2522,6 +2936,36 @@ function careerCardHtml(){
      <b style="color:${GOLD}">★ ${esc(x.title)}</b>
      <span style="color:${SM.mu}"> · ${esc(x.s)} · </span><b>${x.y}</b></span>`).join('');
 
+ const worldBanner = (worldGold||worldJunGold||worldMed) ? `
+  <div style="padding:0 22px 14px 22px">
+   <div style="background:${GOLD};color:#fff;font-size:13px;font-weight:bold;padding:6px 10px">
+     MISTRZOSTWA ŚWIATA — TYTUŁY I MEDALE
+     <span style="float:right;font-weight:normal;font-size:11px;color:#fff5d6">FIM SPEEDWAY GRAND PRIX · IMŚJ2</span>
+     <div style="clear:both"></div>
+   </div>
+   <div style="border:2px solid ${GOLD};border-top:none;padding:14px;background:#fffdf5">
+    ${worldGold ? `<div style="font-size:26px;font-weight:bold;color:#7a5c00;line-height:1.2;margin-bottom:8px">
+        ${worldGold}× INDYWIDUALNY MISTRZ ŚWIATA</div>
+      <div style="margin-bottom:10px">${wIms.g.map(wTag).join('')}</div>`
+      : `<div style="font-size:15px;font-weight:bold;color:${SM.mu};margin-bottom:8px">
+        Bez tytułu mistrza świata.</div>`}
+    ${worldJunGold ? `<div style="font-size:17px;font-weight:bold;color:#7a5c00;margin-bottom:6px">
+        ${worldJunGold}× INDYWIDUALNY MISTRZ ŚWIATA JUNIORÓW</div>
+      <div style="margin-bottom:10px">${wImsj.g.map(wTag).join('')}</div>`:''}
+    <table style="width:100%;margin-top:4px"><tr>
+      ${disc(wIms.g.length,GOLD,'ZŁOTO IMŚ')}${disc(wIms.si.length,SILV,'SREBRO IMŚ')}${disc(wIms.b.length,BRNZ,'BRĄZ IMŚ')}
+      ${disc(wImsj.g.length,GOLD,'ZŁOTO IMŚJ2')}
+      <td style="padding:8px 14px;vertical-align:middle;font-size:11px;color:${SM.mu};line-height:1.6">
+        Starty w cyklu Grand Prix: <b style="color:${SM.tx}">${wIms.starts}</b> ${wIms.starts?`sezonów`:''} ·
+        najlepsze miejsce w klasyfikacji generalnej:
+        <b style="color:${SM.tx}">${wIms.best?wIms.best+'. ('+wIms.bestYear+')':'—'}</b>.
+        ${wImsj.starts?`Cykl juniorski: <b style="color:${SM.tx}">${wImsj.starts}</b> sezonów, najlepiej
+        <b style="color:${SM.tx}">${wImsj.best?wImsj.best+'.':'—'}</b>.`:''}
+        ${(p.career.imsEarned||0)?`Zarobki z cyklu światowego: <b style="color:${SM.g}">${zl(p.career.imsEarned)}</b>.`:''}
+      </td>
+    </tr></table>
+   </div>
+  </div>` : '';
  const trophyBlock = `
   <div style="padding:0 22px 14px 22px">
     <div style="background:${SM.g};color:#fff;font-size:13px;font-weight:bold;padding:6px 10px">
@@ -2606,11 +3050,16 @@ function careerCardHtml(){
         ${esc(p.cls)} · kariera ${H.length?H[0].year+'–'+H[H.length-1].year:'—'} ·
         zakończona w wieku ${p.age} lat · <span style="color:${SM.g};font-weight:bold">${esc(clubs.length?clubs[clubs.length-1].club:'brak klubu')}</span>
       </div>
+      ${(c.worldTitles||0)?`<div style="margin-top:6px;display:inline-block;border:2px solid #b8860b;background:#fffbe8;
+        padding:4px 10px;font-size:13px;font-weight:bold;color:#7a5c00">★ INDYWIDUALNY MISTRZ ŚWIATA ${(c.worldTitles||0)>1?'('+c.worldTitles+'×)':''}</div>`:''}
+      ${(c.worldJunTitles||0)?`<div style="margin-top:6px;margin-left:6px;display:inline-block;border:1px solid #b8860b;background:#fffdf5;
+        padding:4px 10px;font-size:12px;font-weight:bold;color:#7a5c00">★ MISTRZ ŚWIATA JUNIORÓW ${(c.worldJunTitles||0)>1?'('+c.worldJunTitles+'×)':''}</div>`:''}
       <div style="font-size:12px;color:${SM.mu};margin-top:3px;font-style:italic">„${esc(p.retireReason||'Decyzja własna.')}”</div>
       <table style="margin-top:12px;width:100%"><tr>
         ${[['SEZONY',c.seasons],['MECZE',c.matches],['BIEGI',c.heats],['PUNKTY',c.pts],
-           ['BONUSY',c.bon||0],['ŚREDNIA KARIERY',avg],['TYTUŁY',(c.titles||0)+(c.indTitles||0)],
-           ['ZAROBIONE',zl(c.earned)]]
+           ['BONUSY',c.bon||0],['ŚREDNIA KARIERY',avg],['TYTUŁY',(c.titles||0)+(c.indTitles||0)]]
+          .concat((c.worldTitles||0)?[['MISTRZ ŚWIATA',(c.worldTitles||0)+'×']]:[])
+          .concat([['ZAROBIONE',zl(c.earned)]])
           .map(x=>`<td style="border:1px solid ${SM.bd};background:${SM.gl};padding:7px 9px;text-align:center">
             <div style="font-size:9px;color:${SM.gd};letter-spacing:.06em">${x[0]}</div>
             <div style="font-size:17px;font-weight:bold;color:${SM.tx}">${x[1]}</div></td>`).join('')}
@@ -2667,6 +3116,9 @@ function careerCardHtml(){
      Biegi zdjęte przez rezerwę taktyczną nie wchodzą do statystyki startów.
    </div>
   </div>
+
+  <!-- ===== MISTRZOSTWA ŚWIATA ===== -->
+  ${worldBanner}
 
   <!-- ===== OSIĄGNIĘCIA INDYWIDUALNE ===== -->
   ${trophyBlock}
@@ -2925,7 +3377,7 @@ function oneClubHtml(){
    <div class="text-[12px] text-zinc-300">${clubs.length} klubów w ${c.seasons} sezonów. Bus znał drogę wszędzie, kibice nigdzie.</div></div>`;
  return '';
 }
-function restart(){G=newGame();evHist=[];wevHist=[];_offers=[];_renew=null;render();}
+function restart(){seasonReset();G=newGame();evHist=[];wevHist=[];_offers=[];_renew=null;render();}
 
 /* ---- BOOT ---- */
 G=newGame(); render();

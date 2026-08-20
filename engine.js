@@ -213,6 +213,10 @@ function newGame(){
   world:[], sgp:null, imsHist:[], imsjHist:[],
   /* --- PODGLĄD MECZU (klikniecie w wynik) --- */
   matchView:null,
+  /* --- WIELKI MECZ / JAZDA NA ŻYWO (patch 22.08.2026) ---
+     pause  — na co czeka zatrzymana symulacja sezonu (patrz seasonStep),
+     live   — stan spotkania jechanego ręcznie, czytany przez scLive() w UI. */
+  pause:null, live:null, liveSnap:null,
   /* --- SPONSORZY TYTULARNI ---
      bannedSponsors: firmy z Grupy B, które już raz uciekły z kasą — znikają z gry na zawsze.
      sponsorRenames: zmiany nazw klubów czekające na wejście w nowym roku (do raportu w UI). */
@@ -557,7 +561,44 @@ function clubOf(p){
 }
 function leagueAvgOvr(lk){const cs=G.leagues[lk].clubs;return cs.reduce((a,c)=>a+c.ovr,0)/cs.length;}
  
-function resolveSeason(){
+/* ============================================================
+   ROZSTRZYGNIĘCIE SEZONU — TERAZ JAKO GENERATOR (patch 22.08.2026)
+   ------------------------------------------------------------
+   DLACZEGO GENERATOR: cały sezon liczył się do tej pory w jednym,
+   nieprzerywalnym wywołaniu — klikasz „dalej" i dostajesz gotowy raport.
+   Tryb WIELKIEGO MECZU wymaga czegoś odwrotnego: symulacja musi ZATRZYMAĆ
+   SIĘ w środku (przed półfinałem, przed ostatnią rundą IMP), oddać
+   sterowanie interfejsowi, poczekać na decyzję gracza i ruszyć dalej
+   dokładnie z tego samego miejsca, ze wszystkimi zmiennymi lokalnymi.
+   Rozbijanie tej funkcji na kawałki oznaczałoby przepisanie 600 linii
+   i przeniesienie kilkudziesięciu zmiennych do wspólnego worka — generator
+   robi to samo bez jednej linii przenoszenia stanu.
+     · resolveSeason()      — start sezonu (jak dawniej; zwraca raport ALBO null)
+     · seasonStep(decyzja)   — wznowienie po decyzji gracza
+     · null jako wynik       — „sezon czeka na ciebie", szczegóły w G.pause
+   ============================================================ */
+let _seaGen=null;
+function resolveSeason(){ _seaGen=resolveSeasonGen(); return seasonStep(); }
+function seasonStep(input){
+ if(!_seaGen) return G.last||null;
+ let r;
+ try{ r=_seaGen.next(input); }
+ catch(err){
+   /* Awaria w środku sezonu nie ma prawa zablokować gry na zawsze — lepiej
+      stracić tryb jazdy niż całą karierę. */
+   console.error('SEZON:', err);
+   _seaGen=null; G.pause=null; G.live=null;
+   return G.last||null;
+ }
+ if(r.done){ _seaGen=null; G.pause=null; G.live=null; return r.value; }
+ G.pause=r.value;
+ return null;
+}
+function seasonPending(){ return !!_seaGen; }
+/* Twardy reset — wołany przy restarcie kariery, żeby niedokończony sezon
+   z poprzedniego przebiegu nie został w pamięci generatora. */
+function seasonReset(){ _seaGen=null; if(G){ G.pause=null; G.live=null; G.liveSnap=null; } }
+function* resolveSeasonGen(){
  const p=G.p, S=G.S, club=getClub(p), lk=p.lk;
  const notes=[];
  /* --- OVR ZE ZDARZENIA: fxO zmienia p.ovr od razu po wyborze opcji, więc
@@ -632,7 +673,7 @@ function resolveSeason(){
  const ctx={defP, excP, meId:meR.id, bias};
  
  /* --- SYMULACJA SEZONU: KOLEJKA PO KOLEJCE, MECZ PO MECZU --- */
- simSeasonChrono(ctx, lk, club.name, S.teamPts);
+ yield* simSeasonChronoGen(ctx, lk, club.name, S.teamPts, true);
  meR.out=false;
  /* STATYSTYKI INDYWIDUALNE WSZYSTKICH LIG — zdjęcie po rundzie zasadniczej,
     zanim play-off dołoży biegi tylko połowie stawki. */
@@ -680,6 +721,10 @@ function resolveSeason(){
  }
  /* --- NIEOCZEKIWANE ZDARZENIA (5% na kolejkę, po 1% na typ) --- */
  (S.surprises||[]).forEach(s=>{ if(s && s.log) notes.push('NIEOCZEKIWANE ZDARZENIE — '+s.log); });
+ /* --- WIELKI MECZ: wszystko, co się w nim wydarzyło poza torem --- */
+ (S.notesBig||[]).forEach(x=>notes.push(x));
+ (S.bigLog||[]).forEach(b=>notes.push('WIELKI MECZ — '+b.title+': '+b.mine+':'+b.theirs+
+   (b.me&&b.me.starts?' (twoje '+(b.me.pts+b.me.bon)+' pkt z '+b.me.starts+' startów)':' (nie dojechałeś zawodów)')+'.'));
  if(S.saveIn>0) notes.push('Nieoczekiwane zdarzenie: wskoczyłeś do składu na mecze ligowe, bo klub miał problemy finansowe i oszczędzał na gwiazdach.');
  /* Ile razy trener zostawił cię poza siódemką i jak blisko było — bez tej liczby
     ławka wygląda jak kaprys, a jest arytmetyką: OVR plus bieżąca forma. */
@@ -701,7 +746,14 @@ function resolveSeason(){
  /* --- FAZA PLAY-OFF / PLAY-DOWN WE WSZYSTKICH LIGACH --- */
  G.phase={};
  const canRidePO = matches>0 && !S.striking && p.banSeasons===0 && !S.forcedEnd && !S.zeroMatches && !S.longInjury;
- LKEYS.forEach(k=>runPhase(k, k===lk&&canRidePO?ctx:null, k===lk?club.name:null));
+ for(const k of LKEYS){
+   const kc = (k===lk && canRidePO) ? ctx : null;
+   const kn = (k===lk) ? club.name : null;
+   /* Tylko liga Gracza może się zatrzymać na WIELKI MECZ — pozostałe dwie
+      lecą jak dotąd, jednym wywołaniem. */
+   if(kc) yield* runPhaseGen(k, kc, kn, true);
+   else runPhase(k, kc, kn);
+ }
  const order=G.phase[lk].order;
  const pos=order.indexOf(club.name)+1;
  
@@ -723,7 +775,7 @@ function resolveSeason(){
  
  /* --- DMPJ: jedziesz WYŁĄCZNIE do 21. roku życia (twardy warunek) --- */
  const injured=S.injDone, injMissed=S.injTotal;
- const blocked = p.banSeasons>0 || S.zeroMatches || S.longInjury || matches===0;
+ const blocked = p.banSeasons>0 || S.zeroMatches || S.longInjury || matches===0 || !!S.cried;
  const dmpjOk = isJun(p) && !blocked;
  // OCHRONA SPRZĘTU: junior z OVR > 50, który regularnie jeździ w lidze, nie dostaje
  // powołania na eliminacje i ćwierćfinały DMPJ. Dołącza dopiero od półfinału.
@@ -753,9 +805,10 @@ function resolveSeason(){
  /* Forma zapisana na zawodniku — czytają ją warunki zdarzeń (cond: p.form<0),
     dzięki czemu „kłótnia z fanem po passie słabych meczów” trafia tylko w dołku. */
  p.form = Math.round(heats>0 ? G.meForm : -3);
- const ind = !blocked ? simIndividual(p, effOvr, defP, excP) : null;
+ const ind = !blocked ? yield* simIndividualGen(p, effOvr, defP, excP, true) : null;
  /* --- CYKL ŚWIATOWY: IMŚ, IMŚJ2, eliminacje, Challenge, mistrzostwa Europy --- */
- const world = !blocked ? simWorldSeason(p, effOvr, defP, excP, ind?ind.zkTop4:null) : null;
+ const world = !blocked ? yield* simWorldSeasonGen(p, effOvr, defP, excP, ind?ind.zkTop4:null, true,
+                 (ind&&ind.sk)?ind.sk.top4:null) : null;
  
  /* --- OCENA SEZONU ZE WSZYSTKICH ROZGRYWEK --- */
  const tally={h:heats+po.h, p:pts+po.p+bonus+po.b};
@@ -819,6 +872,11 @@ function resolveSeason(){
      const ch=world.qual.challenge;
      if(ch.money){ imsEarned+=ch.money; imsParts.push({w:'SGP Challenge — '+ch.mePos+'. miejsce', v:ch.money}); }
    }
+   if(world.qualJun && world.qualJun.challenge && world.qualJun.challenge.rode){
+     const ch=world.qualJun.challenge;
+     if(ch.money){ imsEarned+=ch.money; imsParts.push({w:'SGP2 Challenge — '+ch.mePos+'. miejsce', v:ch.money}); }
+     if(ch.mePos>=1 && ch.mePos<=4) notes.push('SGP2 CHALLENGE: '+ch.mePos+'. miejsce — masz kwalifikację do cyklu IMŚJ2 na sezon '+(G.year+1)+'.');
+   }
    if(world.sec && world.sec.rode && world.sec.money){
      imsEarned+=world.sec.money;
      imsParts.push({w:'Indywidualne Mistrzostwa Europy — '+world.sec.mePos+'. miejsce', v:world.sec.money});
@@ -854,9 +912,14 @@ function resolveSeason(){
  
  /* --- PROFESJONALIZM I MEDIALNOŚĆ W TRAKCIE SEZONU --- */
  const statLog=[];
- const evProf=p.prof-S.prof0, evMed=p.med-S.med0;
+ /* WIELKI MECZ ma własną rubrykę: bez tego cały spadek profesjonalizmu po
+    płaczu w parku maszyn albo po wyzwiskach pod adresem trenera dopisywał się
+    do zdarzenia losowego z początku sezonu i wyglądał jak błąd liczenia. */
+ const evProf=p.prof-S.prof0-(S.bigProf||0), evMed=p.med-S.med0-(S.bigMed||0);
  if(evProf) statLog.push({s:'prof', d:evProf, w:'zdarzenie: '+(S.evTitle||'—')});
  if(evMed)  statLog.push({s:'med',  d:evMed,  w:'zdarzenie: '+(S.evTitle||'—')});
+ if(S.bigProf) statLog.push({s:'prof', d:S.bigProf, w:S.bigProfWhy||'wielki mecz sezonu — decyzje w parku maszyn'});
+ if(S.bigMed)  statLog.push({s:'med',  d:S.bigMed,  w:S.bigMedWhy||'wielki mecz sezonu — kamery były wszędzie'});
  const bump=(s,d,w)=>{ if(!d) return; d=Math.round(d); if(!d) return;
    if(s==='prof') p.prof=cl(p.prof+d,0,99); else p.med=cl(p.med+d,0,99);
    statLog.push({s,d,w}); };
@@ -933,6 +996,48 @@ function resolveSeason(){
      ' pkt, ale OVR uderzył w sufit skali (99) — nie ma gdzie rosnąć'});
  S.growthParts=gParts;
  S.growthRaw=Math.round(growth*100)/100;
+
+ /* ============================================================
+    SUFIT TALENTU SIĘ PRZESUWA (nowe 22.08.2026)
+    ------------------------------------------------------------
+    Zgłoszenie: „widełki potencjału niższych klas są ekstremalnie niskie;
+    pod szczególnymi warunkami powinno dać się dobić nawet do 90, a
+    profesjonalizm powinien lekko podbijać potencjał".
+    Potencjał (p.pot) przestaje więc być liczbą wylosowaną raz przy
+    tworzeniu postaci i zamrożoną na całą karierę. Co sezon może urosnąć
+    o ułamek punktu do dwóch — ale WYŁĄCZNIE wtedy, gdy zawodnik na to
+    zapracował: jeździ, dowozi wyniki ponad swoją półkę i żyje jak
+    zawodowiec. Sam sufit tego wzrostu też zależy od profesjonalizmu:
+    zawodnik, który traktuje żużel jak hobby, zatrzyma się w okolicach 78,
+    a do 99 dojdzie tylko ktoś, kto przez lata robi WSZYSTKO jak trzeba.
+    Potencjał nigdy nie spada — raz zdobyty sufit zostaje.
+    ============================================================ */
+ const potFrom = p.pot||0;
+ const potParts=[];
+ {
+  let potGain=0;
+  const pa=(d,w)=>{ if(d>0.02){ potGain+=d; potParts.push({d:Math.round(d*100)/100, w}); } };
+  if(matches>0 && !S.longInjury && !S.cried){
+    if(p.prof>55)  pa((p.prof-55)/25, 'profesjonalizm '+p.prof+' — trening, dieta, sen i regeneracja przesuwają twój sufit');
+    if(p.prof>=80) pa(0.40, 'życie zawodowca — sezon bez jednego odpuszczonego treningu');
+    if(p.age<=23)  pa(0.35, 'wiek '+p.age+' — ciało wciąż się układa, technika też');
+    if(heats>0 && avg>=1.85) pa(0.55, 'średnia '+avgTxt+' — jeździsz wyraźnie powyżej własnej półki');
+    if(p.ovr>=potFrom-2 && heats>=12) pa(0.80, 'dobiłeś do własnego sufitu i dalej dowozisz — trenerzy rewidują ocenę');
+    if(medals.length) pa(0.50, 'medal w rozgrywkach mistrzowskich');
+    if(world && world.ims && world.ims.rode) pa(0.60, 'jazda w cyklu Grand Prix — inny poziom sprzętu, inny poziom rywali');
+  }
+  /* Sufit wzrostu wg profesjonalizmu. Nigdy nie obniża już zdobytego potencjału. */
+  const cap = p.prof>=85 ? 99 : p.prof>=70 ? 92 : p.prof>=55 ? 86 : 78;
+  const target = cl(Math.round(potFrom + potGain), potFrom, Math.max(potFrom, cap));
+  if(target>potFrom){
+    p.pot=target;
+    notes.push('POTENCJAŁ PRZESUNIĘTY: '+potFrom+' → '+p.pot+' (limit przy profesjonalizmie '+p.prof+' wynosi '+cap+'). '+
+      potParts.map(x=>'+'+x.d.toFixed(2)+' — '+x.w).join(' · ')+'.');
+  } else if(potGain>0.3 && potFrom>=cap){
+    notes.push('POTENCJAŁ: zapracowałeś na +'+potGain.toFixed(2)+' sufitu, ale przy profesjonalizmie '+p.prof+
+      ' twój limit to '+cap+', a masz już '+potFrom+'. Bez zmiany stylu życia wyżej nie pójdzie.');
+  }
+ }
  
  /* --- ZUŻYCIE SPRZĘTU I SERWIS POSEZONOWY ---
     Stare -5..-11 na sezon oznaczało, że jeden zakup u dobrego tunera starczał
@@ -1042,6 +1147,9 @@ function resolveSeason(){
   strike, ovrFrom:oldOvr, ovrTo:p.ovr, notes, fines:S.fines, lines, replaced,
   profFrom:S.prof0, profTo:p.prof, profDelta, medFrom:S.med0, medTo:p.med, medDelta, statLog,
   evLog:S.evLog, evTitle:S.evTitle, evChoice:S.evChoice,
+  /* --- WIELKI MECZ (patch 22.08.2026) --- */
+  bigLog:(S.bigLog||[]).slice(), cryNote:S.cryNote||null, bigStage:S.bigStageName||null,
+  potFrom:potFrom, potTo:p.pot, potParts:potParts,
   ban:p.banSeasons>0,
   /* --- NIEOCZEKIWANE ZDARZENIA I SZANSA NA SKŁAD (do UI) --- */
   surprises : (S.surprises||[]).slice(),
@@ -2014,6 +2122,13 @@ function applyWalkover(box, h, a, myClub, rd){
 }
 
 function simSeasonChrono(ctx, myLk, myClub, ptsPen){
+ const g=simSeasonChronoGen(ctx, myLk, myClub, ptsPen, false); let r=g.next();
+ while(!r.done) r=g.next({a:'sim'});
+ return r.value;
+}
+/* `live` = wolno zatrzymać sezon i zapytać o WIELKI MECZ (ostatnia kolejka
+   rundy zasadniczej, gdy jedzie się o wejście do fazy play-off). */
+function* simSeasonChronoGen(ctx, myLk, myClub, ptsPen, live){
  const meR=G.riders.find(r=>r.me);
  const st={};
  LKEYS.forEach(k=>{
@@ -2048,20 +2163,39 @@ function simSeasonChrono(ctx, myLk, myClub, ptsPen){
    let chanceNow=null;
    if(ctx && myClub && meR) chanceNow = status ? 0 : appearanceChanceNow(myClub, meR, ctx.bias);
    if(meR) meR.out = !!status;                      // trener nie ma cię do dyspozycji
-   LKEYS.forEach(k=>{
-     (st[k].sched[rd]||[]).forEach(([h,a])=>{
+   for(const k of LKEYS){
+     for(const [h,a] of (st[k].sched[rd]||[])){
        const mine = myClub && k===myLk && (h===myClub||a===myClub);
        /* WALKOWER: to spotkanie w ogóle się nie odbywa — nie symulujemy go. */
        if(mine && G.S && G.S.walkower && rd===G.S.walkRound){
          applyWalkover(st[k], h, a, myClub, rd);
-         return;
+         continue;
        }
-       const c = (mine && ctx && !status) ? ctx : null;
+       let c = (mine && ctx && !status) ? ctx : null;
        /* OSZCZĘDZANIE NA GWIAZDACH: klub z zaległościami wobec kadry albo
           z pustym kontem przy niespłaconym długu zostawia gwiazdy w domu. */
        const save = {h:needsSaving(clubByName(h)), a:needsSaving(clubByName(a))};
-       const M = simMeeting(h, a, c, c?c.meId:null, save);
-       if(!M) return;
+       let M=null;
+       /* ------------------------------------------------------------
+          WIELKI MECZ W RUNDZIE ZASADNICZEJ — OSTATNIA KOLEJKA O PLAY-OFF
+          Pytamy tylko wtedy, gdy to spotkanie NAPRAWDĘ o czymś decyduje:
+          ostatnia kolejka, a twój klub siedzi na granicy czwórki (miejsca
+          3-6 przed tą kolejką). Wtedy jeden mecz dzieli fazę play-off od
+          play-downu — i to jest moment na pytanie, czy chcesz go przejechać.
+          ------------------------------------------------------------ */
+       if(live && mine && c && rd===BAL.rounds-1 && playoffBubble(st[k].T, myClub)){
+         const dec = yield* bigMatchAsk({kind:'league', stage:'OSTATNIA KOLEJKA — MECZ O PLAY-OFF',
+           title:'OSTATNIA KOLEJKA RUNDY ZASADNICZEJ — MECZ O WEJŚCIE DO PLAY-OFF',
+           myClub, opp:(h===myClub?a:h), lk:k}, c);
+         if(dec==='cry'){ c=null; if(G.S) G.S.forcedFrom=Math.min(G.S.forcedFrom==null?99:G.S.forcedFrom, rd); }
+         else if(dec==='ride'){
+           M = yield* liveMeetingGen(h, a, c, c.meId,
+             {stage:'MECZ O PLAY-OFF', leg:1, legs:1,
+              title:'OSTATNIA KOLEJKA — '+(h===myClub?'MECZ U SIEBIE':'MECZ NA WYJEŹDZIE')});
+         }
+       }
+       if(!M) M = simMeeting(h, a, c, c?c.meId:null, save);
+       if(!M) continue;
        const T=st[k].T, hi=T.findIndex(x=>x.name===h), ai=T.findIndex(x=>x.name===a);
        if(hi<0||ai<0) return;
        T[hi].m++; T[ai].m++;
@@ -2102,8 +2236,8 @@ function simSeasonChrono(ctx, myLk, myClub, ptsPen){
            chance: chanceNow, sur: sur?{kind:sur.kind, log:sur.log}:null,
            why: status || (c? 'ŁAWKA / POZA SKŁADEM' : 'BRAK MIEJSCA W SKŁADZIE')});
        }
-     });
-   });
+     }
+   }
    /* --- SPRZĄTANIE PO NIEOCZEKIWANYM ZDARZENIU ---
       Efekty formy zostają (mają boleć albo cieszyć przez kilka kolejek),
       ale zbiorowa kontuzja kadry i podbicie u trenera dotyczą TEJ jednej kolejki. */
@@ -2371,10 +2505,32 @@ function clubEconomy(){
 // w dwumeczu (bieg dodatkowy). Jeśli w parze jest klub gracza, dopisujemy
 // jego linię startową do obu spotkań.
 function tie(stage, cA, cB, ctx, myClub){
+ const g=tieGen(stage,cA,cB,ctx,myClub,false); let r=g.next();
+ while(!r.done) r=g.next({a:'sim'});
+ return r.value;
+}
+function* tieGen(stage, cA, cB, ctx, myClub, live){
  const mine = myClub && (cA.name===myClub||cB.name===myClub);
- const c = (ctx && mine) ? ctx : null;
- const M1=simMeeting(cB.name, cA.name, c, c?c.meId:null);   // 1. mecz u niżej rozstawionego
- const M2=simMeeting(cA.name, cB.name, c, c?c.meId:null);   // rewanż u wyżej rozstawionego
+ let c = (ctx && mine && !(G.S&&G.S.cried)) ? ctx : null;
+ /* --- WIELKI MECZ: pytanie przed najważniejszym dwumeczem sezonu --- */
+ let ride=false;
+ if(live && c){
+   const dec = yield* bigMatchAsk({kind:'tie', stage,
+     myClub, opp: (cA.name===myClub?cB.name:cA.name),
+     lk: leagueOfClub(myClub)}, c);
+   if(dec==='ride') ride=true;
+   if(dec==='cry')  c=null;
+ }
+ let M1,M2;
+ if(ride){
+   M1 = yield* liveMeetingGen(cB.name, cA.name, c, c.meId, {stage, leg:1, legs:2, title:stage});
+   M2 = yield* liveMeetingGen(cA.name, cB.name, c, c.meId, {stage, leg:2, legs:2, title:stage+' — REWANŻ'});
+   if(!M1) M1=simMeeting(cB.name, cA.name, c, c?c.meId:null);
+   if(!M2) M2=simMeeting(cA.name, cB.name, c, c?c.meId:null);
+ } else {
+   M1=simMeeting(cB.name, cA.name, c, c?c.meId:null);   // 1. mecz u niżej rozstawionego
+   M2=simMeeting(cA.name, cB.name, c, c?c.meId:null);   // rewanż u wyżej rozstawionego
+ }
  if(!M1||!M2) return {stage,a:cA.name,b:cB.name,legs:[],agA:0,agB:0,win:cA,lose:cB,winner:cA.name};
  const agA=M1.as+M2.hs, agB=M1.hs+M2.as;
  const draw = agA===agB;
@@ -2384,6 +2540,11 @@ function tie(stage, cA, cB, ctx, myClub){
  return {stage, a:cA.name, b:cB.name, legs, agA, agB, draw, win, lose, winner:win.name};
 }
 function runPhase(lk, ctx, myClub){
+ const g=runPhaseGen(lk,ctx,myClub,false); let r=g.next();
+ while(!r.done) r=g.next({a:'sim'});
+ return r.value;
+}
+function* runPhaseGen(lk, ctx, myClub, live){
  const T=G.tables[lk], clubs=G.leagues[lk].clubs;
  const C=n=>clubs.find(c=>c.name===n);
  const s=i=>C(T[i].name);
@@ -2392,27 +2553,27 @@ function runPhase(lk, ctx, myClub){
  const ties=[], order=new Array(8);
  
  /* --- PLAY-OFF: 1-4 i 2-3, potem finał --- */
- const sf1=tie('PÓŁFINAŁ', s(0), s(3), ctx, myClub);
- const sf2=tie('PÓŁFINAŁ', s(1), s(2), ctx, myClub);
+ const sf1=yield* tieGen('PÓŁFINAŁ', s(0), s(3), ctx, myClub, live);
+ const sf2=yield* tieGen('PÓŁFINAŁ', s(1), s(2), ctx, myClub, live);
  ties.push(sf1,sf2);
  const [fa,fb]=ord(sf1.win,sf2.win);
- const fin=tie('FINAŁ', fa, fb, ctx, myClub); ties.push(fin);
+ const fin=yield* tieGen('FINAŁ', fa, fb, ctx, myClub, live); ties.push(fin);
  order[0]=fin.winner; order[1]=fin.lose.name;
  const [ta,tb]=ord(sf1.lose,sf2.lose);
  if(lk==='EL'){                                  // mecz o 3. miejsce tylko w Ekstralidze
-   const t3=tie('MECZ O 3. MIEJSCE', ta, tb, ctx, myClub); ties.push(t3);
+   const t3=yield* tieGen('MECZ O 3. MIEJSCE', ta, tb, ctx, myClub, live); ties.push(t3);
    order[2]=t3.winner; order[3]=t3.lose.name;
  } else { order[2]=ta.name; order[3]=tb.name; }
  
  /* --- PLAY-DOWN: 5-8 i 6-7, przegrani o utrzymanie (nie ma w KLŻ) --- */
  if(lk==='EL'||lk==='E2'){
-   const pd1=tie('PLAY-DOWN', s(4), s(7), ctx, myClub);
-   const pd2=tie('PLAY-DOWN', s(5), s(6), ctx, myClub);
+   const pd1=yield* tieGen('PLAY-DOWN', s(4), s(7), ctx, myClub, live);
+   const pd2=yield* tieGen('PLAY-DOWN', s(5), s(6), ctx, myClub, live);
    ties.push(pd1,pd2);
    const [w1,w2]=ord(pd1.win,pd2.win);
    order[4]=w1.name; order[5]=w2.name;
    const [l1,l2]=ord(pd1.lose,pd2.lose);
-   const rel=tie('DWUMECZ O UTRZYMANIE', l1, l2, ctx, myClub); ties.push(rel);
+   const rel=yield* tieGen('DWUMECZ O UTRZYMANIE', l1, l2, ctx, myClub, live); ties.push(rel);
    order[6]=rel.winner;      // ratuje się, ale jedzie baraż
    order[7]=rel.lose.name;   // spada bezpośrednio
  } else {
@@ -2607,7 +2768,7 @@ let RID=1;
 function blankSea(){return {m:0,starts:0,pts:0,bon:0,def:0,exc:0,rep:0};}
 function makeRider(age,ovr,club,pot){
  const o=cl(Math.round(ovr),1,99);
- const p=cl(Math.round(pot!==undefined?pot:o+(age<=21?R(12,30):age<=24?R(4,12):R(0,3))),o,99);
+ const p=cl(Math.round(pot!==undefined?pot:o+(age<=21?R(14,34):age<=24?R(5,14):R(0,4))),o,99);
  return {id:RID++, name:pick(IMIE)+' '+pick(NAZW), age, ovr:o, pot:p,
    club:club||null, retired:false, me:false, inj:0, out:false, strike:false, form:0, sea:blankSea()};
 }
@@ -2632,6 +2793,22 @@ const injured = p => !!(p && (p.longInjury||0) > 0);
    OVR klubu to poziom jego pierwszej piątki. Klub 95 ma piątkę w okolicach 95,
    juniorzy siedzą 15-30 punktów niżej i dopiero z wiekiem podchodzą pod kadrę. --- */
 const junOvr = (L,age) => L - (22-age)*5.0 - R(0,6);      // 16 lat: ~L-36, 21 lat: ~L-8
+/* ------------------------------------------------------------
+   POTENCJAŁ MŁODZIEŻOWCA — SZERSZE OKNO (zmiana 22.08.2026)
+   ------------------------------------------------------------
+   Wcześniej junior dostawał potencjał gauss(poziom klubu - 2, 7). W klubie
+   Krajowej Ligi (OVR ~50) oznaczało to sufit w okolicach 45-55 — czyli
+   NIKT wychowany w niższej lidze nie miał prawa zostać gwiazdą, a każdy
+   ligowy talent musiał urodzić się od razu w Ekstralidze. Tak to nie
+   działa: Zmarzlik nie wychował się w klubie mistrzowskim. Okno jest
+   teraz szersze i ma własną loterię — mniej więcej co dziesiąty junior
+   dostaje potencjał wyraźnie ponad poziom swojego klubu.
+   ------------------------------------------------------------ */
+function youthPot(L){
+ let v = gauss(L+1, 8.5);
+ if(chance(10)) v += R(8,22);          // jeden na dziesięciu to talent z zapadłej dziury
+ return cl(Math.round(v), 18, 99);
+}
 function genSquad(club){
  const L=riderLevel(club), sq=[];
  /* PIERWSZA PIĄTKA — DRABINKA, NIE PIĘĆ LOSÓW Z JEDNEGO ROZKŁADU.
@@ -2645,7 +2822,7 @@ function genSquad(club){
  ladder.forEach(off=>sq.push(makeRider(R(23,36), gauss(L-1+off, 2.7), club.name)));
  sq.push(makeRider(R(22,24), gauss(L-7,5), club.name));                            // zawodnik U24
  sq.push(makeRider(R(25,34), gauss(L-9,5), club.name));                            // rezerwowy senior
- for(let i=0;i<4;i++){ const a=R(16,21); sq.push(makeRider(a, junOvr(L,a)+gauss(0,3), club.name, gauss(L-2,7))); }
+ for(let i=0;i<4;i++){ const a=R(16,21); sq.push(makeRider(a, junOvr(L,a)+gauss(0,3), club.name, youthPot(L))); }
  dedupeSquadOvr(club.name);
  return sq;
 }
@@ -2694,7 +2871,7 @@ function ageRiders(){
  allClubs().forEach(c=>{
    const sq=squadOf(c.name), L=riderLevel(c);
    const jun=sq.filter(isJun).length, sen=sq.filter(r=>!isU24(r)).length;
-   for(let i=jun;i<3;i++) G.riders.push(makeRider(16, junOvr(L,16)+gauss(0,4), c.name, gauss(L-2,7)));
+   for(let i=jun;i<3;i++) G.riders.push(makeRider(16, junOvr(L,16)+gauss(0,4), c.name, youthPot(L)));
    for(let i=sen;i<5;i++) G.riders.push(makeRider(R(23,30), gauss(L-3,5), c.name));
    while(squadOf(c.name).length>14){
      const w=squadOf(c.name).filter(r=>!r.me).sort((a,b)=>a.ovr-b.ovr)[0];
@@ -2991,7 +3168,15 @@ function roundInfo(title, T, meIdx){
 /* ============================================================
    Symulacja całego sezonu indywidualnego
    ============================================================ */
+/* WIELKI TURNIEJ: simIndividual jest generatorem z tego samego powodu, co
+   resolveSeason — ostatni turniej finałowy IMP można przejechać ręcznie,
+   a to znaczy, że symulacja musi umieć się w tym miejscu zatrzymać. */
 function simIndividual(p, effOvr, defP, excP){
+ const g=simIndividualGen(p, effOvr, defP, excP, false); let r=g.next();
+ while(!r.done) r=g.next({a:'sim'});
+ return r.value;
+}
+function* simIndividualGen(p, effOvr, defP, excP, live){
  const me=G.riders.find(r=>r.me);
  me.age=p.age; me.ovr=cl(Math.round(effOvr),1,99); me.name=p.name;
  const ctx={defP, excP};
@@ -3194,10 +3379,21 @@ function simIndividual(p, effOvr, defP, excP){
   const total={}; f.forEach((r,k)=>total[k]=0);
   const finRounds=[];
   for(let t=0;t<3;t++){
-    const Rn=impFinalRound(f, mi, mi>=0?ctx:null);
+    let Rn=null;
+    /* OSTATNI TURNIEJ FINAŁOWY IMP — tu rozstrzyga się mistrzostwo Polski,
+       więc to jest moment na pytanie „jedziesz czy przesymulować". */
+    if(live && t===2 && mi>=0){
+      const dec = yield* bigMatchAsk({kind:'ind', stage:'IMP',
+        title:'TRZECI TURNIEJ FINAŁOWY INDYWIDUALNYCH MISTRZOSTW POLSKI'}, null);
+      if(dec==='cry') break;
+      if(dec==='ride') Rn = yield* liveImpFinalGen(f, mi, ctx,
+        {title:'IMP — TRZECI TURNIEJ FINAŁOWY', stage:'IMP',
+         sub:'tabela 20-biegowa + półfinał + bieg finałowy (art. 634)'});
+    }
+    if(!Rn) Rn=impFinalRound(f, mi, mi>=0?ctx:null);
     Object.keys(Rn.score).forEach(k=>total[k]+=Rn.score[k]);
     if(mi>=0) rode=true;
-    finRounds.push({title:'TURNIEJ FINAŁOWY IMP '+(t+1),
+    finRounds.push({title:'TURNIEJ FINAŁOWY IMP '+(t+1)+(Rn.live?' · PRZEJECHANY OSOBIŚCIE':''),
       rows:Rn.cls.map((ix,pos)=>({pos:pos+1,name:f[ix].name,pts:Rn.score[ix],me:ix===mi})),
       me: mi>=0? {pts:Rn.mePts, codes:Rn.meCodes, pos:Rn.cls.indexOf(mi)+1} : null});
   }
@@ -3237,7 +3433,9 @@ function kaskYouth(name, sub, filt, me, ctx, fieldOf, meIn){
  if(mi>=0) rode=true;
  rounds.push(roundInfo('FINAŁ — '+name, T, mi));
  return finishInd({name, sub, rode, rounds, podium:T.slice(0,3).map(t=>t.name),
-   mePos: mi>=0? T.findIndex(t=>t.me)+1 : 0, mePts: mi>=0? T.find(t=>t.me).pts : 0});
+   mePos: mi>=0? T.findIndex(t=>t.me)+1 : 0, mePts: mi>=0? T.find(t=>t.me).pts : 0,
+   /* TOP 4 SREBRNEGO KASKU = polskie eliminacje do SGP2 CHALLENGE (patrz simJunQualifiers). */
+   top4:T.slice(0,4).map(t=>({id:t.id, name:t.name}))});
 }
  
 /* ============================================================
@@ -3385,7 +3583,12 @@ function sgpLineup(){
    CYKL — WSPÓLNY SILNIK DLA IMŚ I IMŚJ2
    ------------------------------------------------------------ */
 function runGpSeries(cfg){
- const {name, sub, perm, rounds, meId, ctx, prize, series, startFee, wildPool, jun, hosts} = cfg;
+ const g=runGpSeriesGen(cfg); let r=g.next();
+ while(!r.done) r=g.next({a:'sim'});
+ return r.value;
+}
+function* runGpSeriesGen(cfg){
+ const {name, sub, perm, rounds, meId, ctx, prize, series, startFee, wildPool, jun, hosts, live, bigStage} = cfg;
  const total={}, wins={}, seenRef={};
  perm.forEach(x=>{ total[x.r.id]=0; wins[x.r.id]=0; seenRef[x.r.id]=x.r; });
  const roundsOut=[]; let rode=false;
@@ -3413,7 +3616,15 @@ function runGpSeries(cfg){
    if(mi>=0) rode=true;
    if(wc && total[wc.id]==null){ total[wc.id]=0; wins[wc.id]=0; seenRef[wc.id]=wc; }
    field.forEach(f=>{ if(total[f.id]==null){ total[f.id]=0; wins[f.id]=0; seenRef[f.id]=f; } });
-   const Rn=gpRound(field, mi, mi>=0?ctx:null, name+' — RUNDA '+(t+1));
+   let Rn=null;
+   /* OSTATNIA RUNDA CYKLU — tu się rozdaje mistrzostwo świata. */
+   if(live && bigStage && mi>=0 && t===rounds-1){
+     const dec = yield* bigMatchAsk({kind:'ind', stage:bigStage,
+       title:name+' — OSTATNIA RUNDA CYKLU'}, null);
+     if(dec==='ride') Rn = yield* liveGpRoundGen(field, mi, ctx,
+       name+' — RUNDA '+(t+1), {stage:bigStage, sub:'20 biegów + LCQ1, LCQ2 i finał'});
+   }
+   if(!Rn) Rn=gpRound(field, mi, mi>=0?ctx:null, name+' — RUNDA '+(t+1));
    Rn.cls.forEach((ix,k)=>{ const id=field[ix].id; total[id]+=SGP.pts[k]||0; if(k===0) wins[id]++; });
    if(mi>=0 && Rn.me){
      meStat.rounds++; meStat.chartPts+=Rn.me.chartPts;
@@ -3457,18 +3668,21 @@ function runGpSeries(cfg){
        jedzie we WSPÓLNYCH eliminacjach i wyprowadza z nich tylko trzech — te
        federacje stoją żużlowo słabiej i szerszy przydział rozwaliłby balans cyklu.
    ------------------------------------------------------------ */
-function padField(rows, ctry, n, baseOvr){
+function padField(rows, ctry, n, baseOvr, jun){
  while(rows.length<n){
-   rows.push(worldRow(makeWorldRider(ctry||'GBR', (baseOvr||45)-rows.length*1.2+gauss(0,4), R(17,30))));
+   rows.push(worldRow(makeWorldRider(ctry||'GBR', (baseOvr||45)-rows.length*1.2+gauss(0,4),
+     jun ? R(16,20) : R(17,30))));
  }
  return rows;
 }
-function natQual(ctryList, slots, title, meId, ctx, exclude){
+/* `filt` (opcjonalny) zawęża obsadę eliminacji — używa go droga juniorska
+   do IMŚJ2, gdzie startować mogą wyłącznie zawodnicy do 21. roku życia. */
+function natQual(ctryList, slots, title, meId, ctx, exclude, filt){
  const ex = exclude || new Set();
- const pool = worldPool().filter(r=>ctryList.includes(r.ctry) && !ex.has(r.id))
+ const pool = worldPool().filter(r=>ctryList.includes(r.ctry) && !ex.has(r.id) && (!filt||filt(r)))
    .sort((a,b)=>b.ovr-a.ovr);
  let rows=pool.slice(0,16).map(worldRow);
- rows=padField(rows, ctryList[0], 16, rows.length?rows[rows.length-1].ovr:45);
+ rows=padField(rows, ctryList[0], 16, rows.length?rows[rows.length-1].ovr:45, !!filt);
  const mi = meId!=null ? rows.findIndex(r=>r.id===meId) : -1;
  const T=meeting20(rows, mi, mi>=0?ctx:null);
  return {title, rows, T, mi,
@@ -3477,6 +3691,11 @@ function natQual(ctryList, slots, title, meId, ctx, exclude){
      pts:t.pts, me:t.me, through:i<slots}))};
 }
 function simWorldQualifiers(p, ctx, zkTop4, inGp){
+ const g=simWorldQualifiersGen(p, ctx, zkTop4, inGp, false); let r=g.next();
+ while(!r.done) r=g.next({a:'sim'});
+ return r.value;
+}
+function* simWorldQualifiersGen(p, ctx, zkTop4, inGp, live){
  const ex=new Set(inGp||[]);
  const meR=G.riders.find(r=>r.me);
  const meId = meR? meR.id : null;
@@ -3507,7 +3726,21 @@ function simWorldQualifiers(p, ctx, zkTop4, inGp){
  let rows=field.slice(0,16);
  rows=padField(rows,'CZE',16, rows.length?rows[rows.length-1].ovr:50);
  const mi = meId!=null ? rows.findIndex(r=>r.id===meId) : -1;
- const T=meeting20(rows, mi, mi>=0?ctx:null);
+ let T=null, chLive=false;
+ /* SGP CHALLENGE — czterech pierwszych jedzie w przyszłym roku w Grand Prix.
+    Dla zawodnika spoza cyklu to najważniejszy turniej sezonu i tak jest
+    traktowany przez tryb WIELKIEGO MECZU. */
+ if(live && mi>=0){
+   const dec = yield* bigMatchAsk({kind:'ind', stage:'SGP CHALLENGE',
+     title:'SGP CHALLENGE — OSTATNIA RUNDA ELIMINACJI'}, null);
+   if(dec==='ride'){
+     const lv=liveNewState();
+     T = yield* liveInd20Gen(rows, mi, ctx, lv,
+       {title:'SGP CHALLENGE', stage:'SGP CHALLENGE', sub:'16 zawodników · tabela 20-biegowa · TOP 4 wchodzi do cyklu'});
+     chLive=true; liveWrapUp(lv, 'SGP CHALLENGE');
+   }
+ }
+ if(!T) T=meeting20(rows, mi, mi>=0?ctx:null);
  const chTable=T.map((t,i)=>({pos:i+1, name:t.name, ctry:(rows.find(r=>r.id===t.id)||{}).ctry||'POL',
    pts:t.pts, me:t.me, codes:t.codes}));
  let money=0;
@@ -3515,7 +3748,7 @@ function simWorldQualifiers(p, ctx, zkTop4, inGp){
    const pos=T.findIndex(t=>t.me)+1;
    money=Math.round((SGP.chPrize[pos-1]||SGP.chPrize[SGP.chPrize.length-1])+SGP.chStartFee);
  }
- return {quals, challenge:{title:'SGP CHALLENGE — OSTATNIA RUNDA ELIMINACJI', table:chTable, rode:mi>=0,
+ return {quals, challenge:{title:'SGP CHALLENGE — OSTATNIA RUNDA ELIMINACJI'+(chLive?' · PRZEJECHANY OSOBIŚCIE':''), table:chTable, rode:mi>=0, live:chLive,
    mePos: mi>=0 ? T.findIndex(t=>t.me)+1 : 0, mePts: mi>=0 ? T.find(t=>t.me).pts : 0, money},
    order:T.map(t=>rows.find(r=>r.id===t.id)).filter(Boolean)};
 }
@@ -3543,6 +3776,11 @@ function simSEC(ctx, inGp){
    CAŁY SEZON ŚWIATOWY — WOŁANY Z resolveSeason()
    ------------------------------------------------------------ */
 function simWorldSeason(p, effOvr, defP, excP, zkTop4){
+ const g=simWorldSeasonGen(p, effOvr, defP, excP, zkTop4, false); let r=g.next();
+ while(!r.done) r=g.next({a:'sim'});
+ return r.value;
+}
+function* simWorldSeasonGen(p, effOvr, defP, excP, zkTop4, live, skTop4){
  const meR=G.riders.find(r=>r.me);
  if(meR){ meR.ovr=cl(Math.round(effOvr),1,99); meR.name=p.name; meR.age=p.age; }
  const ctx={defP, excP};
@@ -3560,26 +3798,26 @@ function simWorldSeason(p, effOvr, defP, excP, zkTop4){
    const meRow=wildRank.find(r=>r.id===meR.id);
    if(meRow && wildRank.indexOf(meRow)<40) wildPool.push(meRow);
  }
- const ims=runGpSeries({
-   name:'INDYWIDUALNE MISTRZOSTWA ŚWIATA',
+ const ims=yield* runGpSeriesGen({
+   name:'INDYWIDUALNE MISTRZOSTWA ŚWIATA', live, bigStage:'GRAND PRIX',
    sub:'16 zawodników · 20 biegów + LCQ1, LCQ2 i finał (23 biegi) · '+SGP.rounds+' rund w cyklu',
    perm, rounds:SGP.rounds, meId: meR?meR.id:null, ctx, hosts:SGP.hosts,
    prize:SGP.prize, series:SGP.series, startFee:SGP.startFee, wildPool});
  ims.lineup=perm.map(x=>({name:x.r.name, ctry:ctryOf(x.r), how:x.how}));
- /* --- IMŚJ2: cykl juniorski, trzy rundy --- */
+ /* --- IMŚJ2: cykl juniorski, trzy rundy ---
+    Skład NIE jest już zwykłym rankingiem OVR: idzie przez kwalifikację
+    z poprzedniego cyklu, SGP2 Challenge i dzikie karty (patrz sgpJLineup). */
  const jPool=worldRanking(isJun);
- /* Ten sam problem co w seniorach: polska baza juniorów jest wielokrotnie
-    liczniejsza niż zagraniczne, więc bez limitów IMŚJ2 było turniejem polskim
-    z gośćmi. Limity te same co w cyklu seniorskim. */
- let jSel=capPick(jPool, SGP.natCap, SGP.natCapDef, 15);
- if(jSel.length<15){                       // za mało juniorów pod limitami — dobieramy resztę
-   const have=new Set(jSel.map(r=>r.id));
-   jSel=jSel.concat(jPool.filter(r=>!have.has(r.id)).slice(0,15-jSel.length));
+ ensureSgpJSeed();
+ let jPerm=sgpJLineup();
+ if(jPerm.length<15){                      // awaryjnie: za wąska pula juniorów na świecie
+   const have=new Set(jPerm.map(x=>x.r.id));
+   jPerm=jPerm.concat(jPool.filter(r=>!have.has(r.id)).slice(0,15-jPerm.length)
+     .map(r=>({r, how:'nominacja Komisji — brak pełnej obsady eliminacji', ctry:ctryOf(r)})));
  }
- const jPerm=jSel.map(r=>({r, how:'nominacja z rankingu juniorów ('+ctryName(ctryOf(r))+')'}));
  const jIds=jPerm.map(x=>x.r.id);
- const imsj = jPerm.length>=15 ? runGpSeries({
-   name:'INDYWIDUALNE MISTRZOSTWA ŚWIATA JUNIORÓW',
+ const imsj = jPerm.length>=15 ? yield* runGpSeriesGen({
+   name:'INDYWIDUALNE MISTRZOSTWA ŚWIATA JUNIORÓW', live, bigStage:'IMŚJ2',
    sub:'cykl IMŚJ2 · wyłącznie zawodnicy do 21 lat · tylko '+SGP.roundsJun+' rundy · format 23-biegowy',
    perm:jPerm, rounds:SGP.roundsJun, meId:(meR && isJun(p))?meR.id:null, ctx,
    prize:SGP.prize.map(v=>Math.round(v*SGP.junPrizeMul)),
@@ -3588,8 +3826,10 @@ function simWorldSeason(p, effOvr, defP, excP, zkTop4){
    wildPool:capPick(jPool.filter(r=>!jIds.includes(r.id)), {POL:4}, 3, 24), jun:true}) : null;
  if(imsj) imsj.lineup=jPerm.map(x=>({name:x.r.name, ctry:ctryOf(x.r), how:x.how}));
  /* --- ELIMINACJE, CHALLENGE, MISTRZOSTWA EUROPY --- */
- const Q=simWorldQualifiers(p, ctx, zkTop4, inGp);
+ const Q=yield* simWorldQualifiersGen(p, ctx, zkTop4, inGp, live);
  const sec=simSEC(ctx, inGp);
+ /* --- ELIMINACJE I SGP2 CHALLENGE (droga do cyklu juniorskiego) --- */
+ const QJ = yield* simJunQualifiersGen(p, ctx, skTop4, jIds, live);
  /* --- STAN NA KOLEJNY SEZON --- */
  const top7ids=ims.classification.slice(0,7).map(c=>c.id);
  const refOf=id=>{ const w=(G.world||[]).find(x=>x.id===id); if(w) return sgpRef(w);
@@ -3636,7 +3876,39 @@ function simWorldSeason(p, effOvr, defP, excP, zkTop4){
  G.sgp={top7:nextTop7, ch4, sec:secRef, wilds, champ:ims.champion, champYear:G.year, seeded:true};
  G.imsHist=(G.imsHist||[]).concat([{year:G.year, champ:ims.champion, ctry:ims.championCtry,
    mePos:ims.mePos, mePts:ims.mePts}]).slice(-30);
- return {ims, imsj, qual:Q, sec};
+ /* --- STAN CYKLU JUNIORSKIEGO NA KOLEJNY SEZON ---
+    Czołowa siódemka zachowuje kwalifikację (kto skończy 22 lata, i tak wypadnie
+    przy układaniu składu), czterech dochodzi z SGP2 Challenge, resztę dobiera
+    Komisja z rankingu — już z limitami krajowymi. */
+ if(imsj){
+   /* KWALIFIKACJA MA MIEĆ SENS: bierzemy tylko tych, którzy w KOLEJNYM sezonie
+      wciąż będą młodzieżowcami (dziś najwyżej 20 lat). Bez tego połowa stawki
+      wywalczała miejsce i traciła je w tej samej zimie, kończąc 22 lata,
+      a cykl i tak wypełniały dzikie karty. */
+   const stillJun = id => { const r=(G.world||[]).find(x=>x.id===id) || (G.riders||[]).find(x=>x.id===id);
+     return !!r && !r.retired && Number(r.age)<=20; };
+   const jTop=imsj.classification.slice(0,SGP.junTop).filter(c=>stillJun(c.id)).map(c=>refOf(c.id)).filter(Boolean);
+   const jTopIds=jTop.map(x=>x.id);
+   const jCh=[];
+   const jCnt={}, jLim=c=>Math.max(0, Math.min(SGP.chNatCap||2,
+     (SGP.natCap[c]!=null?SGP.natCap[c]:SGP.natCapDef) - (ctryCount(jTop, x=>x)[c]||0)));
+   (QJ.order||[]).forEach(r=>{
+     if(jCh.length>=SGP.junCh || jTopIds.includes(r.id) || Number(r.age)>20) return;
+     const isMe = meR && r.id===meR.id;                 // Gracza limit nigdy nie zatrzymuje
+     const c=ctryOf(r);
+     if(!isMe && (jCnt[c]||0) >= jLim(c)) return;
+     jCnt[c]=(jCnt[c]||0)+1; jCh.push(sgpRef(r));
+   });
+   const jUsed=new Set([...jTopIds, ...jCh.map(x=>x.id)]);
+   const jAlready=ctryCount([...jTop, ...jCh], x=>x);
+   const jCaps={}; Object.keys(SGP.natCap).forEach(c=>{ jCaps[c]=Math.max(0, SGP.natCap[c]-(jAlready[c]||0)); });
+   const jWild=capPick(worldRanking(r=>isJun(r)&&Number(r.age)<=20).filter(r=>!jUsed.has(r.id)), jCaps, SGP.natCapDef, SGP.junWild).map(sgpRef);
+   G.sgpJ={top:jTop, ch4:jCh, wilds:jWild, champ:imsj.champion, seeded:true};
+   G.imsjHist=(G.imsjHist||[]).concat([{year:G.year, champ:imsj.champion, ctry:imsj.championCtry,
+     mePos:imsj.mePos, mePts:imsj.mePts}]).slice(-30);
+ }
+ if(imsj) imsj.qual=QJ;
+ return {ims, imsj, qual:Q, sec, qualJun:QJ};
 }
 
 /* --- BARAŻE + AWANSE/SPADKI --- */
@@ -4262,4 +4534,1188 @@ function signContract(o){
    p.mech=25; p.mechName='Mechanik klubowy (z łapanki)'; p.mechCost=0;
  }
  G.screen='hub'; render();
+}
+/* ============================================================
+   9. WIELKI MECZ — TRYB JAZDY NA ŻYWO (patch 22.08.2026)
+   ------------------------------------------------------------
+   Do tej pory gra była w całości „jedno kliknięcie = jeden sezon".
+   Raz w roku, przed NAJWAŻNIEJSZYM spotkaniem sezonu, gra zatrzymuje się
+   i pyta, co chcesz z nim zrobić:
+     · PRZESYMULOWAĆ — jak zawsze, komputer liczy wszystko za ciebie,
+     · POJECHAĆ      — siadasz na motocyklu i podejmujesz decyzje: zębatka
+       przed każdym biegiem, linia jazdy co łuk, awantury w parku maszyn,
+     · ROZPŁAKAĆ SIĘ — i nie zadzwonić do ojca. Konsekwencje poniżej.
+   Najważniejszy mecz to (wg wagi): FINAŁ > DWUMECZ O UTRZYMANIE >
+   PÓŁFINAŁ / MECZ O 3. MIEJSCE > PLAY-DOWN, a gdy w fazie play-off nie ma
+   dla ciebie nic — ostatnia runda cyklu indywidualnego (GP, Challenge, IMP).
+   ============================================================ */
+const BIG_RANK = {
+ 'OSTATNIA KOLEJKA — MECZ O PLAY-OFF':1, 'PLAY-DOWN':1, 'PÓŁFINAŁ':2, 'MECZ O 3. MIEJSCE':2,
+ 'DWUMECZ O UTRZYMANIE':3, 'FINAŁ':4,
+ 'IMP':3, 'SGP CHALLENGE':3, 'GRAND PRIX':4, 'IMŚJ2':3, 'SGP2 CHALLENGE':3
+};
+const BIG_WHY = {
+ 'OSTATNIA KOLEJKA — MECZ O PLAY-OFF':'Ostatnia kolejka rundy zasadniczej, a wy wisicie na granicy czwórki. Wygracie — jedziecie play-off. Przegracie — jedziecie play-down i całą zimę tłumaczycie to kibicom.',
+ 'PÓŁFINAŁ':'Wygrywasz — jedziesz o mistrzostwo. Przegrywasz — jedziesz o brąz i wszyscy zapominają.',
+ 'FINAŁ':'Finał. Jeden dwumecz dzieli cię od tego, żeby twoje nazwisko zostało w tabelach na zawsze.',
+ 'MECZ O 3. MIEJSCE':'Brązowy medal. Nikt o nim nie pamięta, dopóki go nie ma w gablocie.',
+ 'PLAY-DOWN':'Przegracie, a zjedziecie do dwumeczu o utrzymanie. Wtedy robi się naprawdę nieprzyjemnie.',
+ 'DWUMECZ O UTRZYMANIE':'Przegrany spada. Nie „może spaść" — spada. Klub, twoja stawka, twój bus, wszystko.',
+ 'GRAND PRIX':'Ostatnia runda cyklu. Tu się rozdaje mistrzostwo świata i tu się je oddaje.',
+ 'SGP CHALLENGE':'Czterech pierwszych jedzie w przyszłym roku w Grand Prix. Piąty ogląda w telewizji.',
+ 'SGP2 CHALLENGE':'Czterech pierwszych wchodzi do cyklu juniorskiego mistrzostw świata.',
+ 'IMP':'Ostatni turniej finałowy Indywidualnych Mistrzostw Polski. Tu się kończy sezon.',
+ 'IMŚJ2':'Ostatnia runda mistrzostw świata juniorów. Drugi raz szesnastu lat nie będziesz miał.'
+};
+
+/* Czy klub Gracza wisi na granicy czwórki przed ostatnią kolejką? */
+function playoffBubble(T, myClub){
+ if(!T || !myClub) return false;
+ const tab=T.slice().sort((a,b)=> b.pts-a.pts || (b.sf-b.sa)-(a.sf-a.sa) || b.sf-a.sf);
+ const pos=tab.findIndex(x=>x.name===myClub)+1;
+ return pos>=3 && pos<=6;
+}
+/* --- Czy Gracz w ogóle wjeżdża do składu na ten dwumecz? --- */
+function bigMatchRides(myClub, ctx){
+ if(!myClub || !ctx) return false;
+ const bias = ctx.bias && ctx.bias.club===myClub ? ctx.bias : null;
+ const L = bestLineup(myClub, bias, 0, false);
+ if(!L) return false;
+ return Object.values(L).some(r=>r && r.id===ctx.meId);
+}
+
+/* --- PŁACZ PRZED MECZEM (i brak telefonu do ojca) --- */
+function bigCry(){
+ const p=G.p, S=G.S, club=clubOf(p);
+ S.cried=true; S.forcedEnd=true; S.noRenew=true;
+ S.forcedFrom = Math.min(S.forcedFrom==null?99:S.forcedFrom, BAL.rounds);
+ p.budget -= BIGM.cryFine; S.fines=(S.fines||0)+BIGM.cryFine;
+ S.bigProf=(S.bigProf||0)-BIGM.cryProf; S.bigProfWhy='płacz w parku maszyn przed najważniejszym meczem sezonu';
+ p.prof = cl(p.prof-BIGM.cryProf,0,99);
+ S.bigMed=(S.bigMed||0)+9; S.bigMedWhy='nagranie z płaczem ma dwa miliony wyświetleń';
+ p.med  = cl(p.med+9,0,99);
+ p.loyalty = cl(p.loyalty-40,0,100);
+ S.atm = cl(S.atm-25,0,100);
+ const meR=G.riders.find(r=>r.me); if(meR) meR.out=true;
+ S.cryNote = 'PŁACZ PRZED NAJWAŻNIEJSZYM MECZEM SEZONU: rozkleiłeś się w parku maszyn, przy sprzęcie, '+
+  'przy kamerze i przy dwóch tysiącach ludzi na trybunie. Telefonu do ojca nie wykonałeś. '+
+  'Nie dojechałeś sezonu do końca'+(club?', '+club.name+' rozwiązuje z tobą umowę':'')+', '+
+  'kara umowna '+zl(BIGM.cryFine)+', profesjonalizm -'+BIGM.cryProf+'.';
+ (G.S.notesBig=G.S.notesBig||[]).push(S.cryNote);
+ return S.cryNote;
+}
+
+/* --- PYTANIE PRZED WIELKIM MECZEM ---
+   Zwraca 'sim' | 'ride' | 'cry'. Pyta najwyżej dwa razy w sezonie i tylko
+   wtedy, gdy nowy mecz jest WAŻNIEJSZY od tego, o który już pytaliśmy. --- */
+function* bigMatchAsk(info, ctx){
+ const S=G.S;
+ if(!S || S.cried) return 'sim';
+ const rank = BIG_RANK[info.stage]||0;
+ if(!rank) return 'sim';
+ if(rank <= (S.bigRank||0)) return 'sim';
+ if((S.bigAsked||0) >= 3) return 'sim';
+ if(info.kind==='tie' && !bigMatchRides(info.myClub, ctx)) return 'sim';
+ S.bigRank=rank; S.bigAsked=(S.bigAsked||0)+1; S.bigStageName=info.stage;
+ const dec = yield {ui:'big', big:{
+   kind:info.kind, stage:info.stage, title:info.title||info.stage,
+   opp:info.opp||null, myClub:info.myClub||null, lk:info.lk||null,
+   why: BIG_WHY[info.stage]||'Najważniejszy mecz tego sezonu.',
+   note:info.note||null
+ }};
+ const a = (dec&&dec.a) || 'sim';
+ if(a==='cry'){ bigCry(); return 'cry'; }
+ return a==='ride' ? 'ride' : 'sim';
+}
+
+/* ============================================================
+   9a. TOR, ZĘBATKA I MECHANIK
+   ------------------------------------------------------------
+   Przyczepność toru zmienia się z biegu na bieg (polewaczka, równiarka,
+   dwadzieścia motocykli, słońce). Do każdego stanu toru pasuje inna
+   zębatka — im więcej przyczepności, tym dłuższe przełożenie ma sens.
+   Idealnej zębatki NIE WIDZISZ. Widzisz tylko tor i to, co mówi mechanik,
+   a mechanik jest dokładnie tak dobry, jak ci, za których zapłaciłeś.
+   ============================================================ */
+function liveGrip(prev){
+ if(prev==null) return R(0,5);
+ return cl(prev + (chance(60) ? R(-1,1) : R(-2,2)), 0, 5);
+}
+function liveIdeal(grip){ return cl(grip + (chance(28) ? (chance(50)?1:-1) : 0), 0, 5); }
+function liveMech(ideal, cur){
+ const p=G.p;
+ const acc = BIGM.mechMin + (BIGM.mechMax-BIGM.mechMin)*(cl(p.mech,1,99)/99);
+ const ok  = chance(acc);
+ const sug = ok ? ideal : cl(ideal + pick([-3,-2,-1,1,2,3]), 0, 5);
+ const txt = sug===cur ? pick(BIGM.mechStay) : pick(BIGM.mechMove).replace('{g}','zębatkę '+sug);
+ return {sug, txt, acc:Math.round(acc)};
+}
+const liveFit = (gear, ideal) => cl(Math.abs(gear-ideal), 0, 5);
+
+/* ============================================================
+   9b. JEDEN BIEG NA ŻYWO
+   ------------------------------------------------------------
+   Bieg dzieli się na cztery momenty (BIGM.phases): taśma, pierwszy łuk,
+   walka w środku dystansu i ostatni łuk. W każdym z nich wybierasz linię
+   jazdy. Wszystko liczy się na tej samej skali, co zwykły bieg silnika
+   (rideStr + BAL.sigma) — decyzja przesuwa cię o kilka punktów w górę
+   albo w dół, więc potrafi zmienić miejsce w biegu, ale nie zamieni
+   zawodnika z OVR 30 w mistrza świata.
+   ============================================================ */
+function liveMkRace(entries, ctx, meId, fitIdx, spy){
+ const rid = entries.map(e=>{
+   const me = e.r.id===meId;
+   const trb = (e.trouble||0) * (me?0.5:1);
+   const base = rideStr(e.r.ovr + (e.r.form||0) - trb, e.ref, e.home?BAL.home:0);
+   return {e, id:e.r.id, name:e.r.name, num:e.num, side:e.side, me,
+     val: base + (me ? BIGM.fitStr[fitIdx] + (spy?1.2:0) : 0), out:null};
+ });
+ /* Defekty i wykluczenia losujemy JAK W SILNIKU, ale ujawniamy je w losowym
+    momencie biegu — inaczej gracz podejmowałby decyzje, wiedząc już, że
+    i tak nie dojedzie. */
+ rid.forEach(x=>{
+   const me = x.id===meId;
+   const dP = me&&ctx ? ctx.defP + BIGM.fitDef[fitIdx] + (x.e.trouble||0)*0.0016
+                      : cl(0.028 + (78-x.e.r.ovr)*0.0006 + (x.e.trouble||0)*0.0022, 0.012, 0.14);
+   const eP = me&&ctx ? ctx.excP : cl(0.024 + (74-x.e.r.ovr)*0.0005, 0.010, 0.065);
+   const rr=Math.random();
+   if(rr<dP)      { x.fate='d'; x.fateAt=R(0,3); }
+   else if(rr<dP+eP){ x.fate='w'; x.fateAt=R(0,3); }
+ });
+ return {ph:0, rid, log:[], done:false, hist:[]};
+}
+function liveOrder(rc){
+ const live=rc.rid.filter(x=>!x.out).sort((a,b)=>b.val-a.val);
+ const dead=rc.rid.filter(x=>x.out);
+ return live.concat(dead);
+}
+function liveMyPos(rc){
+ const o=liveOrder(rc); const i=o.findIndex(x=>x.me);
+ return i<0?4:i+1;
+}
+/* Rywale też jadą: drobny dryf co łuk, żeby pozycje nie stały w miejscu. */
+function liveDrift(rc, guard){
+ rc.rid.forEach(x=>{ if(x.out||x.me) return; x.val += gauss(0, guard?1.4:2.6); });
+}
+function liveFate(rc, ph){
+ const out=[];
+ rc.rid.forEach(x=>{
+   if(x.out || x.fate==null || x.fateAt!==ph) return;
+   x.out=x.fate;
+   out.push((x.me?'TWÓJ MOTOCYKL':'Motocykl rywala ('+esc0(x.name)+')')+
+     (x.fate==='d' ? ' — DEFEKT. Silnik gaśnie w połowie łuku.' : ' — wykluczenie sędziego.'));
+ });
+ return out;
+}
+const esc0 = s => String(s);
+
+/* --- SZANSA POWODZENIA DECYZJI --- */
+function liveMoveChance(rc, move, grip, fitIdx){
+ const p=G.p;
+ const me=rc.rid.find(x=>x.me);
+ const opp=rc.rid.filter(x=>!x.me && !x.out);
+ const avg=opp.length? opp.reduce((a,x)=>a+x.val,0)/opp.length : me.val;
+ const edge=cl(me.val-avg, -30, 30);
+ let base = {kreda:48, zewn:48, pika:44, obrona:76, plot:12}[move]||45;
+ if(move==='kreda') base += (2-grip)*4.5;         // sucho i szklisto — kreda jedzie
+ if(move==='zewn')  base += (grip-2)*4.5;         // ciężko i mokro — świeży tor przy bandzie
+ if(move==='pika')  base += (p.prof-50)*0.06;
+ base += edge*0.85 + (p.prof-50)*0.09 - fitIdx*2.2;
+ return Math.round(cl(base, 4, 93));
+}
+/* --- ROZSTRZYGNIĘCIE JEDNEJ DECYZJI --- */
+function liveResolveMove(rc, move, grip, fitIdx, live){
+ const me=rc.rid.find(x=>x.me);
+ const out=[];
+ const ch=liveMoveChance(rc, move, grip, fitIdx);
+ const ok=chance(ch);
+ const crash=()=>{
+   me.out='w'; live.crashed=(live.crashed||0)+1;
+   out.push('LEŻYSZ. Motocykl w płocie, kask w piachu, sędzia zapala czerwoną. Bieg powtórzony bez ciebie.');
+   liveCrashDamage(live, out);
+ };
+ if(move==='kreda'){
+   if(ok){ me.val += R(5,9); out.push('Wchodzisz po kredzie tak wąsko, że sędzia liniowy odskakuje. Wyjeżdżasz z łuku przed rywalem.'); }
+   else if(chance(6)){ crash(); }
+   else { me.val -= R(2,5); out.push('Przednie koło ucieka na wewnętrznej, musisz odpuścić gaz. Tracisz pół motocykla.'); }
+ } else if(move==='zewn'){
+   if(ok){ me.val += R(4,8); out.push('Po dmuchawie, przy bandzie, na świeżym torze — łapiesz przyczepność i objeżdżasz go z zewnątrz.'); }
+   else if(chance(4)){ crash(); }
+   else { me.val -= R(1,4); out.push('Szeroka droga okazała się po prostu dłuższa. Rywal wyszedł z łuku pierwszy.'); }
+ } else if(move==='pika'){
+   if(ok){
+     me.val += R(6,11);
+     out.push('PIKA! Wjeżdżasz mu pod koło i zamykasz drzwi. Trybuny wstają.');
+     if(chance(20)){
+       const v=rc.rid.filter(x=>!x.me && !x.out).sort((a,b)=>b.val-a.val)[0];
+       if(v){ v.out='w'; out.push(esc0(v.name)+' nie wytrzymał tego manewru i położył motocykl. Wykluczony jako wykluczający sprawca — sędzia uznał, że dołożył ci sam.'); }
+     }
+   } else {
+     const r=R(1,100);
+     if(r<=14){ crash(); }
+     else if(r<=22){
+       const v=rc.rid.filter(x=>!x.me && !x.out).sort((a,b)=>b.val-a.val)[0];
+       me.out='w';
+       if(v) v.out='w';
+       out.push('Wjechałeś w niego jak w bramę garażową. Obaj po dmuchawie, sędzia wyklucza CIEBIE jako winnego. '+
+         (v?esc0(v.name)+' wstaje i szuka cię wzrokiem.':''));
+       live.enemy=(live.enemy||0)+1;
+       liveCrashDamage(live, out);
+     }
+     else { me.val -= R(3,6); out.push('Zamknął ci drzwi wcześniej, niż zdążyłeś wjechać. Musisz się cofnąć i odpuścić.'); }
+   }
+ } else if(move==='obrona'){
+   if(ok){ me.val += R(0,1); out.push('Zamykasz wewnętrzną i pilnujesz tego, co masz. Nudno. Skutecznie.'); }
+   else { me.val -= R(2,4); out.push('Zbyt zachowawczo — objechał cię z zewnątrz, zanim zorientowałeś się, że tam w ogóle jest tor.'); }
+ } else if(move==='plot'){
+   const r=R(1,100);
+   if(r<=62){ crash(); out.push('Płot wygrał. Płot zawsze wygrywa.'); }
+   else if(r<=82){
+     me.val += R(8,14);
+     out.push('NIE WIADOMO JAK, ALE PRZEJECHAŁEŚ. Odbiłeś się od dmuchawy, złapałeś przyczepność i wyjechałeś jak z procy. '+
+       'Spiker krzyczy coś, czego nie da się powtórzyć w telewizji publicznej.');
+     G.p.med=cl(G.p.med+3,0,99); live.medGain=(live.medGain||0)+3;
+   }
+   else if(r<=94){
+     const v=rc.rid.filter(x=>!x.me && !x.out).sort((a,b)=>b.val-a.val)[0];
+     me.out='w'; if(v) v.out='w';
+     out.push('Wziąłeś ze sobą '+(v?esc0(v.name):'rywala')+'. Sędzia wyklucza ciebie, karetka jedzie po obu.');
+     live.enemy=(live.enemy||0)+1;
+     liveCrashDamage(live, out);
+   }
+   else { me.val -= R(0,2); out.push('W ostatniej chwili puściłeś gaz. Płot został płotem, a ty zawodnikiem. Na razie.'); }
+ }
+ return {ch, ok, out};
+}
+/* Kraksa kosztuje: sprzęt zawsze, zdrowie czasami. */
+function liveCrashDamage(live, out){
+ const p=G.p;
+ const eq=R(2,7);
+ p.equip=cl(p.equip-eq,1,99);
+ out.push('Sprzęt po kraksie: -'+eq+' (rama, kierownica, błotnik, duma).');
+ if(chance(11)){
+   const dmg=R(1,3);
+   p.ovr=cl(p.ovr-dmg,1,99);
+   const meR=G.riders.find(r=>r.me); if(meR) meR.ovr=cl(meR.ovr-dmg,1,99);
+   logOvr(-dmg, 'kraksa w wielkim meczu sezonu');
+   live.hurt=(live.hurt||0)+dmg;
+   out.push('Bark i żebra dostały swoje. -'+dmg+' OVR — do końca sezonu jeździsz na przeciwbólowych.');
+ }
+}
+
+/* ============================================================
+   9c. PARK MASZYN — WSZYSTKO, CO MOŻESZ ZROBIĆ MIĘDZY BIEGAMI
+   ------------------------------------------------------------
+   Zębatka, podglądanie sprzętu rywali, awantura z trenerem, rękoczyny
+   i najgłupsza możliwa decyzja, czyli wyjazd z parku maszyn w trakcie
+   zawodów. Każda z tych rzeczy ma procent powodzenia i cenę.
+   ============================================================ */
+function livePitCosts(live, kind){
+ const p=G.p, S=G.S;
+ const out=[];
+ if(kind==='yellow'){
+   live.yellow=(live.yellow||0)+1;
+   p.budget-=BIGM.yellowCost; S.fines=(S.fines||0)+BIGM.yellowCost;
+   out.push('ŻÓŁTA KARTKA od sędziego zawodów — '+zl(BIGM.yellowCost)+' kary regulaminowej.');
+   if(live.yellow>=3){
+     live.outOfMeeting=true; live.red=true;
+     out.push('Trzecia żółta kartka w jednych zawodach. Sędzia zamienia ją na CZERWONĄ — koniec startów.');
+   }
+ }
+ return out;
+}
+/* Presja na trenerze: „wpuść mnie za niego". */
+function livePushChance(live, mates){
+ const p=G.p, S=G.S;
+ const weak = mates.length ? mates[mates.length-1] : null;
+ let ch = BIGM.pushBase + (p.med-50)*0.14 + (S.atm-50)*0.10 + (p.loyalty-40)*0.08;
+ if(weak) ch += cl((G.riders.find(r=>r.me).ovr - weak.ovr)*0.8, -20, 20);
+ if(live.pushed) ch -= 22*live.pushed;                 // za drugim razem trener już nie słucha
+ return Math.round(cl(ch, 3, 88));
+}
+
+/* ============================================================
+   9d. SPOTKANIE NA ŻYWO — GENERATOR
+   ------------------------------------------------------------
+   Zwraca DOKŁADNIE to samo, co simMeeting(): wynik, karty biegów, box,
+   linię Gracza i składy. Dzięki temu dwumecz, tabela, karta meczowa
+   i statystyki nie wiedzą nawet, że mecz był jechany ręcznie.
+   ============================================================ */
+function* liveMeetingGen(homeName, awayName, ctx, meId, meta){
+ const bH = ctx&&ctx.bias&&ctx.bias.club===homeName?ctx.bias:null;
+ const bA = ctx&&ctx.bias&&ctx.bias.club===awayName?ctx.bias:null;
+ const LH=bestLineup(homeName, bH, 0, false);
+ const LA=bestLineup(awayName, bA, 0, false);
+ if(!LH||!LA) return null;
+ const inL = L => !!(L && Object.values(L).some(r=>r&&r.id===meId));
+ if(!inL(LH) && !inL(LA)) return null;             // trenera nie przekonałeś — nie ma czego jechać
+ const mySide  = inL(LH)?'h':'a';
+ const myClub  = mySide==='h'?homeName:awayName;
+ const oppClub = mySide==='h'?awayName:homeName;
+
+ const map={}, sideOf={};
+ for(let n=1;n<=7;n++){
+   if(LH[n]){ map[n+8]=LH[n]; sideOf[n+8]='h'; }
+   if(LA[n]){ map[n]  =LA[n]; sideOf[n]  ='a'; }
+ }
+ const REF={h:refFor(homeName), a:refFor(awayName)};
+ const TRB={h:clubTrouble(homeName), a:clubTrouble(awayName)};
+ const st={}; Object.values(map).forEach(r=>{ if(r) st[r.id]={r, starts:0, pts:0, bon:0, codes:[], num:null}; });
+ for(let n=1;n<=15;n++) if(map[n]) st[map[n].id].num=n;
+ const myNum = st[meId] ? st[meId].num : null;
+ const set=HEAT_SETS[R(0,1)];
+ let hs=0, as=0;
+ const tacticUsed={h:false,a:false};
+ const heats=[];
+ const reserves=side=>[6,7].map(n=>map[numFor(side,n)]).filter(Boolean);
+
+ const live={
+   grip:null, ideal:null, gear:2, mech:null, spyKnown:false,
+   yellow:0, red:false, outOfMeeting:false, benched:false, benchNext:false,
+   pushed:0, crashed:0, hurt:0, medGain:0, enemy:0, msgs:[], story:[]
+ };
+
+ /* --- SNAPSHOT DLA INTERFEJSU --- */
+ const rowsOf=side=>Object.values(st).filter(s=>sideOf[s.num]===side)
+   .sort((a,b)=>(a.num||99)-(b.num||99))
+   .map(s=>({num:s.num, name:s.r.name, pts:s.pts, bon:s.bon, starts:s.starts, me:s.r.id===meId, codes:s.codes.slice()}));
+ const snap=(phase, extra)=>{
+   G.live=Object.assign({
+     title:meta.title, stage:meta.stage, leg:meta.leg, legs:meta.legs,
+     home:homeName, away:awayName, myClub, oppClub, mySide, myNum,
+     hs, as, phase,
+     grip: live.grip==null?null:{i:live.grip, n:BIGM.grip[live.grip].n, d:BIGM.grip[live.grip].d},
+     gear: live.gear, ideal: live.spyKnown ? live.ideal : null,
+     mech: live.mech, fit: live.ideal==null?null:liveFit(live.gear, live.ideal),
+     cards:{y:live.yellow, r:live.red}, outOfMeeting:live.outOfMeeting, benched:live.benched,
+     msgs: live.msgs.slice(), story: live.story.slice(-14),
+     me: st[meId] ? {starts:st[meId].starts, pts:st[meId].pts, bon:st[meId].bon,
+                     codes:st[meId].codes.slice(), num:st[meId].num} : null,
+     rows:{h:rowsOf('h'), a:rowsOf('a')},
+     heats:heats.map(h=>({label:h.label, res:h.res})),
+     race:null, coach:null, next:null, push:null
+   }, extra||{});
+   return {ui:'live'};
+ };
+ const say=(...xs)=>{ xs.filter(Boolean).forEach(x=>{ live.msgs.push(x); live.story.push(x); }); };
+ const clearMsg=()=>{ live.msgs=[]; };
+
+ /* --- BUDOWA POLA BIEGU (jak w simMeeting) --- */
+ const buildEntries=(nums)=>{
+   const entries=[];
+   const inHeat=()=>entries.map(e=>e.r.id);
+   nums.forEach(n=>{
+     const side = sideOf[n] || (isHomeNum(n)?'h':'a');
+     let r=map[n];
+     if(!r || st[r.id].starts>=5 || (r.id===meId && live.outOfMeeting)){
+       const name = side==='h'?homeName:awayName;
+       r = reserves(side).concat(availableRiders(name).filter(x=>st[x.id]))
+            .filter(x=>st[x.id].starts<5 && !inHeat().includes(x.id) && !(x.id===meId && live.outOfMeeting))
+            .sort((a,b)=>b.ovr-a.ovr)[0];
+       if(!r) return;
+     }
+     if(inHeat().includes(r.id)) return;
+     const pnum=(st[r.id]&&st[r.id].num!=null)?st[r.id].num:(n>0?n:null);
+     entries.push({r, side, home:side==='h', num:pnum, ref:REF[side], trouble:TRB[side]});
+   });
+   return entries;
+ };
+ const applyRes=(res, label, nominated)=>{
+   res.forEach(x=>{
+     const s=st[x.r.id]; if(!s) return;
+     s.starts++; s.pts+=x.pts; s.bon+=x.bon;
+     s.codes.push(x.out || (String(x.pts)+(x.bon?'*':'')));
+     if(x.side==='h') hs+=x.pts; else as+=x.pts;
+   });
+   heats.push({label, nominated:!!nominated,
+     res:res.map(x=>({id:x.r.id,name:x.r.name,num:x.num,pts:x.pts,bon:x.bon||0,out:x.out,side:x.side}))});
+ };
+ /* Punkt bonusowy — ten sam warunek co w leagueHeat (art. 720). */
+ const bonusOf=(res)=>{
+   res.forEach(x=>{ x.bon=0; if(x.out||x.pts===3) return;
+     const mate=res.find(y=>y!==x && y.side===x.side);
+     if(mate && !mate.out && mate.pts>x.pts && x.pts>0) x.bon=1; });
+ };
+ /* Zwykły, nieinteraktywny bieg. */
+ const simHeat=(nums, label, nominated)=>{
+   const entries=buildEntries(nums);
+   if(entries.length<2) return;
+   const res=leagueHeat(entries, null, null);
+   applyRes(res, label, nominated);
+ };
+
+ /* --- REZERWA TAKTYCZNA (jak w simMeeting) + pytanie, gdy zdejmują CIEBIE --- */
+ const tacticNums=function*(h, nums){
+   const pairs=[['h',hs-as],['a',as-hs]];
+   for(const [side,diff] of pairs){
+     if(h<2 || tacticUsed[side] || diff>-6) continue;
+     if(TRB[side]>=10) continue;
+     const mine=nums.filter(n=>(sideOf[n]||(isHomeNum(n)?'h':'a'))===side);
+     if(mine.length<2) continue;
+     /* KOGO ZDEJMUJE TRENER.
+        Silnik ligowy bierze po prostu najsłabszego OVR-em — i to zostaje dla
+        drużyny przeciwnej. W TWOJEJ drużynie, w meczu jechanym osobiście,
+        trener patrzy na to, co widzi na torze DZISIAJ: zdejmuje tego, kto
+        w tym spotkaniu nie dowozi. Dzięki temu awantura z trenerem
+        („chcesz mnie zmienić?") jest realną sytuacją meczową, a nie
+        ciekawostką dla zawodnika z najniższym OVR w składzie. */
+     const meetForm=r=>{ const x=st[r.id]; return (x&&x.starts) ? x.pts/x.starts : 9; };
+     const pool=mine.map(n=>map[n]).filter(Boolean);
+     const weak = side===mySide
+       ? pool.slice().sort((a,b)=> meetForm(a)-meetForm(b) || a.ovr-b.ovr)[0]
+       : pool.slice().sort((a,b)=> a.ovr-b.ovr)[0];
+     if(!weak) continue;
+     const cand=availableRiders(side==='h'?homeName:awayName)
+       .filter(r=>st[r.id] && st[r.id].starts<5 && r.id!==weak.id
+                  && !mine.some(n=>map[n]&&map[n].id===r.id))
+       .sort((a,b)=>b.ovr-a.ovr)[0];
+     if(!cand) continue;
+     const better = side===mySide
+       ? (cand.ovr > weak.ovr-8 && meetForm(weak)<1.05)     // twoja drużyna: liczy się dzisiejsza jazda
+       : (cand.ovr > weak.ovr);
+     if(!better) continue;
+     /* TO CIEBIE CHCĄ ZDJĄĆ — masz prawo się z tym nie zgodzić. */
+     if(weak.id===meId && !live.outOfMeeting){
+       const keep = yield* coachFight(cand);
+       if(keep) continue;
+     }
+     tacticUsed[side]=true;
+     if(st[weak.id]) st[weak.id].codes.push('-');
+     const vkey=-cand.id;
+     nums=nums.map(n=>map[n]&&map[n].id===weak.id ? vkey : n);
+     map[vkey]=cand; sideOf[vkey]=side;
+   }
+   return nums;
+ };
+ /* Trener chce cię zmienić. Trzy drogi, każda z ceną. */
+ const coachFight=function*(cand){
+   const p=G.p, S=G.S;
+   const argue = Math.round(cl(BIGM.argueBase + (p.med-50)*0.12 + (S.atm-50)*0.12 + (p.loyalty-40)*0.10, 5, 90));
+   const insult= Math.round(cl(BIGM.insultBase + (p.med-50)*0.16 - (p.prof-50)*0.10, 8, 94));
+   clearMsg();
+   const act = yield snap('coach', {coach:{who:cand.name, ovr:cand.ovr, argue, insult}});
+   const a=(act&&act.a)||'accept';
+   if(a==='accept'){
+     say('Zsiadasz z motocykla bez słowa. Kierownik drużyny klepie cię w ramię, co w tej branży znaczy „nie masz racji, ale dziękuję".');
+     S.atm=cl(S.atm+2,0,100);
+     return false;
+   }
+   if(a==='argue'){
+     if(chance(argue)){
+       say('Kłócisz się przy busie, wymachując rękawicą. Trener macha ręką: „Jedź, ale to na twoją odpowiedzialność."');
+       S.atm=cl(S.atm-4,0,100);
+       return true;
+     }
+     say('Kłótnia trwała dokładnie tyle, ile trzeba, żeby mechanik zdążył odpalić motocykl rywala z twojej drużyny. Jedzie '+cand.name+'.');
+     S.atm=cl(S.atm-9,0,100);
+     return false;
+   }
+   /* WYZWISKA — działa częściej, kosztuje nieporównanie więcej */
+   if(chance(insult)){
+     say('Nazwałeś trenera w sposób, który spiker musiał zagłuszyć muzyką. Trener zbladł i powiedział: „Jedź."');
+     S.atm=cl(S.atm-20,0,100);
+     G.S.bigProf=(G.S.bigProf||0)-6; p.prof=cl(p.prof-6,0,99);
+     p.med=cl(p.med+7,0,99); G.S.bigMed=(G.S.bigMed||0)+7;
+     return true;
+   }
+   say('Wyzwiska poszły w eter przez otwarty mikrofon kamery przy parku maszyn. Trener nie odpowiedział, tylko wpisał '+cand.name+'.');
+   S.atm=cl(S.atm-26,0,100);
+   G.S.bigProf=(G.S.bigProf||0)-12; p.prof=cl(p.prof-12,0,99);
+   p.med=cl(p.med+10,0,99); G.S.bigMed=(G.S.bigMed||0)+10;
+   if(chance(38)){ G.S.noRenew=true; say('Prezes słyszał wszystko. Kontraktu nie będzie.'); }
+   return false;
+ };
+
+ /* --- AKCJE PARKU MASZYN (wspólne dla ekranu „między biegami" i „przed biegiem") --- */
+ const pitAction=function*(act, heatNums){
+   const p=G.p, S=G.S;
+   const a=(act&&act.a)||'go';
+   clearMsg();
+   if(a==='gear'){
+     const v=cl(Number(act.v)||0,0,5);
+     if(v===live.gear) say('Mechanik patrzy na ciebie, potem na zębatkę, potem znowu na ciebie. Zostaje jak było.');
+     else { say('Zębatka '+live.gear+' → '+v+'. Mechanik robi to w dziewięćdziesiąt sekund i zdąży jeszcze splunąć.'); live.gear=v; }
+     return false;
+   }
+   if(a==='spy'){
+     if(live.spyDone){ say('Drugi raz w tym biegu nie wejdziesz im do parkingu. Kierownik zawodów już cię zna.'); return false; }
+     live.spyDone=true;
+     if(chance(BIGM.spyOk)){
+       live.spyKnown=true;
+       say('Podchodzisz „po klucz nasadowy" i patrzysz na ich zębatkę. Wiesz już, co jest dziś dobre na ten tor.');
+     } else {
+       say('Mechanik rywala zauważa cię z odległości dwóch metrów i woła sędziego technicznego.');
+       livePitCosts(live,'yellow').forEach(x=>say(x));
+     }
+     return false;
+   }
+   if(a==='hit'){
+     p.med=cl(p.med+12,0,99); S.bigMed=(S.bigMed||0)+12;
+     if(chance(12)){
+       say('Przyjebałeś mu w park maszyn tak, że nikt tego nie nagrał, a on nie ma świadków. Sędzia rozkłada ręce. Kierownik drużyny patrzy na ciebie z podziwem, którego się wstydzi.');
+       S.atm=cl(S.atm-6,0,100);
+       return false;
+     }
+     live.red=true; live.outOfMeeting=true;
+     p.budget-=BIGM.redFine; S.fines=(S.fines||0)+BIGM.redFine;
+     S.bigProf=(S.bigProf||0)-BIGM.redProf; p.prof=cl(p.prof-BIGM.redProf,0,99);
+     S.atm=cl(S.atm-16,0,100);
+     say('CZERWONA KARTKA. Rękoczyny w parku maszyn, kamery, protokół, komisja. Koniec startów w tych zawodach.',
+         'Kara '+zl(BIGM.redFine)+', profesjonalizm -'+BIGM.redProf+'.');
+     if(chance(30)){ S.banMatches=(S.banMatches||0)+2; say('Wydział Dyscypliny dokłada 2 mecze zawieszenia w kolejnym sezonie.'); }
+     if(chance(20)){ S.noRenew=true; say('Zarząd klubu ogłasza, że „nie widzi cię w projekcie na kolejny sezon".'); }
+     return true;
+   }
+   if(a==='leave'){
+     live.outOfMeeting=true; live.benched=true;
+     p.budget-=BIGM.leaveFine; S.fines=(S.fines||0)+BIGM.leaveFine;
+     S.bigProf=(S.bigProf||0)-BIGM.leaveProf; p.prof=cl(p.prof-BIGM.leaveProf,0,99);
+     S.atm=cl(S.atm-BIGM.leaveAtm,0,100);
+     p.loyalty=cl(p.loyalty-BIGM.leaveLoy,0,100);
+     p.med=cl(p.med+15,0,99); S.bigMed=(S.bigMed||0)+15;
+     say('WYJEŻDŻASZ Z PARKU MASZYN W TRAKCIE ZAWODÓW. Bus, brama, droga wojewódzka, cisza.',
+         'Zostajesz zmieniony do końca spotkania. Kara umowna '+zl(BIGM.leaveFine)+', profesjonalizm -'+BIGM.leaveProf+
+         ', atmosfera w szatni -'+BIGM.leaveAtm+', lojalność -'+BIGM.leaveLoy+'.');
+     if(chance(55)){ S.noRenew=true; say('Klub rozwiązuje z tobą kontrakt ze skutkiem natychmiastowym po zawodach.'); }
+     else say('Klub zostawia cię w kadrze, ale prezes powiedział dziennikarzom zdanie, które będzie ci wracać przez lata.');
+     if(chance(35)){ S.banMatches=(S.banMatches||0)+3; say('Wydział Dyscypliny: 3 mecze zawieszenia w kolejnym sezonie.'); }
+     return true;
+   }
+   if(a==='push'){
+     const mates=availableRiders(myClub).filter(r=>st[r.id] && r.id!==meId && st[r.id].starts<5)
+       .sort((a2,b2)=>b2.ovr-a2.ovr);
+     const ch=livePushChance(live, mates);
+     live.pushed=(live.pushed||0)+1;
+     if(chance(ch)){
+       live.pushIn=true;
+       say('Dopadasz trenera przy tablicy z programem. „Wpuść mnie za niego, ja to dowiozę." Trener patrzy na wynik, patrzy na ciebie i skreśla cudzy numer.');
+       return false;
+     }
+     const r=R(1,100);
+     if(r<=55){ say('„Siadaj i czekaj na swój bieg." Tyle. Rozmowa trwała cztery sekundy.'); G.S.atm=cl(G.S.atm-5,0,100); }
+     else if(r<=85){
+       live.benchNext=true;
+       say('Chciałeś, żeby trener wpuścił cię z rezerwy — a w nagrodę to CIEBIE zdejmie z twojego własnego biegu. '+
+           '„Skoro tak ci się chce jeździć, to popatrz, jak się to robi."');
+       G.S.atm=cl(G.S.atm-10,0,100);
+     } else {
+       live.outOfMeeting=true; live.benched=true;
+       say('Trener wysłuchał do końca, kiwnął głową i wpisał kogoś innego do WSZYSTKICH twoich pozostałych biegów. '+
+           'Zawody skończyły się dla ciebie przy tablicy z programem.');
+       G.S.atm=cl(G.S.atm-14,0,100);
+     }
+     return true;
+   }
+   return true;      // 'go'
+ };
+
+ /* --- EKRAN „MIĘDZY BIEGAMI" --- */
+ const between=function*(nextHeat){
+   while(true){
+     const mates=availableRiders(myClub).filter(r=>st[r.id] && r.id!==meId && st[r.id].starts<5)
+       .sort((a2,b2)=>b2.ovr-a2.ovr);
+     const act = yield snap('between', {
+       next:{label:nextHeat, mine:false},
+       push:{show:mates.length>0 && !live.outOfMeeting, chance:livePushChance(live, mates),
+             who:mates.length?mates[mates.length-1].name:null}
+     });
+     const done = yield* pitAction(act, null);
+     if((act&&act.a)==='go' || done) return;
+   }
+ };
+
+ /* --- BIEG GRACZA: park maszyn → taśma → cztery decyzje → wynik --- */
+ const myHeat=function*(nums, label, nominated){
+   const p=G.p;
+   /* tor zmienia się z biegu na bieg */
+   live.grip=liveGrip(live.grip);
+   live.ideal=liveIdeal(live.grip);
+   live.spyKnown=false; live.spyDone=false;
+   live.mech=liveMech(live.ideal, live.gear);
+   clearMsg();
+   /* PARK MASZYN */
+   while(true){
+     const mates=availableRiders(myClub).filter(r=>st[r.id] && r.id!==meId && st[r.id].starts<5)
+       .sort((a2,b2)=>b2.ovr-a2.ovr);
+     const act = yield snap('pit', {
+       next:{label, mine:true},
+       push:{show:false, chance:0, who:null},
+       field: buildEntries(nums).map(e=>({num:e.num, name:e.r.name, me:e.r.id===meId, side:e.side}))
+     });
+     if((act&&act.a)==='go') break;
+     const done = yield* pitAction(act, nums);
+     if(done) break;
+   }
+   if(live.outOfMeeting){
+     if(st[meId]) st[meId].codes.push('-');
+     simHeat(nums, label, nominated);
+     return;
+   }
+   if(live.benchNext){
+     live.benchNext=false;
+     if(st[meId]) st[meId].codes.push('-');
+     clearMsg();
+     say('Trener dotrzymał słowa: w twoim biegu jedzie kolega z kadry. Ty stoisz przy bandzie w komplecie kevlarów.');
+     const alt=availableRiders(myClub).filter(r=>st[r.id] && r.id!==meId && st[r.id].starts<5)
+       .sort((a2,b2)=>b2.ovr-a2.ovr)[0];
+     let ns=nums.slice();
+     if(alt){ const vk=-alt.id; map[vk]=alt; sideOf[vk]=mySide; ns=ns.map(n=>map[n]&&map[n].id===meId?vk:n); }
+     simHeat(ns, label, nominated);
+     yield snap('heatres', {next:{label, mine:false}});
+     return;
+   }
+   const entries=buildEntries(nums);
+   if(!entries.some(e=>e.r.id===meId)){ simHeat(nums, label, nominated); return; }
+   const fit=liveFit(live.gear, live.ideal);
+   const rc=liveMkRace(entries, ctx, meId, fit, live.spyKnown);
+   clearMsg();
+   /* --- TAŚMA --- */
+   {
+     const act = yield snap('race', {race:{
+       ph:0, phaseName:BIGM.phases[0], label,
+       options:BIGM.starts.map(o=>({id:o.id, l:o.l, d:o.d, ch:null})),
+       order:liveOrder(rc).map(x=>({name:x.name, num:x.num, me:x.me, out:x.out})),
+       gear:live.gear, fit, fitTxt:BIGM.fitTxt[fit], grip:live.grip, log:[]
+     }});
+     const s=(act&&act.v)||'clean';
+     const me=rc.rid.find(x=>x.me);
+     if(s==='tape'){
+       if(chance(cl(52+(p.prof-50)*0.12-fit*3,10,88))){ me.val+=R(5,10); say('WYSTRZELIŁEŚ Z TAŚMY. Pierwszy łuk twój, reszta patrzy w plecy.'); }
+       else if(chance(38)){ me.out='w'; say('DOTKNĄŁEŚ TAŚMY. Czerwone światło, sędzia wyklucza cię z biegu. Trybuny gwiżdżą, mechanik odwraca wzrok.'); }
+       else { me.val-=R(2,5); say('Ruszyłeś o ćwierć sekundy za wcześnie, złapałeś sprzęgłem pustkę i wyjechałeś ostatni.'); }
+     } else if(s==='safe'){
+       me.val-=R(1,4); say('Puściłeś taśmę spokojnie. Bezpiecznie, przewidywalnie, trzeci.');
+     } else {
+       me.val+=R(-2,3); say('Normalny start. Tyle, ile daje sprzęt i zębatka.');
+     }
+     liveFate(rc,0).forEach(x=>say(x));
+     liveDrift(rc,false);
+     rc.hist.push({ph:0, order:liveOrder(rc).map(x=>({name:x.name,me:x.me,out:x.out}))});
+   }
+   /* --- TRZY ŁUKI DECYZJI --- */
+   for(let ph=1; ph<=3 && !rc.rid.find(x=>x.me).out; ph++){
+     const fitNow=fit;
+     const opts=BIGM.moves.map(m=>({id:m.id, l:m.l, d:m.d, ch:liveMoveChance(rc, m.id, live.grip, fitNow)}));
+     const act = yield snap('race', {race:{
+       ph, phaseName:BIGM.phases[ph], label,
+       options:opts,
+       order:liveOrder(rc).map(x=>({name:x.name, num:x.num, me:x.me, out:x.out})),
+       pos:liveMyPos(rc), gear:live.gear, fit:fitNow, fitTxt:BIGM.fitTxt[fitNow], grip:live.grip
+     }});
+     clearMsg();
+     const mv=(act&&act.v)||'obrona';
+     const r=liveResolveMove(rc, mv, live.grip, fitNow, live);
+     r.out.forEach(x=>say(x));
+     liveFate(rc, ph).forEach(x=>say(x));
+     liveDrift(rc, mv==='obrona');
+     rc.hist.push({ph, order:liveOrder(rc).map(x=>({name:x.name,me:x.me,out:x.out}))});
+   }
+   /* --- META --- */
+   const fin=rc.rid.filter(x=>!x.out).sort((a,b)=>b.val-a.val);
+   const res=rc.rid.map(x=>{
+     const pts = x.out ? 0 : [3,2,1,0][fin.indexOf(x)];
+     return {r:x.e.r, side:x.side, home:x.e.home, num:x.num, ref:x.e.ref, trouble:x.e.trouble,
+             out:x.out, pts, bon:0};
+   });
+   bonusOf(res);
+   applyRes(res, label, nominated);
+   const mine=res.find(x=>x.r.id===meId);
+   say(mine.out==='d' ? 'DEFEKT. Zero punktów i rachunek u tunera.'
+     : mine.out==='w' ? 'WYKLUCZENIE. Zero punktów, za to materiał wideo na cały tydzień.'
+     : 'Bieg '+label+': '+mine.pts+(mine.bon?' + bonus':'')+' pkt. '+pick(BIGM.crowd));
+   yield snap('heatres', {next:{label, mine:true},
+     result:{pts:mine.pts, bon:mine.bon, out:mine.out,
+             order:liveOrder(rc).map((x,i)=>({pos:i+1, name:x.name, num:x.num, me:x.me, out:x.out}))}});
+ };
+
+ /* ============================================================
+    PRZEBIEG SPOTKANIA — 13 biegów programu + 2 nominowane
+    ============================================================ */
+ let h=0;
+ while(h<13){
+   let nums = yield* tacticNums(h, set[h].slice());
+   if(live.pushIn && !live.outOfMeeting && st[meId] && st[meId].starts<5 &&
+      !nums.some(n=>map[n]&&map[n].id===meId)){
+     /* PRESJA ZADZIAŁAŁA: wchodzisz za najsłabszego kolegę z tego biegu */
+     const mineNums=nums.filter(n=>(sideOf[n]||(isHomeNum(n)?'h':'a'))===mySide);
+     const weak=mineNums.map(n=>map[n]).filter(Boolean).sort((a,b)=>a.ovr-b.ovr)[0];
+     if(weak){
+       if(st[weak.id]) st[weak.id].codes.push('-');
+       nums=nums.map(n=>map[n]&&map[n].id===weak.id ? (myNum!=null?myNum:n) : n);
+       live.pushIn=false;
+     }
+   }
+   const mineIn = !live.outOfMeeting && st[meId] && st[meId].starts<5 &&
+                  nums.some(n=>map[n] && map[n].id===meId);
+   if(!mineIn){
+     yield* between(h+1);
+     if(live.outOfMeeting){ simHeat(nums, h+1); h++; continue; }
+     /* jeden klik = wszystkie biegi bez ciebie, aż do twojego startu */
+     let guard=0;
+     while(h<13 && guard++<20){
+       if(live.pushIn) break;                    // trener właśnie cię wpuścił — wracamy do pętli głównej
+       let ns = yield* tacticNums(h, set[h].slice());
+       const mi = !live.outOfMeeting && st[meId] && st[meId].starts<5 &&
+                  ns.some(n=>map[n] && map[n].id===meId);
+       if(mi) break;
+       simHeat(ns, h+1); h++;
+     }
+     continue;
+   }
+   yield* myHeat(nums, h+1, false);
+   h++;
+ }
+ /* --- BIEGI XIV i XV: NOMINOWANI (art. 721) --- */
+ const nominate=(side,name)=>availableRiders(name).filter(r=>st[r.id]&&st[r.id].starts<5 && !(r.id===meId&&live.outOfMeeting))
+   .sort((a,b)=> (st[b.id].pts/Math.max(1,st[b.id].starts)) - (st[a.id].pts/Math.max(1,st[a.id].starts)) || b.ovr-a.ovr);
+ for(let extra=0; extra<2; extra++){
+   const H=nominate('h',homeName).slice(0,2), A=nominate('a',awayName).slice(0,2);
+   const entries=[...H.map(r=>({r,side:'h',home:true,num:st[r.id].num,ref:REF.h,trouble:TRB.h})),
+                  ...A.map(r=>({r,side:'a',home:false,num:st[r.id].num,ref:REF.a,trouble:TRB.a}))];
+   if(entries.length<3) break;
+   const label=14+extra;
+   if(entries.some(e=>e.r.id===meId) && !live.outOfMeeting){
+     const nums=entries.map(e=>{ const vk=-e.r.id; map[vk]=e.r; sideOf[vk]=e.side; return vk; });
+     yield* myHeat(nums, label, true);
+   } else {
+     const res=leagueHeat(entries, null, null);
+     applyRes(res, label, true);
+   }
+ }
+ /* --- ZAPIS DO STATYSTYK I FORMA (identycznie jak simMeeting) --- */
+ Object.values(st).forEach(s=>{
+   if(!s.r.sea) s.r.sea=blankSea();
+   s.r.sea.m++; s.r.sea.starts+=s.starts; s.r.sea.pts+=s.pts; s.r.sea.bon+=s.bon;
+   s.codes.forEach(c=>{ if(c==='d') s.r.sea.def++; else if(c==='w') s.r.sea.exc++; else if(c==='-') s.r.sea.rep++; });
+   if(s.starts>0){
+     const side = isHomeNum(s.num) ? 'h':'a';
+     const exp = cl(1.35 + (s.r.ovr - REF[side])*0.055, 0.15, 2.75);
+     const got = s.pts/s.starts;
+     s.r.form = cl((s.r.form||0)*0.40 + (got-exp)*3.5, -12, 12);
+   }
+ });
+ [homeName, awayName].forEach(n=>squadOf(n).forEach(r=>{
+   if(st[r.id] && st[r.id].starts>0) return;
+   if(r.form) r.form = Math.abs(r.form)<0.4 ? 0 : r.form*0.7;
+ }));
+ /* --- KONTROLA WYNIKU (suma punktów po składach) --- */
+ const idsH=new Set(Object.values(LH).filter(Boolean).map(r=>r.id));
+ const idsA=new Set(Object.values(LA).filter(Boolean).map(r=>r.id));
+ { let hh=0, aa=0;
+   Object.values(st).forEach(s=>{ if(idsH.has(s.r.id)) hh+=s.pts; else if(idsA.has(s.r.id)) aa+=s.pts; });
+   hs=hh; as=aa; }
+ const box=Object.values(st).map(x=>({
+   id:x.r.id, name:x.r.name, num:x.num, age:x.r.age,
+   side: idsH.has(x.r.id) ? 'h' : 'a',
+   starts:x.starts, pts:x.pts, bon:x.bon, codes:x.codes.slice(),
+   me: !!(meId && x.r.id===meId)
+ })).sort((a,b)=> (a.side===b.side ? (a.num||99)-(b.num||99) : (a.side==='h'?1:-1)));
+ const meSt = meId && st[meId] ? st[meId] : null;
+ /* --- PODSUMOWANIE SPOTKANIA NA EKRAN --- */
+ clearMsg();
+ yield snap('end', {result:{
+   hs, as, mine: mySide==='h'?hs:as, theirs: mySide==='h'?as:hs,
+   me: meSt ? {starts:meSt.starts, pts:meSt.pts, bon:meSt.bon, codes:meSt.codes.slice()} : null
+ }});
+ /* --- SKUTKI POZASPORTOWE DO RAPORTU SEZONU --- */
+ const note=[];
+ if(live.yellow) note.push(live.yellow+'× żółta kartka w parku maszyn ('+zl(live.yellow*BIGM.yellowCost)+')');
+ if(live.red) note.push('czerwona kartka');
+ if(live.benched) note.push('zmieniony do końca zawodów');
+ if(live.crashed) note.push(live.crashed+'× kraksa');
+ if(live.hurt) note.push('-'+live.hurt+' OVR po upadku');
+ if(note.length) (G.S.notesBig=G.S.notesBig||[]).push('WIELKI MECZ ('+meta.title+'): '+note.join(', ')+'.');
+ (G.S.bigLog=G.S.bigLog||[]).push({title:meta.title, hs, as, mine:mySide==='h'?hs:as, theirs:mySide==='h'?as:hs,
+   me: meSt ? {starts:meSt.starts, pts:meSt.pts, bon:meSt.bon, codes:meSt.codes.slice()} : null,
+   story: live.story.slice()});
+ G.live=null;
+ return {hs, as, heats, st, box,
+   me: meSt ? {starts:meSt.starts, pts:meSt.pts, bon:meSt.bon,
+               codes:meSt.codes.filter(c=>typeof c==='string'), num:meSt.num} : null,
+   lineH:LH, lineA:LA, saveIn:false, save:{h:false,a:false}, meGap:null, meReg:false, live:true};
+}
+
+/* ============================================================
+   9e. TURNIEJ INDYWIDUALNY NA ŻYWO
+   ------------------------------------------------------------
+   Ta sama mechanika co w meczu ligowym (zębatka, tor, decyzje co łuk,
+   park maszyn), tylko bez drużyny: nie ma trenera, nie ma rezerwy
+   taktycznej i nie ma za kogo jechać, więc nie ma też punktów bonusowych.
+   Zwraca dokładnie taką tabelę, jaką zwraca meeting20() — reszta gry
+   nie musi wiedzieć, że ten turniej ktoś przejechał ręcznie.
+   ============================================================ */
+function liveNewState(){
+ return {grip:null, ideal:null, gear:2, mech:null, spyKnown:false, spyDone:false,
+   yellow:0, red:false, outOfMeeting:false, crashed:0, hurt:0, msgs:[], story:[]};
+}
+/* Park maszyn w turnieju indywidualnym: zębatka, podglądanie, rękoczyny, ucieczka. */
+function liveIndPit(act, live){
+ const p=G.p, S=G.S, out=[];
+ const a=(act&&act.a)||'go';
+ live.msgs=[];
+ const say=(...xs)=>xs.filter(Boolean).forEach(x=>{ live.msgs.push(x); live.story.push(x); });
+ if(a==='gear'){
+   const v=cl(Number(act.v)||0,0,5);
+   if(v===live.gear) say('Mechanik nawet nie sięga po klucz. Zostaje jak było.');
+   else { say('Zębatka '+live.gear+' → '+v+'.'); live.gear=v; }
+   return false;
+ }
+ if(a==='spy'){
+   if(live.spyDone){ say('Drugi raz w tym biegu nikt cię tam nie wpuści.'); return false; }
+   live.spyDone=true;
+   if(chance(BIGM.spyOk)){ live.spyKnown=true; say('Zajrzałeś rywalowi w zębatkę pod pretekstem pożyczania kluczy. Wiesz już, co dziś jedzie na tym torze.'); }
+   else { say('Sędzia techniczny widział wszystko.'); livePitCosts(live,'yellow').forEach(x=>say(x)); }
+   return false;
+ }
+ if(a==='hit'){
+   p.med=cl(p.med+12,0,99); S.bigMed=(S.bigMed||0)+12;
+   if(chance(12)){ say('Przyjebałeś mu za busem, bez świadków i bez kamer. Rywal milczy, bo nie ma dowodów, a ty masz spokój.'); return false; }
+   live.red=true; live.outOfMeeting=true;
+   p.budget-=BIGM.redFine; S.fines=(S.fines||0)+BIGM.redFine;
+   S.bigProf=(S.bigProf||0)-BIGM.redProf; p.prof=cl(p.prof-BIGM.redProf,0,99);
+   say('CZERWONA KARTKA za rękoczyny w parku maszyn. Wykluczenie z dalszych startów w turnieju.',
+       'Kara '+zl(BIGM.redFine)+', profesjonalizm -'+BIGM.redProf+'.');
+   if(chance(30)){ S.banMatches=(S.banMatches||0)+2; say('Wydział Dyscypliny dokłada 2 mecze zawieszenia w kolejnym sezonie.'); }
+   return true;
+ }
+ if(a==='leave'){
+   live.outOfMeeting=true;
+   p.budget-=BIGM.leaveFine; S.fines=(S.fines||0)+BIGM.leaveFine;
+   S.bigProf=(S.bigProf||0)-BIGM.leaveProf; p.prof=cl(p.prof-BIGM.leaveProf,0,99);
+   p.med=cl(p.med+15,0,99); S.bigMed=(S.bigMed||0)+15;
+   say('WYJEŻDŻASZ Z PARKU MASZYN W ŚRODKU TURNIEJU. Pakujesz sprzęt przy zapalonych światłach, na oczach szesnastu tysięcy ludzi.',
+       'Pozostałe biegi przepadają. Kara '+zl(BIGM.leaveFine)+', profesjonalizm -'+BIGM.leaveProf+'.');
+   if(chance(45)){ S.noRenew=true; say('Klub, który cię zgłosił, ogłasza rozstanie „za porozumieniem stron".'); }
+   return true;
+ }
+ return true;
+}
+/* Jeden bieg turnieju z udziałem Gracza — wspólny dla tabeli 20-biegowej,
+   biegów LCQ, półfinału i finału. Zwraca to samo co oneHeat(). */
+function* liveIndHeatGen(idxs, field, meIdx, ctx, live, label, snap){
+ const ref = field.__ref !== undefined ? field.__ref
+   : (field.__ref = field.reduce((a,r)=>a+r.ovr,0)/Math.max(1,field.length));
+ /* PARK MASZYN */
+ live.grip=liveGrip(live.grip);
+ live.ideal=liveIdeal(live.grip);
+ live.spyKnown=false; live.spyDone=false;
+ live.mech=liveMech(live.ideal, live.gear);
+ live.msgs=[];
+ while(true){
+   const act = yield snap('pit', {next:{label, mine:true},
+     field: idxs.map(i=>({name:field[i].name, me:i===meIdx, ctry:field[i].ctry||null}))});
+   if((act&&act.a)==='go') break;
+   if(liveIndPit(act, live)) break;
+ }
+ if(live.outOfMeeting) return null;
+ const entries = idxs.map(i=>({r:{id:field[i].id, name:field[i].name, ovr:field[i].ovr, form:0},
+   side:'x', home:false, num:null, ref, trouble:0, idx:i}));
+ const fit=liveFit(live.gear, live.ideal);
+ const meId=field[meIdx].id;
+ const rc=liveMkRace(entries, ctx, meId, fit, live.spyKnown);
+ const say=(...xs)=>xs.filter(Boolean).forEach(x=>{ live.msgs.push(x); live.story.push(x); });
+ live.msgs=[];
+ /* TAŚMA */
+ {
+  const act = yield snap('race', {race:{ph:0, phaseName:BIGM.phases[0], label,
+    options:BIGM.starts.map(o=>({id:o.id,l:o.l,d:o.d,ch:null})),
+    order:liveOrder(rc).map(x=>({name:x.name, me:x.me, out:x.out})),
+    gear:live.gear, fit, fitTxt:BIGM.fitTxt[fit], grip:live.grip}});
+  const s=(act&&act.v)||'clean', me=rc.rid.find(x=>x.me), p=G.p;
+  if(s==='tape'){
+    if(chance(cl(52+(p.prof-50)*0.12-fit*3,10,88))){ me.val+=R(5,10); say('WYSTRZELIŁEŚ Z TAŚMY.'); }
+    else if(chance(38)){ me.out='w'; say('DOTKNĄŁEŚ TAŚMY. Wykluczenie z biegu.'); }
+    else { me.val-=R(2,5); say('Za wcześnie o ćwierć sekundy. Wyjechałeś ostatni.'); }
+  } else if(s==='safe'){ me.val-=R(1,4); say('Spokojny start.'); }
+  else { me.val+=R(-2,3); say('Normalny start.'); }
+  liveFate(rc,0).forEach(x=>say(x));
+  liveDrift(rc,false);
+ }
+ for(let ph=1; ph<=3 && !rc.rid.find(x=>x.me).out; ph++){
+   const opts=BIGM.moves.map(m=>({id:m.id, l:m.l, d:m.d, ch:liveMoveChance(rc, m.id, live.grip, fit)}));
+   const act = yield snap('race', {race:{ph, phaseName:BIGM.phases[ph], label, options:opts,
+     order:liveOrder(rc).map(x=>({name:x.name, me:x.me, out:x.out})),
+     pos:liveMyPos(rc), gear:live.gear, fit, fitTxt:BIGM.fitTxt[fit], grip:live.grip}});
+   live.msgs=[];
+   const r=liveResolveMove(rc, (act&&act.v)||'obrona', live.grip, fit, live);
+   r.out.forEach(x=>say(x));
+   liveFate(rc, ph).forEach(x=>say(x));
+   liveDrift(rc, ((act&&act.v)||'')==='obrona');
+ }
+ /* META — wynik w formacie oneHeat() */
+ const fin=rc.rid.filter(x=>!x.out).sort((a,b)=>b.val-a.val);
+ const pts={}, place={}, res=[];
+ fin.forEach((x,k)=>{ pts[x.e.idx]=[3,2,1,0][k]; place[x.e.idx]=k+1; });
+ rc.rid.forEach(x=>{ if(x.out){ pts[x.e.idx]=0; place[x.e.idx]=4; }
+   res.push({i:x.e.idx, out:x.out, str:x.val}); });
+ const mine=rc.rid.find(x=>x.me);
+ say(mine.out==='d' ? 'DEFEKT — zero punktów.' : mine.out==='w' ? 'WYKLUCZENIE — zero punktów.'
+   : 'Bieg '+label+': '+pts[meIdx]+' pkt. '+pick(BIGM.crowd));
+ yield snap('heatres', {next:{label, mine:true}, result:{pts:pts[meIdx], out:mine.out,
+   order:liveOrder(rc).map((x,i)=>({pos:i+1, name:x.name, me:x.me, out:x.out}))}});
+ return {pts, place, res};
+}
+/* --- TURNIEJ WG TABELI 20-BIEGOWEJ, NA ŻYWO --- */
+function* liveInd20Gen(field, meIdx, ctx, live, meta){
+ const draw=heatDraw();
+ const T=field.map((r,i)=>({i, id:r.id, name:r.name, age:r.age, me:i===meIdx,
+   pts:0, codes:[], places:[0,0,0,0,0]}));
+ const done=[];
+ const snap=(phase, extra)=>{
+   G.live=Object.assign({
+     kind:'ind', title:meta.title, stage:meta.stage, sub:meta.sub||null,
+     phase, hs:null, as:null,
+     grip: live.grip==null?null:{i:live.grip, n:BIGM.grip[live.grip].n, d:BIGM.grip[live.grip].d},
+     gear:live.gear, ideal: live.spyKnown ? live.ideal : null, mech:live.mech,
+     fit: live.ideal==null?null:liveFit(live.gear, live.ideal),
+     cards:{y:live.yellow, r:live.red}, outOfMeeting:live.outOfMeeting,
+     msgs:live.msgs.slice(), story:live.story.slice(-14),
+     table:T.slice().sort((a,b)=>b.pts-a.pts||b.places[1]-a.places[1])
+            .map((t,k)=>({pos:k+1, name:t.name, pts:t.pts, me:t.me, codes:t.codes.slice()})),
+     me: T[meIdx] ? {pts:T[meIdx].pts, codes:T[meIdx].codes.slice(), starts:T[meIdx].codes.length} : null,
+     heats:done.slice(-6), race:null, coach:null, next:null, push:null
+   }, extra||{});
+   return {ui:'live'};
+ };
+ const runHeat=(h)=>{
+   const H=oneHeat(h, field, -1, null);
+   h.forEach(i=>{ const t=T[i], o=H.res.find(x=>x.i===i);
+     t.pts+=H.pts[i];
+     if(o.out) t.codes.push(o.out); else t.codes.push(String(H.pts[i]));
+     if(!o.out) t.places[H.place[i]]++; });
+   done.push({label:done.length+1, res:h.map(i=>({name:field[i].name, pts:H.pts[i], me:i===meIdx,
+     out:(H.res.find(x=>x.i===i)||{}).out||null}))});
+ };
+ const apply=(h,H)=>{
+   h.forEach(i=>{ const t=T[i], o=H.res.find(x=>x.i===i);
+     t.pts+=H.pts[i];
+     if(o.out) t.codes.push(o.out); else t.codes.push(String(H.pts[i]));
+     if(!o.out) t.places[H.place[i]]++; });
+   done.push({label:done.length+1, res:h.map(i=>({name:field[i].name, pts:H.pts[i], me:i===meIdx,
+     out:(H.res.find(x=>x.i===i)||{}).out||null}))});
+ };
+ let k=0;
+ while(k<20){
+   const mine = draw[k].includes(meIdx) && !live.outOfMeeting;
+   if(!mine){
+     while(true){
+       const act = yield snap('between', {next:{label:k+1, mine:false}});
+       if((act&&act.a)==='go') break;
+       if(liveIndPit(act, live)) break;
+     }
+     while(k<20 && !(draw[k].includes(meIdx) && !live.outOfMeeting)){ runHeat(draw[k]); k++; }
+     continue;
+   }
+   const H = yield* liveIndHeatGen(draw[k], field, meIdx, ctx, live, k+1, snap);
+   if(H) apply(draw[k], H);
+   else  runHeat(draw[k]);        // wyjechałeś z parku maszyn — bieg jedzie bez ciebie
+   k++;
+ }
+ T.sort((a,b)=> b.pts-a.pts || b.places[1]-a.places[1] || b.places[2]-a.places[2]
+   || b.places[3]-a.places[3] || b.places[4]-a.places[4] || (Math.random()-0.5));
+ G.liveSnap=snap;                       // przydaje się biegom dodatkowym (LCQ, finał)
+ return T;
+}
+/* --- BIEG POZA TABELĄ (LCQ / półfinał / finał) --- */
+function* liveIndExtraGen(idxs, field, meIdx, ctx, live, label, snap){
+ if(!idxs.includes(meIdx) || live.outOfMeeting) return oneHeat(idxs, field, -1, null);
+ const H = yield* liveIndHeatGen(idxs, field, meIdx, ctx, live, label, snap);
+ return H || oneHeat(idxs, field, -1, null);
+}
+/* --- PEŁNA RUNDA GRAND PRIX NA ŻYWO (20 biegów + LCQ1 + LCQ2 + FINAŁ) --- */
+function* liveGpRoundGen(field, meIdx, ctx, title, meta){
+ const live=liveNewState();
+ const T = yield* liveInd20Gen(field, meIdx, ctx, live, {title, stage:meta.stage, sub:meta.sub});
+ const snap=G.liveSnap;
+ const chart=T.map(t=>t.i);
+ const chartPts={}; T.forEach(t=>chartPts[t.i]=t.pts);
+ const l1i=[chart[2],chart[5],chart[6],chart[9]].filter(x=>x!=null);
+ const l2i=[chart[3],chart[4],chart[7],chart[8]].filter(x=>x!=null);
+ const mk=(H, idxs, label)=>{
+   const order=idxs.slice().sort((a,b)=>H.place[a]-H.place[b]);
+   return {label, H, order, rows:order.map((ix,k)=>({pos:k+1, name:field[ix].name, ctry:field[ix].ctry||'POL',
+     out:(H.res.find(x=>x.i===ix)||{}).out||null, me:ix===meIdx}))};
+ };
+ const H1 = yield* liveIndExtraGen(l1i, field, meIdx, ctx, live, 'LCQ1', snap);
+ const L1 = mk(H1, l1i, 'LCQ1 — BIEG OSTATNIEJ SZANSY');
+ const H2 = yield* liveIndExtraGen(l2i, field, meIdx, ctx, live, 'LCQ2', snap);
+ const L2 = mk(H2, l2i, 'LCQ2 — BIEG OSTATNIEJ SZANSY');
+ const fi=[chart[0],chart[1],L1.order[0],L2.order[0]].filter(x=>x!=null);
+ const HF = yield* liveIndExtraGen(fi, field, meIdx, ctx, live, 'FINAŁ RUNDY', snap);
+ const F = mk(HF, fi, 'FINAŁ RUNDY');
+ const cls=[...F.order];
+ const pair=(k)=>{ const a=L1.order[k], b=L2.order[k];
+   const av=a!=null?chart.indexOf(a):99, bv=b!=null?chart.indexOf(b):99;
+   return av<=bv ? [a,b] : [b,a]; };
+ [1,2,3].forEach(k=>pair(k).forEach(x=>{ if(x!=null && !cls.includes(x)) cls.push(x); }));
+ chart.forEach(x=>{ if(!cls.includes(x)) cls.push(x); });
+ let me=null;
+ if(meIdx>=0){
+   const row=T.find(t=>t.i===meIdx);
+   const codes=row? row.codes.slice() : [];
+   const lcq = l1i.includes(meIdx) ? {n:1, place:L1.H.place[meIdx], out:(L1.H.res.find(x=>x.i===meIdx)||{}).out}
+             : l2i.includes(meIdx) ? {n:2, place:L2.H.place[meIdx], out:(L2.H.res.find(x=>x.i===meIdx)||{}).out} : null;
+   if(lcq) codes.push('LCQ'+lcq.n+':'+(lcq.out || lcq.place+'m'));
+   const inF=fi.includes(meIdx);
+   if(inF) codes.push('F:'+((F.H.res.find(x=>x.i===meIdx)||{}).out || (F.H.place[meIdx]+'m')));
+   me={chartPts: row?row.pts:0, chartPos: chart.indexOf(meIdx)+1, codes,
+       pos: cls.indexOf(meIdx)+1, lcq, inFinal:inF};
+ }
+ liveWrapUp(live, title);
+ return {title, T, chart, chartPts, cls, L1, L2, F, me, live:true,
+   rows: cls.map((ix,k)=>({pos:k+1, name:field[ix].name, ctry:field[ix].ctry||'POL',
+     chart:chartPts[ix]||0, gp:SGP.pts[k]||0, me:ix===meIdx}))};
+}
+/* --- TURNIEJ FINAŁOWY IMP NA ŻYWO (art. 634) --- */
+function* liveImpFinalGen(field, meIdx, ctx, meta){
+ const live=liveNewState();
+ const T = yield* liveInd20Gen(field, meIdx, ctx, live, {title:meta.title, stage:meta.stage, sub:meta.sub});
+ const snap=G.liveSnap;
+ const sfIdx=[2,3,4,5].map(k=>T[k].i);
+ const semi = yield* liveIndExtraGen(sfIdx, field, meIdx, ctx, live, 'PÓŁFINAŁ TURNIEJU', snap);
+ const semiOrder=sfIdx.slice().sort((a,b)=>semi.place[a]-semi.place[b]);
+ const finIdx=[T[0].i, T[1].i, semiOrder[0], semiOrder[1]];
+ const fin = yield* liveIndExtraGen(finIdx, field, meIdx, ctx, live, 'BIEG FINAŁOWY', snap);
+ const finOrder=finIdx.slice().sort((a,b)=>fin.place[a]-fin.place[b]);
+ const cls=[...finOrder, semiOrder[2], semiOrder[3],
+   ...T.slice(2).map(t=>t.i).filter(i=>!finIdx.includes(i)&&!semiOrder.slice(2).includes(i))];
+ const score={}; T.forEach(t=>score[t.i]=t.pts);
+ finIdx.forEach(i=>score[i]+=fin.pts[i]);
+ const meRow = meIdx>=0 ? T.find(t=>t.i===meIdx) : null;
+ let meCodes = meRow? meRow.codes.slice() : [];
+ let meSemi=null, meFin=null;
+ if(meRow){
+   if(sfIdx.includes(meIdx)) meSemi = (semi.res.find(x=>x.i===meIdx)||{}).out || String(semi.place[meIdx])+'m';
+   if(finIdx.includes(meIdx)){ const o=fin.res.find(x=>x.i===meIdx)||{};
+     meFin = o.out || String(fin.pts[meIdx]); meCodes.push('F:'+(o.out||String(fin.pts[meIdx]))); }
+ }
+ liveWrapUp(live, meta.title);
+ return {T, cls, score, semiOrder, finOrder, meCodes, meSemi, meFin, live:true,
+   mePts: meRow? score[meIdx] : 0, mainPts: meRow? meRow.pts : 0};
+}
+/* Skutki pozasportowe turnieju jechanego ręcznie — do raportu sezonu. */
+function liveWrapUp(live, title){
+ const note=[];
+ if(live.yellow) note.push(live.yellow+'× żółta kartka ('+zl(live.yellow*BIGM.yellowCost)+')');
+ if(live.red) note.push('czerwona kartka');
+ if(live.outOfMeeting && !live.red) note.push('opuszczony park maszyn');
+ if(live.crashed) note.push(live.crashed+'× kraksa');
+ if(live.hurt) note.push('-'+live.hurt+' OVR po upadku');
+ if(note.length) (G.S.notesBig=G.S.notesBig||[]).push('WIELKI TURNIEJ ('+title+'): '+note.join(', ')+'.');
+ (G.S.bigLog=G.S.bigLog||[]).push({title, ind:true, story:live.story.slice()});
+ G.live=null; G.liveSnap=null;
+}
+
+/* ============================================================
+   5e-bis. DROGA DO IMŚJ2 — ELIMINACJE I SGP2 CHALLENGE
+   ------------------------------------------------------------
+   (nowe 22.08.2026 — zgłoszenie: „dodaj kwalifikacje na wzór Challenge
+   do IMŚ 2")
+   Skład cyklu juniorskiego brał się dotąd z gołego rankingu OVR: komputer
+   wpisywał piętnastu najlepszych młodzieżowców świata i tyle. Nikt niczego
+   nie musiał wywalczyć, a Gracz nie miał ŻADNEJ drogi do IMŚJ2 poza
+   czekaniem, aż jego OVR sam urośnie ponad stawkę. Teraz cykl juniorski ma
+   tę samą strukturę co seniorski:
+     · czołowa siódemka poprzedniego cyklu — kwalifikacja automatyczna
+       (o ile wciąż mieści się w wieku młodzieżowym; komu stuknęły 22 lata,
+        ten miejsce oddaje),
+     · SGP2 CHALLENGE — turniej finałowy eliminacji, awans dla czterech,
+     · reszta to stałe dzikie karty Komisji, z limitami krajowymi.
+   Do samego Challenge prowadzą eliminacje: Polska wystawia czterech
+   najlepszych SREBRNEGO KASKU, Anglia, Szwecja i Dania mają własne
+   turnieje (po trzy miejsca), a pozostałe federacje jadą we wspólnych
+   eliminacjach o trzy miejsca.
+   ============================================================ */
+const isJunRef = r => !!r && isJun(r);
+/* ELIMINACJE JADĄ NA PRZYSZŁY SEZON, więc obowiązuje w nich ostrzejszy limit
+   wieku: startuje ten, kto W KOLEJNYM ROKU wciąż będzie młodzieżowcem, czyli
+   dziś ma najwyżej 20 lat. Inaczej cała czwórka wywalczałaby kwalifikację
+   i traciła ją w tej samej zimie, kończąc 22 lata. */
+const isJunQ = r => !!r && Number(r.age)<=20;
+function ensureSgpJSeed(){
+ if(G.sgpJ && G.sgpJ.top) return G.sgpJ;
+ const rank=worldRanking(isJun);
+ const pool=capPick(rank, SGP.natCap, SGP.natCapDef, 15);
+ const take=(a,b)=>pool.slice(a,b).map(sgpRef);
+ G.sgpJ={ top:take(0,SGP.junTop), ch4:take(SGP.junTop, SGP.junTop+SGP.junCh),
+          wilds:take(SGP.junTop+SGP.junCh, 15), champ:null, seeded:true };
+ return G.sgpJ;
+}
+/* Skład cyklu juniorskiego — 15 stałych uczestników, z opisem drogi. */
+function sgpJLineup(){
+ const S=ensureSgpJSeed(), out=[], seen=new Set(), cnt={};
+ const lim=c=>(SGP.natCap[c]!=null) ? SGP.natCap[c] : SGP.natCapDef;
+ const put=(r,how,hard)=>{
+   if(!r || seen.has(r.id) || !isJun(r)) return false;    // 22 lata = koniec drogi juniorskiej
+   const c=ctryOf(r);
+   if(!hard && (cnt[c]||0) >= lim(c)) return false;
+   seen.add(r.id); cnt[c]=(cnt[c]||0)+1; out.push({r, how, ctry:c}); return true;
+ };
+ (S.top||[]).forEach((ref,i)=>put(sgpFind(ref), 'kwalifikacja z cyklu '+(G.year-1)+' — miejsce '+(i+1)+'.', true));
+ (S.ch4||[]).forEach((ref,i)=>put(sgpFind(ref), 'SGP2 Challenge — miejsce '+(i+1)+'.', true));
+ (S.wilds||[]).forEach(ref=>put(sgpFind(ref), 'stała dzika karta Komisji'));
+ const pool=worldRanking(isJun);
+ let i=0;
+ while(out.length<15 && i<pool.length) put(pool[i++], 'stała dzika karta Komisji');
+ i=0;
+ while(out.length<15 && i<pool.length) put(pool[i++], 'stała dzika karta Komisji', true);
+ return out.slice(0,15);
+}
+/* Eliminacje krajowe + SGP2 CHALLENGE. Struktura odpowiedzi jest taka sama
+   jak w simWorldQualifiers, żeby UI mogło renderować obie drogi tym samym kodem. */
+function* simJunQualifiersGen(p, ctx, skTop4, inJun, live){
+ const ex=new Set(inJun||[]);
+ const meR=G.riders.find(r=>r.me);
+ const meId=(meR && isJunQ(p)) ? meR.id : null;
+ const quals=[], field=[];
+ /* --- POLSKA: czterej najlepsi SREBRNEGO KASKU --- */
+ const pol=[];
+ (skTop4||[]).forEach(x=>{ const r=G.riders.find(y=>y.id===x.id && !y.retired && isJunQ(y)); if(r && !ex.has(r.id)) pol.push(r); });
+ if(pol.length<SGP.qualJun.POL){
+   ranking(isJunQ).filter(r=>!ex.has(r.id)).forEach(r=>{
+     if(pol.length<SGP.qualJun.POL && !pol.some(x=>x.id===r.id)) pol.push(r); });
+ }
+ pol.slice(0,SGP.qualJun.POL).forEach(r=>field.push(worldRow(r)));
+ quals.push({title:'ELIMINACJE KRAJOWE — POLSKA (U21)',
+   note:'kwalifikują się zdobywcy czterech pierwszych miejsc SREBRNEGO KASKU (rocznikowo: dziś najwyżej 20 lat)',
+   table: pol.slice(0,SGP.qualJun.POL).map((r,i)=>({pos:i+1, name:r.name, ctry:'POL', pts:null, me:!!r.me, through:true}))});
+ /* --- ANGLIA / SZWECJA / DANIA --- */
+ [['GBR','ANGLIA'],['SWE','SZWECJA'],['DEN','DANIA']].forEach(([c,label])=>{
+   const q=natQual([c], SGP.qualJun[c], 'ELIMINACJE KRAJOWE U21 — '+label, null, null, ex, isJunQ);
+   q.through.forEach(r=>{ if(r) field.push(r); });
+   quals.push({title:q.title, note:'wyłącznie zawodnicy do 21 lat · awans: '+SGP.qualJun[c]+' pierwsze miejsca', table:q.table});
+ });
+ /* --- WSPÓLNE ELIMINACJE RESZTY ŚWIATA --- */
+ {
+  const q=natQual(SGP.restCtry, SGP.qualJun.REST, 'ELIMINACJE WSPÓLNE U21 — POZOSTAŁE KRAJE', null, null, ex, isJunQ);
+  q.through.forEach(r=>{ if(r) field.push(r); });
+  quals.push({title:q.title, note:'Niemcy, Finlandia, Francja, USA, Ukraina, Argentyna, Czechy — razem, awans: '+SGP.qualJun.REST, table:q.table});
+ }
+ /* --- SGP2 CHALLENGE --- */
+ let rows=field.slice(0,16);
+ rows=padField(rows,'CZE',16, rows.length?rows[rows.length-1].ovr:40, true);
+ const mi = meId!=null ? rows.findIndex(r=>r.id===meId) : -1;
+ let T=null, chLive=false;
+ if(live && mi>=0){
+   const dec = yield* bigMatchAsk({kind:'ind', stage:'SGP2 CHALLENGE',
+     title:'SGP2 CHALLENGE — OSTATNIA RUNDA ELIMINACJI DO IMŚJ2'}, null);
+   if(dec==='ride'){
+     const lv=liveNewState();
+     T = yield* liveInd20Gen(rows, mi, ctx, lv,
+       {title:'SGP2 CHALLENGE', stage:'SGP2 CHALLENGE', sub:'16 juniorów · tabela 20-biegowa · TOP 4 wchodzi do cyklu IMŚJ2'});
+     chLive=true; liveWrapUp(lv, 'SGP2 CHALLENGE');
+   }
+ }
+ if(!T) T=meeting20(rows, mi, mi>=0?ctx:null);
+ const chTable=T.map((t,i)=>({pos:i+1, name:t.name, ctry:(rows.find(r=>r.id===t.id)||{}).ctry||'POL',
+   pts:t.pts, me:t.me, codes:t.codes}));
+ let money=0;
+ if(mi>=0){
+   const pos=T.findIndex(t=>t.me)+1;
+   money=Math.round(((SGP.chPrize[pos-1]||SGP.chPrize[SGP.chPrize.length-1])+SGP.chStartFee)*SGP.chJunMul);
+ }
+ return {quals, challenge:{title:'SGP2 CHALLENGE — OSTATNIA RUNDA ELIMINACJI DO IMŚJ2'+(chLive?' · PRZEJECHANY OSOBIŚCIE':''),
+   table:chTable, rode:mi>=0, live:chLive,
+   mePos: mi>=0 ? T.findIndex(t=>t.me)+1 : 0, mePts: mi>=0 ? T.find(t=>t.me).pts : 0, money},
+   order:T.map(t=>rows.find(r=>r.id===t.id)).filter(Boolean)};
 }

@@ -131,11 +131,18 @@ function accLite(title, body, opts={}){
  </details>`;
 }
 
+/* Kod "1*"/"2*" oznacza bieg z bonusem (art. 720). Renderujemy trailing '*'
+   jako czytelną gwiazdkę ★ zamiast gołej "*" — na życzenie graczy, którzy
+   zgłaszali, że bonus "nie widać" przy wynikach poszczególnych biegów: sam
+   asterisk ginął wzrokowo obok "*liczba" (Twój dorobek meczowy) w tej samej
+   linijce, mimo że dane były poprawne. Surowy format z '*' w `codes` (dane)
+   zostaje bez zmian — liczy się go dalej jak dotąd (parseInt, endsWith). */
+const bonusStar = c => c.endsWith('*') ? c.slice(0,-1)+'★' : c;
 function codesHtml(codes){
  return codes.map(c=> c==='d'?'<span class="text-red-500">d</span>'
    : c==='w'?'<span class="text-red-400">w</span>'
    : c==='-'?'<span class="text-zinc-400">-</span>'
-   : c.endsWith('*')?'<span class="text-sky-400">'+c+'</span>' : c).join(',');
+   : c.endsWith('*')?'<span class="text-sky-400" title="bieg z bonusem">'+bonusStar(c)+'</span>' : c).join(',');
 }
 
 /* ============================================================
@@ -152,6 +159,7 @@ function render(){
    s==='event'   ? scEvent()  :
    s==='evsum'   ? scEvSum()  :
    s==='winter'  ? scWinter() :
+   s==='tribunal'? scTribunal():
    s==='mech'    ? scMech()   :
    s==='summary' ? scSummary():
    s==='end'     ? scEnd()    : '';
@@ -1062,6 +1070,8 @@ function seasonTabs(r){
  if(I.zk&&I.zk.rode)     t.push({k:'zk',  n:'ZŁOTY KASK'});
  if(I.sk&&I.sk.rode)     t.push({k:'sk',  n:'SREBRNY KASK'});
  if(I.bk&&I.bk.rode)     t.push({k:'bk',  n:'BRĄZOWY KASK'});
+ if(I.szk&&I.szk.rode)   t.push({k:'szk', n:'TURNIEJ SZKOLENIOWY'});
+ if(I.macec&&I.macec.rode) t.push({k:'macec', n:'PUCHAR MACEC'});
  return t;
 }
 function setTab(k){G.tabView=k;render();}
@@ -1083,7 +1093,7 @@ function scSummary(){
  if(V==='liga')  return head()+`<div class="fade">${bar}${ligaView(r)}${foot}`;
  if(V==='po')    return head()+`<div class="fade">${bar}${phaseHtml(r)}${playoffHtml()}${foot}`;
  if(V==='dmpj')  return head()+`<div class="fade">${bar}${dmpjHtml(r)}${foot}`;
- if(['imp','mimp','zk','sk','bk'].includes(V)) return head()+`<div class="fade">${bar}${indHtml(r.ind[V],r)}${foot}`;
+ if(['imp','mimp','zk','sk','bk','szk','macec'].includes(V)) return head()+`<div class="fade">${bar}${indHtml(r.ind[V],r)}${foot}`;
  return head()+`<div class="fade">
  ${bar}
  <div class="brut mb-3"><div class="brut-h px-3 py-1.5 text-[11px] text-orange-500 font-bold">PODSUMOWANIE SEZONU ${r.year} // ${esc(r.club)} (${r.league})</div>
@@ -1395,11 +1405,7 @@ function myResultsHtml(r){
  const rows=(r.lines||[]).map((m,i)=>{
   const w=m.teamFor>m.teamAgn?'text-emerald-400':m.teamFor<m.teamAgn?'text-red-500':'text-yellow-500';
   const line = m.rode
-    ? `<span class="text-orange-400 font-bold">*${m.mp}</span> <span class="text-zinc-300">(${m.codes.map(c=>
-        c==='d'?'<span class="text-red-500">d</span>':
-        c==='w'?'<span class="text-red-400">w</span>':
-        c==='-'?'<span class="text-zinc-400">-</span>':
-        c.endsWith('*')?'<span class="text-sky-400">'+c+'</span>':c).join(',')})</span>`
+    ? `<span class="text-orange-400 font-bold">*${m.mp}</span> <span class="text-zinc-300">(${codesHtml(m.codes)})</span>`
     : `<span class="text-zinc-400">— ${m.why}${m.gap!=null?` <span class="text-zinc-400">(zabrakło ${m.gap.toFixed(1)} pkt do ostatniego numeru)</span>`
         :m.reg?' <span class="text-sky-400">(byłeś lepszy — wypchnęła cię rubryka U24)</span>':''}</span>`;
   const cash = m.rode&&m.owed ? `<span class="${m.paid>=m.owed?'text-emerald-500':m.paid>0?'text-yellow-600':'text-red-500'}">${zl(m.paid)}${m.paid<m.owed?' / '+zl(m.owed):''}</span>` : '';
@@ -1424,6 +1430,7 @@ function myResultsHtml(r){
  ostatnia kolumna to przelew z klubu za tę kolejkę (przelane / należne) ·
  <b class="text-zinc-300">*liczba</b> = twój dorobek w meczu · w nawiasie biegi po kolei ·
  <span class="text-zinc-300">3/2/1/0</span> = zdobyte punkty (0 = ostatnie miejsce, ale bieg objechany) ·
+ <span class="text-sky-400">2★ / 1★</span> = ten bieg dał dodatkowo punkt bonusowy (art. 720) ·
  <span class="text-red-400">w</span> = wykluczenie · <span class="text-red-500">d</span> = defekt
  — jedno i drugie liczy się jako start (art. 720 ust. 4) ·
  <span class="text-zinc-300">-</span> = zmieniony przez rezerwę, <b class="text-zinc-300">nie liczy się jako objechany bieg</b> ·
@@ -1520,7 +1527,7 @@ function indHtml(c,r){
   </div>
   <div class="text-[11px] text-zinc-400 mt-3 tracking-wide">Tabela 20-biegowa: 16 zawodników, po 5 startów ·
    <span class="text-zinc-300">-</span> = zero · <span class="text-red-400">w</span> = wykluczenie ·
-   <span class="text-red-500">d</span> = defekt · <span class="text-zinc-300">F:</span> = bieg finałowy</div>
+   <span class="text-red-500">d</span> = defekt · <span class="text-sky-400">2★/1★</span> = bonus · <span class="text-zinc-300">F:</span> = bieg finałowy</div>
  </div></div>`;
 }
 
@@ -1543,7 +1550,7 @@ function dmpjHtml(r){
      ${D.me.lines.map(L=>`<tr class="border-b border-zinc-700/60">
        <td class="text-[11px] text-zinc-400 truncate max-w-[150px]">${esc(L.stage)}</td>
        <td class="text-[11px] text-zinc-400">R${L.round}</td>
-       <td class="text-zinc-300 text-[11px] whitespace-nowrap">drużyna ${L.teamPos}. (${L.teamHp} pkt bieg.)</td>
+       <td class="text-zinc-300 text-[11px] whitespace-nowrap">${L.teamPos>0?'drużyna '+L.teamPos+'. ('+L.teamHp+' pkt bieg.)':'—'}</td>
        <td class="text-right whitespace-nowrap"><span class="text-orange-400 font-bold">*${L.mp}</span>
        <span class="text-zinc-300">(${codesHtml(L.codes)})</span></td></tr>`).join('')}
    </table></div>`:'<div class="text-[11px] text-zinc-400 mt-2">Nie pojechałeś ani jednego turnieju.</div>'}
@@ -1674,6 +1681,19 @@ function afterWinter(){
     „po zakończonej karierze" spokojnie podpisywał kontrakt i jechał kolejny sezon,
     a koniec kariery wchodził dopiero rok później. */
  if(p.retired){ retire(p.retireReason||'Zdarzenie zimowe zamknęło karierę.'); return; }
+ /* ============================================================
+    TRYBUNAŁ PZM — OSOBNE, NIEZALEŻNE ZDARZENIE ZIMOWE
+    Ustawiane przez resolveSeason() (engine.js), gdy w sezonie był bunt
+    płacowy przy wieloletnim kontrakcie, a klub wciąż zalega. Pokazuje się
+    ZAWSZE, niezależnie od tego, czy zwykłe losowanie zimowe (WINTER_EVENTS)
+    coś wylosowało — więc w jednej przerwie mogą wypaść dwa ekrany zdarzeń.
+    ============================================================ */
+ if(p.next.tribunalCase){ G.screen='tribunal'; render(); return; }
+ afterWinterCore();
+}
+/* Dawna treść afterWinter() — teraz wołana PO ewentualnym trybunale. */
+function afterWinterCore(){
+ const p=G.p;
  const noRenew = G.S ? G.S.noRenew : false;
  /* ============================================================
     WYMUSZONY TRANSFER MUSI OTWORZYĆ OKIENKO
@@ -1696,6 +1716,73 @@ function afterWinter(){
  _renew = makeRenewOffer();
  if(_renew){ G.screen='renew'; render(); return; }
  G.screen='hub'; render();
+}
+
+/* ---- EKRAN: TRYBUNAŁ PZM ---- */
+function resolveTribunal(reported){
+ const p=G.p, tc=p.next.tribunalCase;
+ let log=[];
+ if(reported){
+   if(chance(75)){
+     const c=clubOf(p);
+     let recovered=0;
+     if(c && c.debt>0){
+       recovered=Math.round(c.debt*RF(0.50,0.85));
+       c.debt=Math.max(0,c.debt-recovered);
+       p.budget+=recovered; p.career.earned+=recovered;
+     }
+     p.contract.years=0; p.forcedExit=true; p.next.noRenew=true;
+     log=['TRYBUNAŁ PZM ROZWIĄZUJE KONTRAKT.',
+          'Umowa z '+tc.club+' przestaje obowiązywać ze skutkiem natychmiastowym.',
+          recovered? ('Klub musi rozliczyć zaległości: odzyskujesz '+zl(recovered)+' z '+zl(tc.debt)+'.')
+                   : 'Z zaległości nie udaje się odzyskać ani grosza — klub formalnie nie ma z czego oddać.',
+          'Wchodzisz na wolny rynek już teraz, przed zwykłym okienkiem transferowym.'];
+   } else {
+     const c=clubOf(p);
+     if(c) c.debt=0;
+     log=['PREZES PRZEKUPIŁ ZWIĄZEK.',
+          'Trybunał oddala sprawę. Kontrakt z '+tc.club+' trwa dalej bez zmian —',
+          'ale, o dziwo, cała zaległość ('+zl(tc.debt)+') znika z papierów klubu. Nikt niczego nie tłumaczy.'];
+   }
+ } else {
+   log=['Odpuszczasz sprawę, żeby nie zadzierać z zarządem.',
+        'Zaległość ('+zl(tc.debt)+') zostaje tam, gdzie była — kontrakt trwa dalej na dotychczasowych warunkach.'];
+ }
+ p.next.tribunalCase=null;
+ G.tribunalLog=log; G.tribunalDone=true; render();
+}
+function afterTribunal(){
+ G.tribunalDone=false; G.tribunalLog=null;
+ afterWinterCore();
+}
+function scTribunal(){
+ const p=G.p, tc=p.next.tribunalCase||{club:'—',debt:0,strikeRounds:0};
+ const box=(inner)=>head()+`<div class="fade">
+  <div class="brut" style="border-color:#b91c1c">
+   <div class="brut-h px-3 py-1.5 text-[11px] font-bold" style="border-color:#b91c1c;color:#ef4444">
+     PRZERWA ZIMOWA ${G.year-1}/${G.year} // TRYBUNAŁ PZM</div>
+   <div class="p-5">${inner}</div>
+  </div></div>`;
+ if(!G.tribunalDone){
+  return box(`
+   <div class="font-extrabold tracking-wider text-[15px] mb-3" style="color:#ef4444">ZALEGŁOŚCI KLUBU — ZGŁOSZENIE DO TRYBUNAŁU PZM</div>
+   <div class="text-zinc-300 text-[12.5px] leading-relaxed mb-5 border-l-2 pl-4" style="border-color:#7f1d1d">
+     Masz wieloletni kontrakt z ${esc(tc.club)}, a klub zalega ci już ${zl(tc.debt)}.
+     W minionym sezonie odmówiłeś wyjazdu na tor przez ${tc.strikeRounds} ${tc.strikeRounds===1?'kolejkę':(tc.strikeRounds<5?'kolejki':'kolejek')}
+     — a mimo to umowa formalnie trwa dalej. Możesz zgłosić sprawę do trybunału Polskiego Związku Motorowego.
+   </div>
+   <div class="space-y-2">
+    <button onclick="resolveTribunal(true)" class="btn w-full text-left px-4 py-3 text-[12px]"><span class="font-bold mr-2" style="color:#ef4444">1.</span>Zgłaszam klub do trybunału PZM.</button>
+    <button onclick="resolveTribunal(false)" class="btn w-full text-left px-4 py-3 text-[12px]"><span class="font-bold mr-2" style="color:#ef4444">2.</span>Odpuszczam — nie chcę zadzierać z zarządem.</button>
+   </div>
+   <div class="text-[11px] text-zinc-400 mt-4">To zdarzenie jest niezależne od zwykłego losowania zimowego — mogłeś już zobaczyć inne.</div>`);
+ }
+ return box(`
+  <div class="font-extrabold tracking-wider text-[15px] mb-3" style="color:#ef4444">ROZSTRZYGNIĘCIE TRYBUNAŁU</div>
+  <div class="brut p-4 mb-3" style="border-color:#ef4444">
+   ${(G.tribunalLog||[]).map(l=>`<div class="text-zinc-100 text-[13.5px] leading-relaxed mb-2 border-l-2 pl-4" style="border-color:#ef4444">${esc(l)}</div>`).join('')}
+  </div>
+  <button onclick="afterTribunal()" class="btn px-7 py-3 font-extrabold tracking-[.2em]" style="color:#ef4444">OK, IDĘ DALEJ &gt;</button>`);
 }
 
 /* ---- EKRAN: ZDARZENIE MIĘDZYSEZONOWE (ZIMA) ---- */

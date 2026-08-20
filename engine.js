@@ -162,6 +162,18 @@ function rideStr(ovr, ref, extra){
 }
 function leagueOfClub(name){ return LKEYS.find(k=>G.leagues[k].clubs.some(c=>c.name===name)) || 'KL'; }
 function clubByName(name){ for(const k of LKEYS){const c=G.leagues[k].clubs.find(x=>x.name===name); if(c) return c;} return null; }
+/* Klub, który NIE wywalczył awansu do fazy play-off (miejsca 1-4 rundy
+   zasadniczej). Używane przez TURNIEJE SZKOLENIOWE (simIndividual) — start
+   mają tam wyłącznie juniorzy klubów spoza czołowej czwórki, zgodnie
+   z regulaminem ("kluby, które nie uzyskały prawa awansu"). Bez klubu albo
+   bez jeszcze policzonej tabeli traktujemy to permisywnie jako "nie awansował". */
+function clubMissedPlayoffs(name){
+ if(!name) return true;
+ const lk=leagueOfClub(name), tab=G.tables[lk];
+ if(!tab || !tab.length) return true;
+ const pos=tab.findIndex(x=>x.name===name)+1;
+ return pos<=0 || pos>4;
+}
 /* Punkt odniesienia dla zawodnika danego klubu: średnia ligi + poziom klubu. */
 function refFor(clubName){
  const k=leagueOfClub(clubName), c=clubByName(clubName);
@@ -215,7 +227,8 @@ function newPlayer(name,clsId){
   shop:{bought:[],log:[],spent:0,equipGain:0,mechHired:false},
   next:{zeroMatches:false, heatPP:0, betterOffers:false, noRenew:false, rowPen:false, noArg:false,
         noUK:false,
-        injuryPP:0, rateMul:1, noSponsor:false, lockTransfer:0, forceClub:null},
+        injuryPP:0, rateMul:1, noSponsor:false, lockTransfer:0, forceClub:null, atmBonus:0,
+        tribunalCase:null},
   career:{seasons:0,matches:0,heats:0,pts:0,bon:0,def:0,exc:0,earned:0,titles:0,best:'—',bestAvg:0,
           living:0, service:0, renewals:0}
  };
@@ -347,7 +360,10 @@ function rollRoundSurprise(rd, clubName, meR){
    ============================================================ */
 function startSeason(){
  const p=G.p, club=getClub(p);
- const atm=R(0,100);
+ /* NAPRAWA: zdarzenia zimowe, które ruszały nastroje w szatni (fxAN), pisały
+    kiedyś do G.p.next.atmBonus, ale nikt tego pola nigdy nie czytał — efekt
+    znikał bez śladu. Teraz wjeżdża w losowanie atmosfery na start sezonu. */
+ const atm=cl(R(0,100)+(p.next.atmBonus||0),0,100);
  G.S={
   atm, heatPP:p.next.heatPP, injuryPP:p.next.injuryPP||0, noEarnings:false,
   teamPts:0, teamOvr:0, banMatches:0, equipFit:100,
@@ -373,7 +389,7 @@ function startSeason(){
     reszta jednorazowych efektów z poprzedniego sezonu się zeruje. */
  p.next={zeroMatches:false, heatPP:0, betterOffers:p.next.betterOffers, noRenew:false,
          rowPen:p.next.rowPen, noArg:p.next.noArg, noUK:p.next.noUK,
-         injuryPP:0, rateMul:1,
+         injuryPP:0, rateMul:1, atmBonus:0,
          noSponsor:p.next.noSponsor, lockTransfer:p.next.lockTransfer||0, forceClub:p.next.forceClub||null};
  
  // Zaległości NIE biorą się z powietrza — powstają dopiero z niewypłaconej
@@ -689,12 +705,36 @@ function resolveSeason(){
  if(dmpj && dmpj.eligible && dmpj.me){ pzmStarts+=dmpj.me.starts||0; pzmPts+=dmpj.me.pts||0; }
  const medals=[];
  if(ind){
-   ['imp','mimp','zk','sk','bk'].forEach(k=>{
+   /* UWAGA: 'macec' NIE wchodzi do listy niżej — Puchar MACEC to zawody
+      międzynarodowe organizowane przez MACEC, nie przez PZM, więc nie
+      dolicza się do ryczałtów PZM (pzmStarts/pzmPts). Ma własną, osobną
+      wypłatę z regulaminu — patrz blok „PUCHAR MACEC — NAGRODY" niżej. */
+   ['imp','mimp','zk','sk','bk','szk'].forEach(k=>{
      const c=ind[k]; if(!c||!c.rode) return;
      (c.rounds||[]).forEach(rr=>{ if(rr.me){tally.h+=rr.me.codes.length; tally.p+=rr.me.pts;
                                             pzmStarts++; pzmPts+=rr.me.pts||0;} });
      if(c.mePos>=1&&c.mePos<=3) medals.push({k, name:c.name, pos:c.mePos});
    });
+   if(ind.macec && ind.macec.rode){
+     (ind.macec.rounds||[]).forEach(rr=>{ if(rr.me){tally.h+=rr.me.codes.length; tally.p+=rr.me.pts;} });
+     if(ind.macec.mePos>=1 && ind.macec.mePos<=3) medals.push({k:'macec', name:ind.macec.name, pos:ind.macec.mePos});
+   }
+ }
+ /* --- PUCHAR MACEC — NAGRODY WEDŁUG REGULAMINU ---
+    Realne stawki (netto, w euro), przeliczone na złote po kursie ok. 4,3:
+    310/250/190/160/140×2/120×2/110×2/100×2/90×2/70×2/60×2 za miejsca 1-16,
+    plus ryczałt startowy minimum 125 euro na zawodnika (dostajesz go zawsze,
+    niezależnie od wyniku — to nie jest liga dla gwiazd, tylko dla ludzi,
+    którzy nigdy nie zobaczą Grand Prix, stąd skromne kwoty). */
+ if(ind && ind.macec && ind.macec.rode){
+   const prizeEUR=[310,250,190,160,140,140,120,120,110,110,100,100,90,90,70,70];
+   const rank=ind.macec.mePos||16;
+   const prizePLN=Math.round((prizeEUR[rank-1]||60)*4.3/10)*10;
+   const travelPLN=Math.round(125*4.3/10)*10;
+   const macecIncome=prizePLN+travelPLN;
+   p.budget+=macecIncome; p.career.earned+=macecIncome;
+   notes.push('Puchar MACEC: '+rank+'. miejsce w klasyfikacji końcowej cyklu (16 zawodników z sześciu krajów) — '+
+     zl(prizePLN)+' nagrody + '+zl(travelPLN)+' ryczałtu startowego = '+zl(macecIncome)+'.');
  }
  const PZM_START=500, PZM_PER_PT=150;
  const pzmEarned = pzmStarts*PZM_START + pzmPts*PZM_PER_PT;
@@ -914,10 +954,15 @@ function resolveSeason(){
  res.equipWear  = equipWear;
  res.serviceCost= serviceCost;
  medals.forEach(m=>{
-   const t=['','MISTRZOSTWO POLSKI','WICEMISTRZOSTWO','BRĄZOWY MEDAL'][m.pos];
-   notes.push(m.name+': '+t+'!');
+   /* Nie każdy podium to "Mistrzostwo Polski" — Turniej Szkoleniowy i Puchar
+      MACEC to osobne, mniejsze rozgrywki (jeden regionalny, jeden
+      międzynarodowy), więc dostają własne, trafniejsze etykiety. */
+   const labels = (m.k==='szk' || m.k==='macec')
+     ? ['','ZWYCIĘSTWO W KLASYFIKACJI KOŃCOWEJ','2. MIEJSCE W KLASYFIKACJI KOŃCOWEJ','3. MIEJSCE W KLASYFIKACJI KOŃCOWEJ']
+     : ['','MISTRZOSTWO POLSKI','WICEMISTRZOSTWO','BRĄZOWY MEDAL'];
+   notes.push(m.name+': '+labels[m.pos]+'!');
    p.career.medals=(p.career.medals||0)+1;
-   if(m.pos===1) p.career.indTitles=(p.career.indTitles||0)+1;
+   if(m.pos===1 && m.k!=='szk' && m.k!=='macec') p.career.indTitles=(p.career.indTitles||0)+1;
  });
  if(ind&&ind.imp&&ind.imp.rode&&!medals.some(m=>m.k==='imp')&&ind.imp.mePos)
    notes.push('IMP: '+ind.imp.mePos+'. miejsce w klasyfikacji końcowej.');
@@ -1009,7 +1054,23 @@ function resolveSeason(){
  p.career.def+=defects+po.d; p.career.exc+=exclusions+po.w;
  if(avg>p.career.bestAvg){p.career.bestAvg=avg;p.career.best=avg.toFixed(2)+' ('+G.year+')';}
  if(pos===1) p.career.titles++;
- 
+
+ /* --- ZGŁOSZENIE KLUBU DO TRYBUNAŁU PZM ---
+    Feedback: gdy mamy WIELOLETNI kontrakt, a klub zalega nam na tyle, że
+    odmawiamy jazdy (bunt płacowy), a mimo to umowa formalnie trwa dalej,
+    powinna być osobna droga: zgłoszenie do trybunału PZM. To NIE jest
+    zwykłe zdarzenie z puli WINTER_EVENTS — leci jako OSOBNY, niezależny
+    ekran w przerwie zimowej (patrz afterWinter()/scTribunal() w index.html),
+    więc w tej samej przerwie mogą wypaść DWA zdarzenia: zwykłe losowe
+    i to, tribunałowe. Warunek: kontrakt z co najmniej 2 latami na papierze
+    (żeby "długoterminowy" znaczyło coś więcej niż "i tak kończy się teraz"),
+    bunt płacowy w tym sezonie i wciąż niespłacona zaległość klubu. */
+ if(strike && club && club.debt>0 && (p.contract.years||0)>=2){
+   p.next.tribunalCase = {club:club.name, debt:Math.round(club.debt), strikeRounds:S.strikeRounds};
+ } else {
+   p.next.tribunalCase = null;
+ }
+
  G.last=res; G.history.push(res);
  return res;
 }
@@ -1513,13 +1574,20 @@ function needsSaving(c){
  return (c.arr||0) > 0 || (c.budget<=0 && (c.debt||0) > 0);
 }
 /* Jaki procent należności klub jest w stanie realnie przelać.
-   Klub z płynnością płaci normalnie. Dziura w kasie = przelew "w miarę możliwości". */
+   Klub z płynnością płaci normalnie. Dziura w kasie = przelew "w miarę możliwości".
+   NAPRAWA (feedback: "kluby za mało się zadłużają — na 10 karier zawodnik ani razu
+   nie odmówił jazdy"): próg "zdrowego" klubu, który zawsze płaci w całości, był
+   ustawiony tak wysoko (health>0.35, 88% szans na pełną wypłatę), że w praktyce
+   niemal każdy klub płacił zawsze na czas — dług wobec gracza (c.debt) prawie
+   nigdy nie rósł do progu buntu (40 000 zł). Zaostrzone: próg zdrowia klubu niżej,
+   szansa na pełną wypłatę niższa, a klub, który raz nie zapłacił, płaci gorzej niż
+   wcześniej — dzięki temu zaległości realnie się kumulują u słabszych klubów. */
 function payRatioOf(club){
  const health = club.budget/Math.max(1,club.seasonCost||1);
- if(health>0.35 && (club.arr||0)<=0) return chance(88) ? 1 : cl(0.55+RF(0,0.45),0,1);
+ if(health>0.28 && (club.arr||0)<=0) return chance(72) ? 1 : cl(0.50+RF(0,0.40),0,1);
  let r = 0.15 + cl(health,0,1)*0.85 + (G.p.med/99)*0.08 + RF(-0.12,0.15);
  if(club.budget<=0) r*=0.30;
- if(club.debt>0)    r-=0.08;                 // kto raz nie zapłacił, ten znowu nie zapłaci
+ if(club.debt>0)    r-=0.14;                 // kto raz nie zapłacił, ten znowu nie zapłaci
  /* SIŁA PRZEBICIA GWIAZDY: skarżono się, że nawet zawodnik z OVR 90+ po sezonie
     z mistrzostwem i średnią 2.7 kończył rok z długami „jak w Gorzowie" — bo
     payRatio zależy WYŁĄCZNIE od kondycji klubu, a gwiazda takiej dźwigni
@@ -1535,9 +1603,12 @@ function payRatioOf(club){
  }
  return cl(r,0,1);
 }
-/* Progi buntu. Młodzi (poniżej 18 lat) wytrzymują dużo więcej niż seniorzy. */
-function refusalThreshold(age){ return age<18 ? 100000 : 40000; }
-function refusalStep(age){      return age<18 ?  10000 :  8000; }
+/* Progi buntu. Młodzi (poniżej 18 lat) wytrzymują dużo więcej niż seniorzy.
+   NAPRAWA: progi 100 000/40 000 zł przy tym, jak rzadko dług realnie rósł
+   (patrz payRatioOf wyżej), praktycznie nigdy nie były osiągane. Obniżone,
+   a szansa na bunt rośnie teraz szybciej z każdą kolejną zaległą transzą. */
+function refusalThreshold(age){ return age<18 ? 70000 : 25000; }
+function refusalStep(age){      return age<18 ?  8000 :  6000; }
 function refusalChance(age, debt){
  const th=refusalThreshold(age);
  if(debt<th) return 0;
@@ -2282,6 +2353,15 @@ const junAge = r => (r && r.age!=null && isFinite(Number(r.age))) ? Number(r.age
 const isJun = r => junAge(r) <= 21;   // zawodnik młodzieżowy (numery 6,7 / 14,15)
 const isU24 = r => junAge(r) <= 24;   // numery 8 / 16
 const isU19 = r => junAge(r) <= 19;   // Brązowy Kask
+/* --- KONTUZJA DŁUGOTERMINOWA — JEDNA DEFINICJA DLA WSZYSTKICH ZDARZEŃ ---
+   Feedback graczy: w przerwie międzysezonowej, z zerwanymi więzadłami (cały
+   sezon i cały kolejny rok poza torem, p.longInjury>0), wciąż potrafiły trafić
+   się zdarzenia w rodzaju "Taniec z gwiazdami" albo obozu treningowego — rzeczy
+   fizycznie niemożliwe dla kogoś w gipsie. `injured(p)` to jeden warunek, który
+   czytają cond() zdarzeń wymagających sprawności fizycznej (patrz EVENTS/
+   WINTER_EVENTS w data.js) — zamiast każde z osobna zgadywać, czy gracz jest
+   akurat na chodzie. */
+const injured = p => !!(p && (p.longInjury||0) > 0);
  
 /* --- KADRY KLUBOWE (SKALA 1:1) ---
    OVR klubu to poziom jego pierwszej piątki. Klub 95 ma piątkę w okolicach 95,
@@ -2518,6 +2598,84 @@ function simIndividual(p, effOvr, defP, excP){
  out.sk = kaskYouth('SREBRNY KASK','podstawa nominacji do IMŚJ', isJun, me, ctx, fieldOf, meIn);
  /* ---------- BRĄZOWY KASK — twardo do 19 lat, eliminacje + finał ---------- */
  out.bk = kaskYouth('BRĄZOWY KASK','podstawa nominacji do IMEJ', isU19, me, ctx, fieldOf, meIn);
+
+ /* ============================================================
+    TURNIEJ SZKOLENIOWY — dla juniorów klubów, które nie awansowały do
+    fazy play-off (art. 61 regulaminu: tabela 20-biegowa, 16 zawodników
+    + 2 rezerwowych, wyłącznie krajowi zawodnicy młodzieżowi). To poligon
+    dla juniorów słabszych klubów — coś, co jest do zrobienia w sezonie,
+    który i tak kończy się bez play-off. Jeden turniej z cyklu rozgrywanego
+    równolegle w całej Polsce; reszta cyklu toczy się bez twojego udziału.
+    ============================================================ */
+ {
+  const eligible = isJun(p) && clubMissedPlayoffs(p.club);
+  const pool = ranking(r=>isJun(r) && clubMissedPlayoffs(r.club));
+  let nom = pool.slice(0,16);
+  if(eligible && !nom.some(r=>r.id===me.id)){
+    const meRow = pool.find(r=>r.id===me.id);
+    if(meRow){ nom = nom.slice(0,15); nom.push(meRow); }
+  }
+  const sub='dla juniorów klubów spoza czołowej czwórki (art. 61) · tabela 20-biegowa · 16 zawodników + 2 rezerwowych';
+  if(eligible && nom.length>=16){
+    const f=fieldOf(nom.slice(0,16));
+    const mi=meIn(f);
+    const T=meeting20(f, mi, mi>=0?ctx:null);
+    out.szk=finishInd({name:'TURNIEJ SZKOLENIOWY', sub, rode:mi>=0,
+      rounds:[roundInfo('TURNIEJ SZKOLENIOWY',T,mi)],
+      podium:T.slice(0,3).map(t=>t.name), mePos: mi>=0? T.findIndex(t=>t.me)+1 : 0,
+      mePts: mi>=0? T.find(t=>t.me).pts : 0});
+  } else {
+    out.szk=finishInd({name:'TURNIEJ SZKOLENIOWY', sub, rode:false, rounds:[], podium:[], mePos:0, mePts:0});
+  }
+ }
+
+ /* ============================================================
+    PUCHAR MACEC — międzynarodowy cykl dla zawodników spoza czołówki
+    (Stowarzyszenie Motocyklowe Krajów Europy Środkowej). Stawka: gracz +
+    15 zagranicznych rywali ze Słowacji, Czech, Rumunii, Bułgarii, Węgier
+    i Ukrainy — 16 zawodników, kilka rund tej samej stawki, klasyfikacja
+    końcowa to suma punktów ze wszystkich rund. Art. 1.5 regulaminu: przy
+    remisie punktowym wyżej ten, kto miał lepsze miejsce w turnieju
+    rozegranym PÓŹNIEJ — liczone tu wstecz, runda po rundzie.
+    Kwalifikacja: umiarkowany OVR — to liga dla zawodników, którzy nigdy
+    nie zobaczą Grand Prix, nie dla gwiazd klubu. ---------------------- */
+ {
+  const macecOk = p.ovr>=18 && p.ovr<=62;
+  const sub='międzynarodowy cykl — SVK/CZE/ROU/BGR/HUN/UKR · tabela 20-biegowa · klasyfikacja = suma punktów z rund';
+  if(macecOk){
+   /* Stawka: 15 zagranicznych rywali (fikcyjni, patrz MACEC_NAMES w data.js) +
+      gracz. Zawodnicy z ROU/BGR/HUN/UKR są w tej stawce relacyjnie mocniejsi —
+      zgodnie z opisem "super, jak na poziom tych krajów". */
+   const foreign=shuffle(MACEC_NAMES.slice()).slice(0,15).map((x,k)=>{
+     const bump=(x.c==='ROU'||x.c==='BGR'||x.c==='HUN'||x.c==='UKR') ? R(2,10) : R(-6,4);
+     return {id:-1000-k, name:x.n+' ('+x.c+')', age:R(19,34), ovr:cl(Math.round(G.p.ovr+bump+gauss(0,6)),15,70)};
+   });
+   const meRow={id:me.id, name:me.name, age:p.age, ovr:cl(Math.round(effOvr),1,99)};
+   const field=shuffle([meRow, ...foreign]);
+   const mi=field.findIndex(r=>r.id===me.id);
+   const roundsN=R(3,4);
+   const total={}; field.forEach((r,k)=>total[k]=0);
+   const roundPos=field.map(()=>[]);           // miejsce w KAŻDEJ rundzie — materiał na tiebreak art. 1.5
+   const macecRounds=[]; let rode=false;
+   for(let t=0;t<roundsN;t++){
+    const T=meeting20(field, mi, mi>=0?ctx:null);
+    T.forEach((row,pos)=>{ const k=field.findIndex(r=>r.id===row.id); total[k]+=row.pts; roundPos[k].push(pos+1); });
+    if(mi>=0) rode=true;
+    macecRounds.push(roundInfo('PUCHAR MACEC — RUNDA '+(t+1), T, mi));
+   }
+   const order=field.map((r,k)=>k).sort((a,b)=>{
+     if(total[b]!==total[a]) return total[b]-total[a];
+     for(let t=roundsN-1;t>=0;t--){ const d=(roundPos[a][t]||99)-(roundPos[b][t]||99); if(d) return d; }
+     return 0;
+   });
+   const cls=order.map(k=>({name:field[k].name, pts:total[k], me:k===mi}));
+   const mePos = mi>=0 ? order.indexOf(mi)+1 : 0;
+   out.macec=finishInd({name:'PUCHAR MACEC', sub, rode, rounds:macecRounds, classification:cls,
+     podium:cls.slice(0,3).map(c=>c.name), mePos, mePts: mi>=0? total[mi] : 0});
+  } else {
+   out.macec=finishInd({name:'PUCHAR MACEC', sub, rode:false, rounds:[], podium:[], mePos:0, mePts:0});
+  }
+ }
  
  /* ---------- MIMP — eliminacje + finał, TYLKO juniorzy U21 ----------
     Filtr wieku jest twardy: zawodnik po 21. urodzinach (w tym Gracz) nie ma
@@ -3200,10 +3358,21 @@ function signContract(o){
  p.career.earned += o.bonus;
  if(o.type==='Amatorski'){
    const c=getClub(p);
-   // pierwszy kontrakt w karierze: sprzęt startowy = 20 (zgodnie z regulaminem gry)
-   // p.keepEquip — sprzęt wywalczony poza klubem (rok u Nickiego w warsztacie) zostaje twój
-   const clubGear = p.career.seasons===0 ? 20 : cl(Math.round(20+c.ovr*0.32),1,99);
-   p.equip = p.keepEquip ? Math.max(p.equip, clubGear) : clubGear;
+   /* NAPRAWA SPRZĘTOWA: warunek czytał się jako "pierwszy kontrakt w karierze",
+      ale w kodzie sprawdzał tylko typ oferty (Amatorski) — więc WETERAN, który
+      po latach zakupów i zdarzeń sprzętowych trafił na amatorską ofertę (np.
+      wymuszony transfer do słabego klubu po zaległościach), miał cały dorobek
+      sprzętowy KASOWANY do gołego poziomu klubowego. Gracze zgłaszali to jako
+      "zdarzenia sprzętowe nic nie dają" — bo i tak wszystko szło do zera przy
+      najbliższym kontrakcie amatorskim. Reset do poziomu klubowego obowiązuje
+      TERAZ wyłącznie przy debiucie (p.career.seasons===0); później kontrakt
+      amatorski nie dokłada nic ponad to, co już masz, ale też nic nie zabiera. */
+   if(p.career.seasons===0){
+     const clubGear = 20;
+     p.equip = p.keepEquip ? Math.max(p.equip, clubGear) : clubGear;
+   }
+   // p.career.seasons>0: kontrakt amatorski w trakcie kariery — p.equip zostaje
+   // bez zmian (klub nie ma czym dołożyć, ale twój sprzęt jest wciąż twój).
    p.keepEquip=false;
    p.mech=25; p.mechName='Mechanik klubowy (z łapanki)'; p.mechCost=0;
  }

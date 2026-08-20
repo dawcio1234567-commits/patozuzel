@@ -9,9 +9,34 @@
    Wyświetlane na ekranie tytułowym (scCreate w index.html).
    Najnowszy wpis na górze.
    ============================================================ */
-const GAME_UPDATE='19.08.2026';
+const GAME_UPDATE='20.08.2026';
 const GAME_X='@polskizuzlowiec';
 const CHANGELOG=[
+ {v:'20.08.2026', t:'PATCH: TRYBUNAŁ PZM, PUCHAR MACEC, TURNIEJE SZKOLENIOWE I NAPRAWY ZGŁOSZONE PRZEZ GRACZY', l:[
+  'Duży patch po zbiorczym feedbacku. Poniżej, co dokładnie się zmieniło — z konkretnym wyjaśnieniem, na czym polegał problem, tam gdzie to była realna naprawa, nie tylko balans.',
+
+  'NAPRAWA (poważna): zdarzenia z przerwy zimowej (WINTER_EVENTS) liczyły swoje skutki na ATRAPIE sezonu, która jest wyrzucana zaraz po zamknięciu zdarzenia — więc zmiany szans na biegi, ryzyka urazu i atmosfery w szatni z 23 zdarzeń zimowych POKAZYWAŁY SIĘ w opisie skutków, ale nigdy realnie nie wchodziły do kolejnego sezonu. To najbardziej prawdopodobne źródło zgłoszenia "zdarzenia zmieniające ryzyko urazu nie dają efektu". Wszystkie 23 przepisane na warianty "na kolejny sezon" (fxHN/fxIN), a atmosfera dostała nowy, brakujący do tej pory odpowiednik (fxAN + G.p.next.atmBonus), który realnie wchodzi w losowanie nastrojów szatni na starcie następnego sezonu.',
+
+  'NAPRAWA: zdarzenie „ZBIÓRKA RATUNKOWA" (pomoc klubowi w długach) miało wpisaną karę -50% stawki za punkt w kolejnym sezonie przy wyborze „Pomagam" — bez żadnego wyjaśnienia w tekście, mimo że to gest lojalności premiowany też +15 lojalności. Odwrócony znak, prawdopodobnie kolejne źródło zgłoszenia o zdarzeniach z kasą za punkty. Zamienione na +15% (i podpisane w tekście dlaczego).',
+
+  'NAPRAWA (spora): kontrakt typu „Amatorski" zerował sprzęt do gołego poziomu klubowego przy KAŻDYM podpisaniu — nie tylko przy debiucie w karierze, jak sugerował komentarz w kodzie. Efekt: weteran, który po latach zakupów i zdarzeń sprzętowych trafił na amatorską ofertę (np. po wymuszonym transferze do słabego klubu przez zaległości), tracił cały dorobek sprzętowy co do sztuki. Reset do poziomu klubowego działa teraz wyłącznie przy pierwszym kontrakcie w karierze.',
+
+  'ZBALANSOWANE: różnice poziomu między ligami. Awans do wyższej ligi (szczególnie do klubu, który w niej jest najsłabszy — a tak zwykle wygląda awans) potrafił zamienić średnią 2.1 w średnią bliską 1.0 w jeden sezon, bo punkt odniesienia w silniku liczył się w większości ze ŚREDNIEJ CAŁEJ LIGI (a te różnią się między sobą nawet o 30+ pkt OVR), a kara za bycie poniżej odniesienia była bardzo ostra i zaczynała się natychmiast. Waga ligi w punkcie odniesienia zmniejszona na rzecz poziomu WŁASNEGO klubu (który po awansie jest bliżej twojego realnego poziomu niż cała liga), kara złagodzona, a strefa najostrzejszej kary poszerzona. Wyższa liga dalej ma być trudniejsza — teraz to urwisko, a nie ściana.',
+
+  'ZBALANSOWANE: kluby zbyt rzadko realnie zadłużały się wobec gracza, więc próg buntu płacowego (odmowa jazdy) był praktycznie nieosiągalny — stąd zgłoszenie „na 10 karier zawodnik ani razu nie odmówił jazdy". Próg „zdrowego" klubu, który zawsze płaci w całości, obniżony, a zadłużony klub płaci teraz gorzej niż wcześniej. Progi buntu (25 000 zł dla dorosłych / 70 000 zł dla niepełnoletnich, zamiast 40 000 / 100 000) i tempo eskalacji też pod tym kątem poprawione.',
+
+  'NOWE: TRYBUNAŁ PZM. Gdy w sezonie doszło do buntu płacowego przy wieloletnim kontrakcie, a klub wciąż zalega z pieniędzmi, w najbliższej przerwie zimowej dochodzi osobne, niezależne zdarzenie (możesz więc zobaczyć DWA zdarzenia zimowe w tej samej przerwie — zwykłe losowe i to). Masz wybór: zgłosić klub do trybunału PZM albo odpuścić. Przy zgłoszeniu — 75% szans, że trybunał rozwiązuje kontrakt (i klub musi rozliczyć część zaległości), 25% szans, że prezes przekupił związek: kontrakt trwa dalej, ale cała zaległość znika z papierów.',
+
+  'NOWE: PUCHAR MACEC — prawdziwie symulowany, międzynarodowy turniej indywidualny (jak Turnieje Szkoleniowe, nie zdarzenie z rzutem kością). Stawka to Ty plus piętnastu zagranicznych rywali ze Słowacji, Czech, Rumunii, Bułgarii, Węgier i Ukrainy, kilka rund tej samej tabeli 20-biegowej, klasyfikacja końcowa to suma punktów ze wszystkich rund (art. 1.5 regulaminu: przy remisie wyżej ten, kto lepiej pojechał w PÓŹNIEJSZYM turnieju). Dostępny dla zawodników o umiarkowanym OVR — to liga dla ludzi, którzy nigdy nie zobaczą Grand Prix, nie dla gwiazd klubu. Nagrody i ryczałt startowy liczone z realnego regulaminu (netto w euro, przeliczone na złote) — kwoty celowo skromne.',
+
+  'NOWE: TURNIEJE SZKOLENIOWE — kolejny prawdziwie symulowany turniej indywidualny (tabela 20-biegowa, art. 61), dostępny dla juniorów z klubów, które nie awansowały do czołowej czwórki rundy zasadniczej (czyli odpadły przed fazą play-off). Coś do zrobienia w sezonie, który i tak kończy się bez gry o awans.',
+
+  'NAPRAWA: część zdarzeń losowych (Taniec z Gwiazdami, obozy treningowe, testy na zamarzniętym jeziorze, walka MMA i kilkanaście innych) potrafiła trafić się nawet przy zerwanych więzadłach czy złamanej kości udowej — czyli w trakcie sezonu spędzonego w gipsie. Wprowadzona jedna, wspólna definicja "kontuzjowany" (injured()), którą czyta teraz ok. 20 zdarzeń fizycznie niemożliwych do zrobienia z takim urazem — są dla kontuzjowanego zablokowane. W zamian dodano 6 nowych zdarzeń (3 sezonowe, 3 zimowe) WYŁĄCZNIE dla kontuzjowanego zawodnika, żeby sezon w gipsie nie był po prostu pustym miejscem w kalendarzu.',
+
+  'NAPRAWA: w zdarzeniach kończących się wynikiem 0:75 tekst „WALKOWER" zamieniony na „Wróciliśmy do domu. Bez honoru i ambicji, za to z karą od PZM." — wynik w tabeli bez zmian.',
+
+  'NAPRAWA (czytelność): bonus w pojedynczym biegu (kod „1*"/„2*") wizualnie ginął obok gwiazdki oznaczającej dorobek meczowy w tej samej linijce wyników. Kod bonusowy renderuje się teraz jako czytelna gwiazdka ★ (dane w tle bez zmian), z jaśniejszym opisem w legendzie wyników i turniejów indywidualnych. Przy okazji: zabezpieczony przypadek brzegowy w wierszach DMPJ, gdzie brak dopasowania drużyny w danym biegu potrafił pokazać mylące „drużyna 0. (0 pkt)" zamiast po prostu „—".'
+ ]},
  {v:'19.08.2026', t:'PATCH: PORZĄDKI W INTERFEJSIE — MNIEJ OKIENEK NA RAZ', l:[
   'Feedback graczy: "za dużo małych okienek, kilka rzeczy zlewa się na raz". Racja — ekran między sezonami i podsumowanie sezonu piętrzyły nawet dziesięć osobnych boksów jeden pod drugim.',
   'NOWE: drugorzędne dane (jak działa ustawianie składu, skąd bierze się wiek emerytalny, jak działa warsztat, kontrola matematyczna, składniki oceny, kontrola wykonania zdarzenia) chowają się teraz za wyraźnym przełącznikiem "▸ ROZWIŃ" — jednym kliknięciem widzisz wszystko, ale nie musisz na to patrzeć za każdym razem.',
@@ -37,9 +62,25 @@ const CHANGELOG=[
 ];
 
 const BAL={
- leagueW : 0.55,   // udział średniej ligi w punkcie odniesienia (reszta: własny klub)
- belowPen: 2.60,   // mnożnik kary za pierwsze 10 pkt poniżej odniesienia
- knee    : 10,     // do ilu punktów obowiązuje ostra kara
+ /* NAPRAWA (feedback: "zbyt duże różnice poziomu między ligami" — zawodnik ze
+    średnią 2.1 po awansie do wyższej ligi lądował następny sezon ze średnią 1.0):
+    refFor() liczy punkt odniesienia w dużej mierze ze ŚREDNIEJ CAŁEJ LIGI, a ta
+    między ligami różni się nawet o 30+ pkt OVR (Ekstraliga ~85, KLŻ ~51). Awans
+    zwykle oznacza dołączenie do NAJSŁABSZEGO klubu wyższej ligi — więc odniesienie
+    liczone głównie z ligi skacze dużo mocniej, niż realnie skacze poziom, na jakim
+    zawodnik faktycznie jeździ. Do tego kara poniżej odniesienia była bardzo ostra
+    (2.60×) i zaczynała się natychmiast (knee=10) — więc typowy skok ligowy wpychał
+    świeżo awansowanego zawodnika głęboko w strefę kary. Trzy zmiany:
+      leagueW  0.55→0.48 — mniej wagi na "całą ligę", więcej na WŁASNY KLUB (który
+                po awansie i tak jest zwykle tym najsłabszym w nowej lidze — bliżej
+                realnego poziomu, na jakim się jeździ),
+      belowPen 2.60→1.90 — kara poniżej odniesienia łagodniejsza,
+      knee     10→14     — szerszy zakres, zanim zacznie się najostrzejsza kara.
+    Różnica między ligami dalej jest wyraźnie odczuwalna (to ma sens: wyższa liga
+    MA być trudniejsza), ale przestaje być urwiskiem z dnia na dzień. */
+ leagueW : 0.48,   // udział średniej ligi w punkcie odniesienia (reszta: własny klub)
+ belowPen: 1.90,   // mnożnik kary za pierwsze pkt poniżej odniesienia (do `knee`)
+ knee    : 14,     // do ilu punktów obowiązuje ostra kara
  farPen  : 1.05,   // mnożnik kary powyżej "kolana"
  abovePow: 0.58,   // przewaga nad odniesieniem liczy się łagodniej niż kara
  refDrop : 7.0,    // przelicznik: średnia OVR klubu -> średni OVR jadącego zawodnika
@@ -301,6 +342,11 @@ const fxM   = d => { G.p.med    = cl(G.p.med+d,0,99);       return sgn(d)+' Medi
 const fxO   = d => { G.p.ovr    = cl(G.p.ovr+d,1,99);       return sgn(d)+' OVR'; };
 const fxL   = d => { G.p.loyalty= cl(G.p.loyalty+d,0,100);  return sgn(d)+' Lojalność'; };
 const fxA   = d => { G.S.atm    = cl(G.S.atm+d,0,100);      return sgn(d)+' atmosfera w drużynie'; };
+/* fxAN — TO SAMO, ALE NA ZIMĘ: w przerwie międzysezonowej nie ma jeszcze atmosfery
+   (rzuca się ją dopiero na starcie kolejnego sezonu, patrz startSeason() w engine.js),
+   więc zimowe zdarzenia dokładają się do G.p.next.atmBonus, a nie do G.S.atm wprost —
+   inaczej efekt siadał na atrapie sezonu i znikał (patrz NAPRAWA w CHANGELOGU). */
+const fxAN  = d => { G.p.next.atmBonus = (G.p.next.atmBonus||0)+d; return sgn(d)+' nastroje w szatni na start kolejnego sezonu'; };
 const fxE   = d => { G.p.equip  = cl(G.p.equip+d,1,99);     return sgn(d)+' Sprzęt'; };
 const fxT   = d => { G.S.teamOvr += d;                      return sgn(d)+' OVR drużyny'; };
 const fxOB  = d => { G.S.ovrBonus += d;                     return sgn(d)+' OVR w meczach tego sezonu'; };
@@ -423,7 +469,10 @@ const fxWalk = (mode, pen) => {
  G.S.walkower = true;
  G.S.walkMode = mode || 'lose';
  G.S.walkPen  = pen || 0;
- return ({lose:'WALKOWER: oddajecie spotkanie 0:75.',
+ /* NAPRAWA (feedback): w zdarzeniach dających wynik 0:75 tekst "WALKOWER"
+    zastąpiony na życzenie graczy konkretnym cytatem — wynik w tabeli
+    (0:75) zostaje bez zmian, zmienia się tylko opis tego, co się stało. */
+ return ({lose:'Wróciliśmy do domu. Bez honoru i ambicji, za to z karą od PZM. (0:75)',
           win :'WALKOWER: rywal się nie stawił — 75:0 dla was.',
           both:'OBUSTRONNY WALKOWER: mecz nieodbyty, 0:0.',
           void:'MECZ NIEROZEGRANY: wynik anulowany, nikt nie dostaje punktów.'}[G.S.walkMode])
@@ -536,7 +585,7 @@ const EVENTS=[
  ]},
 {id:'taniec', t:'ZAPROSZENIE DO „TAŃCA Z GWIAZDAMI”',
  x:'Produkcja dzwoni w środku okresu startowego. Mówią, że żużel „jest teraz modny” i że potrzebują kogoś z charakterem. Honorarium jest większe niż twój kontrakt.',
- cond:(p)=>p.med>30,
+ cond:(p)=>p.med>30 && !injured(p),
  o:[
   {l:'Idę tańczyć.', f:()=>[fxM(15), fxP(-15), fxK(100000), fxH(-30)+' (treningi odpadły, trener wpisał cię do rezerwy)', fxOB(-2)]},
   {l:'Odmawiam, mam sezon.', f:()=>[fxP(10), fxM(-5), fxO(2)+' (cały luty na torze zamiast na parkiecie)', fxOB(2)+' — forma życia']}
@@ -826,7 +875,12 @@ const EVENTS=[
  cond:(p,c)=>!!c && c.debt>50000,
  o:[
   {l:'Pomagam.', f:()=>{const c=clubOf(G.p); if(c) c.debt=Math.max(0,c.debt-10000);
-     return [fxK(-10000)+' na zbiórkę', fxRateN(0.5), fxL(15)];}},
+     /* NAPRAWA: opcja premiowana dodatnio (lojalność, publiczne poparcie) miała
+        wpisany fxRateN(0.5) — CIĘCIE stawki za punkt o połowę w kolejnym sezonie,
+        bez żadnego wyjaśnienia w tekście. Gracze zgłaszali, że "zdarzenia z kasą
+        za punkty nie działają jak trzeba" — to jeden z takich odwróconych znaków.
+        Pomoc klubowi w potrzebie to gest lojalności, nie kara na własną stawkę. */
+     return [fxK(-10000)+' na zbiórkę', fxRateN(1.15)+' — zarząd pamięta, kto pomógł, gdy było krucho', fxL(15)];}},
   {l:'Mam to w dupie.', f:()=>{G.S.noRenew=true;return [fxL(-15), 'Klub rozwiązuje z tobą kontrakt.'];}}
  ]},
 {id:'komornik', t:'KOMORNIK W BIURZE KLUBU',
@@ -1104,7 +1158,7 @@ const EVENTS=[
  ]},
 {id:'rozdzielnia', t:'ROZDZIELNIA PRĄDU',
  x:'Drużyna jedzie fatalny mecz rewanżowy w finale o awans. Od ciebie zależy, czy to spotkanie w ogóle zostanie dokończone.',
- cond:(p,c,S)=>S.round>=14,
+ cond:(p,c,S)=>S.round>=14 && !injured(p),
  o:[
   {l:'Mam sprytny plan.',
    sum:'Kto by pomyślał, że siekiera w rozdzielni przerwie mecz.',
@@ -1116,14 +1170,14 @@ const EVENTS=[
  ]},
 {id:'baraz', t:'BARAŻ O UTRZYMANIE — POWAŻNE MYŚLI SPADKOWE',
  x:'Szatnia milczy. Lider patrzy w podłogę, junior płacze w rękawicę, a menedżer nagrywa story na Instagram. Ktoś musi coś zrobić.',
- cond:(p,c,S)=>S.round>=14 && !!c && c.ovr<=65,
+ cond:(p,c,S)=>S.round>=14 && !!c && c.ovr<=65 && !injured(p),
  o:[
   {l:'Idziemy biegać i krzyczeć niemiłe słowa o drużynie z Zielonej Góry.', f:()=>[fxT(3), fxHN(10), fxM(10)]},
   {l:'„To, gdzie jeżdżę, jest bez znaczenia…”', f:()=>[fxH(10), fxP(10)]}
  ]},
 {id:'spoznienie', t:'SPÓŹNIASZ SIĘ 6 MINUT NA MECZ PÓŁFINAŁOWY',
  x:'Sędzia Lis źle kliknął cyferki w kalkulatorze i przez ciebie jest walkower. Łysy z telewizji już biegnie z mikrofonem.',
- cond:(p,c,S)=>S.round>=14,
+ cond:(p,c,S)=>S.round>=14 && !injured(p),
  o:[
   {l:'Płaczę, że to nie moja wina.', f:()=>[fxM(10), fxP(-10), fxWalk('lose',0)],
   },
@@ -1131,7 +1185,7 @@ const EVENTS=[
  ]},
 {id:'quad', t:'ŚWIĘTOWANIE NA QUADZIE',
  x:'Po zwycięstwie w pierwszym meczu finałowym atmosfera na stadionie jest znakomita, ale przed wami wciąż rewanż decydujący o awansie.',
- cond:(p,c,S)=>S.round>=14,
+ cond:(p,c,S)=>S.round>=14 && !injured(p),
  o:[
   {l:'„HEJ PREZES, SIADAJ NA QUADA!”', f:()=>[fxM(10), fxL(8), fxA(7), fxP(-5), fxT(-1)+' — rywal zmobilizowany na rewanż']},
   {l:'„Spokojnie, jeszcze niczego nie wygraliśmy”.', f:()=>[fxP(8), fxL(5), fxM(-3), fxA(-3)]}
@@ -1356,6 +1410,7 @@ const EVENTS=[
  ]},
 {id:'minister_sportu', t:'WIZYTA MINISTRA SPORTU',
  x:'Ważne spotkanie. Na stadionie ma się pojawić Minister Sportu, a sędziować będzie znany z surowości arbiter.',
+ cond:(p)=>!injured(p),
  o:[
   {l:'Zróbmy kartoflisko na torze.', f:()=>{ 
      if(chance(70)) return [fxT(3), fxO(1)];
@@ -1377,7 +1432,7 @@ const EVENTS=[
  ]},
 {id:'prezes_quad', t:'ŚWIRUJĄCY PREZES',
  x:'Jedziesz mecz finałowy o awans. Twój prezes po pierwszym wygranym spotkaniu zaczyna świrować na quadzie pod taśmą.',
- cond:(p,s)=>s.round>=14,
+ cond:(p,s)=>s.round>=14 && !injured(p),
  o:[
   {l:'Patrzysz z zażenowaniem.', f:()=>[fxP(-5), fxM(15)]}
  ]},
@@ -1389,6 +1444,7 @@ const EVENTS=[
  ]},
 {id:'udawany_upadek', t:'LEŻĘ DALEJ!',
  x:'Upadasz w 14. biegu na ostatniej pozycji, ale widzisz, że przegrywacie 1:5. Postanawiasz leżeć dalej, wymuszając powtórkę.',
+ cond:(p)=>!injured(p),
  o:[
   {l:'Leżę!', f:()=>{ 
      if(chance(75)) return [fxEnd('Zdemaskowali Cię. Zostałes wykluczony. Kibice spalili Ci busa. Uzależniłeś się od alkoholu. Obyś nikogo nie potrącił na drodze po pijaku.')];
@@ -1398,6 +1454,7 @@ const EVENTS=[
  ]},
 {id:'komisariat_ostrowski', t:'OSTROWSKI KOMISARIAT',
  x:'Zostałes zatrzymany przez prezesa klubu pod wpływem stresu pomeczowego. Odgraża się "ty pijaku, jesteś skończony. Ja cię tak załatwię. Jesteś skończony jako zawodnik. Frajer jesteś".',
+ cond:(p)=>!injured(p),
  o:[
   {l:'Ty jesteś pijakiem ', f:()=>[fxP(-20), fxM(20)]},
   {l:'Ostentacyjnie idę na łotewski bimber ', f:()=>[fxEnd('Kurcze, jednak nie kłamał - jestem skończony. Hobby wygrało z pracą. Koniec kariery. Obyś nikogo nie potrącił po pijaku.')]}
@@ -1670,7 +1727,7 @@ const EVENTS=[
 
 {id:'bezpieczenstwo_ruchu', t:'BEZPIECZEŃSTWO RUCHU',
  x:'Trenerem twojej drużyny został ekspert od bezpieczeństwa ruchu drogowego (chce robić program na ŻTV o bezpieczeństwie ruchu na żużlu). Na treningach każe wam robić plac manewrowy i uczy jeździć „partnersko”.',
- cond:(p,c)=>!!c,
+ cond:(p,c)=>!!c && !injured(p),
  o:[
   {l:'Chłonę jego wiedzę',
    f:()=>{ G.p.form=cl((G.p.form||0)-10,-12,12);
@@ -1685,7 +1742,7 @@ const EVENTS=[
 
 {id:'alkomat_dmpj', t:'OKNO ŻYCIA — ALKOMAT',
  x:'Masz problemy z kontrolą motocykla w trakcie DMPJtów. Sędzia zawodów, widząc twoje „popisy”, uznaje, że musisz być pod wpływem alkoholu, dlatego wzywa policję, aby zbadać twoją trzeźwość alkomatem.',
- cond:(p)=>p.age<=21 && p.ovr<40 && p.prof<40,
+ cond:(p)=>p.age<=21 && p.ovr<40 && p.prof<40 && !injured(p),
  o:[
   {l:'Dmucham, nie mając nic do zarzucenia',
    f:()=>['Dmuchasz w alkomat, który pokazuje 0,0 promila.', fxP(2), fxH(-1)]},
@@ -1706,7 +1763,7 @@ const EVENTS=[
 
 {id:'oszustwo_sprzet', t:'OSZUSTWO SPRZĘT',
  x:'Trwa obchód przed ważnym meczem ligowym. Wszyscy Twoi rywale i ich mechanicy wyszli na tor, pozostawiając sprzęt bez nadzoru. Szczęście i modlitwa to może być za mało na rywala. Potrzeba przewagi technologicznej. Proponujesz:',
- cond:(p,c,S)=>S.round>0,
+ cond:(p,c,S)=>S.round>0 && !injured(p),
  o:[
   {l:'wyciągnięcie beczki wzmocnionego etanolu',
    f:()=>{ const l=['Nie pytam, czym i jak zostało to ochrzczone — ważne, że motocykl frunie.', fxT(6), fxA(3), fxO(1)];
@@ -1740,7 +1797,7 @@ const EVENTS=[
 
 {id:'drzewo_grudziadz', t:'DRZEWO GRUDZIĄDZ',
  x:'Jedziesz w Grudziądzu i masz przed sobą słynny dąb na 2 łuku. Co robisz?',
- cond:(p,c)=>!!c && !!p.club && p.club.includes('Grudziądz'),
+ cond:(p,c)=>!!c && !!p.club && p.club.includes('Grudziądz') && !injured(p),
  o:[
   {l:'Dąb przynosi szczęście, pakuję się w niego z impetem',
    f:()=>['Jedziesz po szerokiej tak, że dziki byłyby dumne.', fxO(2), fxI(40)]},
@@ -1750,7 +1807,7 @@ const EVENTS=[
 
 {id:'ostatni_luk', t:'OSTATNI ŁUK DYLEMAT',
  x:'Wchodzisz w pierwszy łuk i widzisz ogromną lukę przy krawężniku. Problem w tym, że motocykl zaczyna wyciągać cię na zewnętrzną, a przed tobą jedzie cała trójka rywali. Co robisz?',
- cond:(p,c,S)=>S.round>0,
+ cond:(p,c,S)=>S.round>0 && !injured(p),
  o:[
   {l:'Zamykasz gaz, odpuszczasz atak i próbujesz ustabilizować motocykl',
    f:()=>['Stabilizujesz motocykl, ale z łuku wyjeżdżasz ostatni.', fxP(10), fxH(-5), fxA(3)]},
@@ -1767,7 +1824,7 @@ const EVENTS=[
 
 {id:'atmosfera_torun', t:'ZŁA ATMOSFERA TORUŃ',
  x:'Od jakiegoś czasu są problemy z atmosferą i równą formą w zespole. Dostałeś bojowe zadanie ogarnięcia problemu.',
- cond:(p,c,S)=>{ if(!c || !p.club || p.club.includes('Toruń')) return false;
+ cond:(p,c,S)=>{ if(injured(p)) return false; if(!c || !p.club || p.club.includes('Toruń')) return false;
    const top3 = G.leagues[p.lk].clubs.slice().sort((a,b)=>b.ovr-a.ovr).slice(0,3).some(x=>x.name===c.name);
    return !top3; },
  o:[
@@ -1825,7 +1882,7 @@ const EVENTS=[
 
 {id:'walka_w_bagnie', t:'WALKA W BAGNIE',
  x:'Co prawda my chcemy „noł”, a sędzia „kaman”, to jednak wizja zawieszeń zmotywowała nas do jazdy. Bagno takie, że jedno wirażowego wcięło na amen. No ale jedziemy… Jeden z rywali strasznie nadstawia koło, żeby Ciebie oszprycować.',
- cond:(p,c,S)=>S.round>0,
+ cond:(p,c,S)=>S.round>0 && !injured(p),
  o:[
   {l:'Próbuję jechać jeszcze węziej, może krawężnik odda',
    f:()=>['Pojechałeś jak łajza po tej nieszczęsnej kredzie i nic nie wskórałeś.', fxP(-5), fxM(-10), fxK(-5000)]},
@@ -1836,7 +1893,38 @@ const EVENTS=[
   {l:'Uprzejmie pokazuję po biegu, jaką szprycę mi dawał',
    f:()=>['Sędzia wątpi, że zrzucenie rywala z motocykla to szczyt uprzejmości — daje czerwoną kartkę.', fxK(-7000), fxH(-5), fxBan(R(1,2))]}
  ]},
+
+/* ===== KONTUZJOWANY POZA TOREM ===== */
+/* Feedback: część zdarzeń (taniec z gwiazdami, obozy, treningi) wyskakiwała
+   nawet z zerwanymi więzadłami — teraz są zablokowane (patrz injured() w
+   engine.js i cond dopisane wyżej). Ale sezon spędzony w gipsie to wciąż
+   sezon — coś się w nim dzieje, tylko z dala od toru. Te trzy zdarzenia
+   trafiają się WYŁĄCZNIE kontuzjowanemu zawodnikowi. */
+{id:'kontuzja_hejt', t:'HEJT SPOD KOSTKI GIPSOWEJ',
+ x:'Siedzisz w gipsie już drugi miesiąc, a pod każdym postem klubu ktoś pyta, „kiedy w końcu zacznie zarabiać na kevlar, zamiast leżeć". DołuStats zrobiło z twojej rehabilitacji osobny wątek.',
+ cond:(p)=>injured(p),
+ o:[
+  {l:'Odpisuję każdemu z osobna, ze szpitalnego łóżka.', f:()=>[fxM(8), fxP(-5), 'Trzy dni scrollowania zamiast rehabilitacji.']},
+  {l:'Wyłączam komentarze i zajmuję się ćwiczeniami.', f:()=>[fxP(10), fxM(-5)]},
+  {l:'Nagrywam szczery filmik o tym, jak to naprawdę wygląda.', f:()=>[fxM(18), fxP(5), 'Kilku dziennikarzy pyta o wywiad — pierwszy raz z dobrego powodu.']}
+ ]},
+{id:'kontuzja_kolega', t:'KOLEGA Z SZATNI PODJEŻDŻA Z ZAKUPAMI',
+ x:'Nie możesz prowadzić, więc kolega z drużyny robi ci zakupy i przy okazji przywozi plotki z parku maszyn — kto jak jeździ, kto na kogo psioczy, kto już szuka nowego klubu na twoje miejsce.',
+ cond:(p)=>injured(p),
+ o:[
+  {l:'Wypytuję o wszystko, chcę wiedzieć, co się dzieje beze mnie.', f:()=>[fxL(6), 'Wiesz teraz więcej o szatni, niż niejeden, kto jeździ co tydzień.']},
+  {l:'Dziękuję i wolę nie myśleć o torze, dopóki nie wrócę.', f:()=>[fxP(4), 'Trudniejsze, ale spokojniejsze popołudnie.']}
+ ]},
+{id:'kontuzja_rehab', t:'PRYWATNA REHABILITACJA CZY NFZ',
+ x:'Lekarz klubowy proponuje kolejkę do fizjoterapeuty przez NFZ — miesiące czekania. Prywatna klinika w Warszawie zrobi to samo w tydzień, tylko trzeba za to zapłacić z własnej kieszeni.',
+ cond:(p)=>injured(p),
+ o:[
+  {l:'Płacę za prywatną rehabilitację.', f:()=>{const k=R(15000,35000);
+     return [fxK(-k)+' za prywatną klinikę', fxIN(-8)+' (wracasz lepiej poskładany, niż wynikałoby z samego kalendarza)'];}},
+  {l:'Czekam w kolejce jak wszyscy.', f:()=>[fxL(3), 'Miesiące na krześle w poczekalni, za to bez rachunku.']}
+ ]},
 ];
+
 
 /* ============================================================
    3-bis. ZDARZENIA MIĘDZYSEZONOWE (PRZERWA ZIMOWA)
@@ -1897,7 +1985,7 @@ const WINTER_EVENTS=[
 
 {id:'zima_hiszpania', t:'ZIMOWE ZGRUPOWANIE W ALMERII',
  x:'Grupa zawodników leci na trzy tygodnie do Almerii: tor, siłownia, dietetyk i zero wymówek. Cena za osobę robi wrażenie.',
- cond:(p)=>p.budget>=80000,
+ cond:(p)=>p.budget>=80000 && !injured(p),
  w:4,
  o:[
   {l:'Lecę. Trzy tygodnie jazdy w styczniu robią sezon.', f:()=>[fxK(-80000), fxO(3), fxP(5), fxHN(5)]},
@@ -1949,7 +2037,7 @@ const WINTER_EVENTS=[
  x:'Prezes wielkiej firmy po wybudowaniu figury Matki Boskiej doznaje wizji, że Ty musisz poprowadzić jego nowy klub żużlowy.',
  o:[
   {l:'Tak jak Pan Jezus powiedział – wchodzę w to.', f:()=>{ 
-     return [fxH(50), fxM(10), pick([fxO(5), fxO(-5)]), {t:'Wymuszony transfer + Kasa', f:(p)=>{p.next.forceClub='any'; p.budget+=pick([100000, -100000]);}}];
+     return [fxHN(50), fxM(10), pick([fxO(5), fxO(-5)]), {t:'Wymuszony transfer + Kasa', f:(p)=>{p.next.forceClub='any'; p.budget+=pick([100000, -100000]);}}];
   }},
   {l:'Prędzej zaufam wąsatemu gościowi na quadzie.', f:()=>[fxP(10)]}
  ]},
@@ -1967,12 +2055,12 @@ const WINTER_EVENTS=[
  x:'Z nudów jedziesz w Wigilię do Emilcina.',
  o:[
   {l:'Dotykasz pomnika kosmitów.', f:()=>[fxO(10)+' (Dostałeś energię z kosmosu)']},
-  {l:'Żałujesz wyjazdu, nie wierzysz w UFO.', f:()=>[fxM(-10), fxI(15)]}
+  {l:'Żałujesz wyjazdu, nie wierzysz w UFO.', f:()=>[fxM(-10), fxIN(15)]}
  ]},
 {id:'szafa_influencer', t:'SKŁADANIE SZAFY',
  x:'Nawalony żużlowy influencer dzwoni do Ciebie w grudniu i zaprasza na wspólne składanie szafy z IKEI.',
  o:[
-  {l:'Zgadzam się.', f:()=>[fxO(2), fxI(30)]},
+  {l:'Zgadzam się.', f:()=>[fxO(2), fxIN(30)]},
   {l:'Dzwonię na płokułatułę', f:()=>[fxM(-10), fxP(10)]}
  ]},
 {id:'romans_prezeska', t:'PROPOZYCJA PREZESKI',
@@ -1990,6 +2078,7 @@ const WINTER_EVENTS=[
  ]},
 {id:'zamrzniete_jezioro', t:'MROŹNY TRENING',
  x:'Mróz -20 stopni. Wpadasz na genialny pomysł trenowania na kolcach po zamarzniętym jeziorze.',
+ cond:(p)=>!injured(p),
  o:[
   {l:'Wyjeżdżam na lód.', f:()=>{ 
      if(chance(50)) return [fxEnd('Lód pęka. Utonąłeś wraz z motocyklem.')];
@@ -1999,6 +2088,7 @@ const WINTER_EVENTS=[
  ]},
 {id:'chris_harris', t:'TRENING Z BOMBEREM',
  x:'Chris Harris dzwoni w lutym i zaprasza Cię na wspólny trening na szkółkowym owalu w Anglii.',
+ cond:(p)=>!injured(p),
  o:[
   {l:'Jadę trenować.', f:()=>[fxM(30), fxP(-10)]},
   {l:'Zostaję w domu.', f:()=>[fxM(-40)]}
@@ -2014,7 +2104,7 @@ const WINTER_EVENTS=[
  o:[
   {l:'Wbijam wkręty i jadę w futrze!', f:()=>{ 
      if(chance(20)) return [fxEnd('Wkręt wyleciał koledze z opony i trafił. Tragedia na lodzie, koniec kariery.')]; 
-     if(chance(40)) return [fxI(30)+' (Rozorana łydka)'];
+     if(chance(40)) return [fxIN(30)+' (Rozorana łydka)'];
      return [fxM(30), fxO(3)];
   }},
   {l:'Za zimno, siedzę w domu z grzańcem.', f:()=>[fxP(10)]}
@@ -2033,8 +2123,9 @@ const WINTER_EVENTS=[
  ]},
 {id:'freak_fight', t:'OFERTA Z FAME MMA',
  x:'Marcin Najman i federacja freak-fightowa proponują Ci walkę w klatce z sędzią, który rok temu wyrzucił Cię w 14. biegu.',
+ cond:(p)=>!injured(p),
  o:[
-  {l:'Biorę to! Zemsta i pieniądze!', f:()=>{return [fxM(50), fxP(-30), fxI(40), {t:'Wypłata z PPV: +150 000 zł', f:(p)=>p.budget+=150000}];}},
+  {l:'Biorę to! Zemsta i pieniądze!', f:()=>{return [fxM(50), fxP(-30), fxIN(40), {t:'Wypłata z PPV: +150 000 zł', f:(p)=>p.budget+=150000}];}},
   {l:'Jestem żużlowcem, nie patusem.', f:()=>[fxP(20), fxM(-10)]}
  ]},
 {id:'kalendarz_miesny', t:'KALENDARZ SPONSORA',
@@ -2045,12 +2136,13 @@ const WINTER_EVENTS=[
  ]},
 {id:'skoki_zakopane', t:'INTEGRACJA POD KROKWIĄ',
  x:'Prezes zabiera drużynę na integrację do Zakopanego na skoki narciarskie. O 3 w nocy ktoś proponuje zjazd na miednicy z zeskoku.',
+ cond:(p)=>!injured(p),
  o:[
   {l:'Zjeżdżam, co może pójść nie tak?', f:()=>{
      if(chance(40)) return [fxLongInj('Uderzenie w bandę przy 80 km/h. Połamane obie nogi.')]; 
-     return [fxH(25), fxO(2)+' (Hart duetu)'];
+     return [fxHN(25), fxO(2)+' (Hart duetu)'];
   }},
-  {l:'Pilnuję kolegów, żeby się nie pozabijali.', f:()=>[fxP(15), fxH(-10)]}
+  {l:'Pilnuję kolegów, żeby się nie pozabijali.', f:()=>[fxP(15), fxHN(-10)]}
  ]},
 {id:'mechanik_spawa', t:'ZDRADA MECHANIKA',
  x:'W styczniu Twój główny mechanik dzwoni, że odchodzi z teamu, bo znalazł lepszą pracę przy spawaniu tłumików w Niemczech.',
@@ -2062,7 +2154,7 @@ const WINTER_EVENTS=[
  x:'Prezes startuje w lokalnych wyborach na radnego i zmusza drużynę do rozdawania ulotek pod kościołem o 7 rano w niedzielę.',
  o:[
   {l:'Rozdaję z uśmiechem.', f:()=>{return [fxM(-10), {t:'Dobre relacje (Premia +10k)', f:(p)=>p.budget+=10000}];}},
-  {l:'Wyrzucam ulotki do śmietnika.', f:()=>[fxP(5), fxM(5), fxH(-15)]}
+  {l:'Wyrzucam ulotki do śmietnika.', f:()=>[fxP(5), fxM(5), fxHN(-15)]}
  ]},
 {id:'garaz_odpalenie', t:'ZIMOWY GŁÓD METANOLU',
  x:'Nie możesz wytrzymać do wiosny. W lutym odpalasz motocykl w garażu podziemnym w swoim bloku.',
@@ -2077,13 +2169,13 @@ const WINTER_EVENTS=[
      if(chance(30)) return [fxO(5)+' (To placebo, ale działa)']; 
      return [fxP(-15), fxO(-5)+' (Zatrucie pokarmowe przed sezonem)'];
   }},
-  {l:'Wyśmiewam szamana na forum publicznym.', f:()=>[fxP(10), fxH(-10)]}
+  {l:'Wyśmiewam szamana na forum publicznym.', f:()=>[fxP(10), fxHN(-10)]}
  ]},
 {id:'tatuaz_herb', t:'PIJANY TATUAŻ',
  x:'Po noworocznej imprezie robisz sobie wielki tatuaż z herbem obecnego klubu na całych plecach.',
  o:[
   {l:'Dumnie pokazuję na Instagramie.', f:()=>{return [{t:'Blokada transferu! (Zostajesz w klubie na ten rok)', f:(p)=>p.next.forceClub='current'}, fxM(30)];}},
-  {l:'Usuwam laserowo w bolesnej tajemnicy.', f:()=>{return [{t:'-15 000 zł za zabiegi laserowe', f:(p)=>p.budget-=15000}, fxI(15)];}}
+  {l:'Usuwam laserowo w bolesnej tajemnicy.', f:()=>{return [{t:'-15 000 zł za zabiegi laserowe', f:(p)=>p.budget-=15000}, fxIN(15)];}}
  ]},
 {id:'esport_speedway', t:'TURNIEJ E-SPORTOWY',
  x:'Zima się dłuży, więc bierzesz udział w oficjalnym turnieju e-sportowym w Speedway Challenge.',
@@ -2104,13 +2196,14 @@ const WINTER_EVENTS=[
      if(chance(30)) return [fxEnd('Petarda wybuchła w dłoni. Uraz amputacyjny. Koniec kariery.')]; 
      return [fxM(5), fxO(2)];
   }},
-  {l:'Nie ruszam tego gówna, chronię ręce.', f:()=>[fxP(15), fxI(-10)]}
+  {l:'Nie ruszam tego gówna, chronię ręce.', f:()=>[fxP(15), fxIN(-10)]}
  ]},
 {id:'morsowanie', t:'ZIMOWE MORSOWANIE',
  x:'Prezes umawia drużynę na modne morsowanie w lokalnym jeziorze, żeby zbudować charakter.',
+ cond:(p)=>!injured(p),
  o:[
-  {l:'Wchodzę do przerębla z uśmiechem.', f:()=>[fxH(15), fxO(2)]},
-  {l:'Zostaję na brzegu w kurtce.', f:()=>[fxH(-15), fxP(-5)]}
+  {l:'Wchodzę do przerębla z uśmiechem.', f:()=>[fxHN(15), fxO(2)]},
+  {l:'Zostaję na brzegu w kurtce.', f:()=>[fxHN(-15), fxP(-5)]}
  ]},
 {id:'silnik_puzle', t:'ZABAWA W TUNERA',
  x:'Z nudów rozkręciłeś swój najlepszy silnik wyścigowy na dywanie w salonie, ale zapomniałeś, jak złożyć rozrząd.',
@@ -2138,9 +2231,10 @@ const WINTER_EVENTS=[
  ]},
 {id:'oboz_survival', t:'SURVIVAL W BIESZCZADACH',
  x:'Prezes organizuje zimowy obóz survivalowy w Bieszczadach. Zero telefonów, spanie w szałasie i jedzenie kory.',
+ cond:(p)=>!injured(p),
  o:[
-  {l:'Przechodzę to i wracam twardszy.', f:()=>[fxO(5), fxH(20), fxI(10)]},
-  {l:'Uciekam w nocy do pensjonatu z ciepłą wodą.', f:()=>[fxP(-15), fxH(-20)]}
+  {l:'Przechodzę to i wracam twardszy.', f:()=>[fxO(5), fxHN(20), fxIN(10)]},
+  {l:'Uciekam w nocy do pensjonatu z ciepłą wodą.', f:()=>[fxP(-15), fxHN(-20)]}
  ]},
 {id:'swiecenie_motocykli', t:'ŚWIĘCENIE SPRZĘTU',
  x:'W marcu prezes zaprasza lokalnego proboszcza na święcenie motocykli. Ksiądz polewa je obficie wodą święconą prosto po gaźnikach.',
@@ -2168,6 +2262,7 @@ const WINTER_EVENTS=[
  ]},
 {id:'cross_zima', t:'TRENING NA ZAMARZNIĘTYM CROSSIE',
  x:'Koledzy wyciągają Cię na zamarznięty tor motocrossowy. Opony ślizgają się jak na szkle.',
+ cond:(p)=>!injured(p),
  o:[
   {l:'Idę pełnym gazem, muszę czuć prędkość!', f:()=>{
      if(chance(35)) return [fxLongInj('Koszmarny upadek na zlodowaciałej ziemi. Złamana miednica.')]; 
@@ -2184,8 +2279,8 @@ const WINTER_EVENTS=[
 {id:'spor_kibice_zima', t:'SPOTKANIE Z KIBOLAMI',
  x:'Na przedsezonowej prezentacji gniazdowy wytyka Ci słabą formę z zeszłego roku i każe oddać kevlar.',
  o:[
-  {l:'Pyskujesz z mikrofonem w ręku.', f:()=>[fxM(35), fxP(-20), fxH(-25)]},
-  {l:'Bierzesz na klatę i obiecujesz poprawę.', f:()=>[fxP(15), fxH(15)]}
+  {l:'Pyskujesz z mikrofonem w ręku.', f:()=>[fxM(35), fxP(-20), fxHN(-25)]},
+  {l:'Bierzesz na klatę i obiecujesz poprawę.', f:()=>[fxP(15), fxHN(15)]}
  ]},
 {id:'praca_budowa', t:'DORABIANIE NA BUDOWIE',
  x:'Budżet na zimę się nie spina. Idziesz robić na budowie u wujka, żeby opłacić mechaników.',
@@ -2196,15 +2291,16 @@ const WINTER_EVENTS=[
 {id:'zmiana_numeru', t:'KŁÓTNIA O NUMER STARTOWY',
  x:'Nowy zimowy hit transferowy Twojego klubu dzwoni i żąda oddania Twojego szczęśliwego numeru startowego.',
  o:[
-  {l:'Oddajesz bez walki, dla dobra atmosfery.', f:()=>[fxP(10), fxH(-10), fxO(-2)]},
-  {l:'Stawiasz się i robisz kwas w mediach.', f:()=>[fxP(-15), fxH(20), fxM(25)]}
+  {l:'Oddajesz bez walki, dla dobra atmosfery.', f:()=>[fxP(10), fxHN(-10), fxO(-2)]},
+  {l:'Stawiasz się i robisz kwas w mediach.', f:()=>[fxP(-15), fxHN(20), fxM(25)]}
  ]},
 {id:'narty_z_woda', t:'KULIG ZA BUSEM',
  x:'Grudzień, spadło dużo śniegu. Mechanicy przywiązali starą maskę od Żuka do haka w klubowym busie i robią kulig po polnej drodze.',
+ cond:(p)=>!injured(p),
  o:[
   {l:'Wsiadam na maskę, gazu!', f:()=>{
      if(chance(25)) return [fxLongInj('Bus szarpnął, wyleciałeś w drzewo. Uraz kręgosłupa, cały sezon z głowy.')]; 
-     return [fxH(30), fxO(3)];
+     return [fxHN(30), fxO(3)];
   }},
   {l:'Nagrywam ich tylko na telefon.', f:()=>[fxM(10), fxP(10)]}
  ]},
@@ -2216,6 +2312,7 @@ const WINTER_EVENTS=[
  ]},
 {id:'testy_na_lodzie', t:'TESTY NA ZAMARZNIĘTYM JEZIORZE',
  x:'Tuner dzwoni, że wymyślił nową krzywkę rozrządu i musisz ją przetestować w lutym na zamarzniętym jeziorze.',
+ cond:(p)=>!injured(p),
  o:[
   {l:'Ryzykuję utonięcie i jadę testować.', f:()=>{
      if(chance(20)) return [fxEnd('Lód zarwał się pod motocyklem. Utonąłeś.')]; 
@@ -2231,9 +2328,10 @@ const WINTER_EVENTS=[
  ]},
 {id:'trening_z_psem', t:'TRENING Z PITBULLEM',
  x:'Dla poprawy refleksu zimą postanawiasz biegać po lesie, uciekając przed agresywnym psem kolegi.',
+ cond:(p)=>!injured(p),
  o:[
   {l:'Biegnij Forrest, biegnij!', f:()=>{
-     if(chance(40)) return [fxI(50)+' (Pies Cię dopadł i pogryzł łydkę)']; 
+     if(chance(40)) return [fxIN(50)+' (Pies Cię dopadł i pogryzł łydkę)']; 
      return [fxO(8)+' (Kondycja jak u maratończyka)'];
   }},
   {l:'Zapisuję się normalnie na siłownię.', f:()=>[fxP(10), fxO(2)]}
@@ -2267,7 +2365,7 @@ const WINTER_EVENTS=[
 
 {id:'zima_zabrze', t:'PRZYGOTOWANIA ZIMOWE: HISZPANIA CZY SIŁOWNIA W ZABRZU',
  x:'Grupa zawodników leci na trzy tygodnie do Almerii. Alternatywa to siłownia na osiedlu w Zabrzu, gdzie pan Mietek każe robić przysiady na czas.',
- cond:(p)=>p.budget>=80000,
+ cond:(p)=>p.budget>=80000 && !injured(p),
  w:3,
  o:[
   {l:'Lecę do Hiszpanii.', f:()=>[fxK(-80000), fxO(3), fxP(5), fxHN(5)]},
@@ -2302,7 +2400,7 @@ const WINTER_EVENTS=[
 
 {id:'cross', t:'CROSS I MELDONIUM',
  x:'Cztery miesiące bez meczu i przekonanie, że masz za mało jazdy. Dostajesz zaproszenie na zimowe treningi motocrossowe, a przy okazji ktoś podsuwa ci „coś na regenerację”.',
- cond:(p)=>p.form<0,
+ cond:(p)=>p.form<0 && !injured(p),
  w:4,
  o:[
   {l:'Jadę, bo co może się złego wydarzyć.', f:()=>{const r=R(1,100);
@@ -2401,7 +2499,7 @@ const WINTER_EVENTS=[
      return ['Tajemnica ujawniona — naprawdę Unia Leszno To Nie Jest Polski Klub.', fxM(30),
              'W KOLEJNYM SEZONIE ZALICZASZ 0 MECZÓW.', 'Brak oferty kontraktu od Leszna.']; }},
   {l:'Liczy się tu i teraz!',
-   f:()=>['Ciekawe, kiedy tajemnice ujrzą światło dzienne…', fxP(10), fxA(3), fxHN(10)]}
+   f:()=>['Ciekawe, kiedy tajemnice ujrzą światło dzienne…', fxP(10), fxAN(3), fxHN(10)]}
  ]},
 
 {id:'komentowanie_drwal', t:'KOMENTOWANIE — DRWAL',
@@ -2428,9 +2526,36 @@ const WINTER_EVENTS=[
      if(r===2) return ['Sponsor jednak się targuje.', fxK(Math.round(base*0.5))];
      return ['Sponsor odpala kampanię w podwójnym budżecie.', fxM(10), fxK(base*2)];
    }}
+ ]},
+
+/* ===== KONTUZJOWANY W PRZERWIE ZIMOWEJ ===== */
+/* Te same zasady, co przy zdarzeniach sezonowych: fizycznie niemożliwe rzeczy
+   (Argentyna, zgrupowania, treningi na lodzie) są teraz zablokowane dla
+   kontuzjowanego (patrz injured() w engine.js), ale zima w gipsie to wciąż
+   zima — poniższe trzy zdarzenia trafiają się WYŁĄCZNIE jemu. */
+{id:'kontuzja_zima_kibice', t:'KIBICE PRZYWOŻĄ KARTKĘ DO SZPITALA',
+ x:'Delegacja kibiców przyjeżdża pod dom z ogromną kartką „Wracaj zdrowy" i skrzynką piwa bezalkoholowego — „bo wiadomo, rehabilitacja". Ktoś od razu robi z tego relację na klubowym Facebooku.',
+ cond:(p)=>injured(p),
+ o:[
+  {l:'Wpuszczam ich, robimy sobie zdjęcie do gazety.', f:()=>[fxM(12), fxL(6)]},
+  {l:'Dziękuję przez domofon, nie jestem w formie na gości.', f:()=>[fxP(5), fxM(-4)]}
+ ]},
+{id:'kontuzja_zima_offer', t:'KLUB PYTA, CZY ZDĄŻYSZ NA OKIENKO',
+ x:'Zarząd dzwoni z pytaniem wprost: czy z takim urazem w ogóle warto czekać, czy lepiej od razu szukać zawodnika na zastępstwo na cały przyszły sezon. Twoja odpowiedź trafi do protokołu z zebrania.',
+ cond:(p)=>injured(p),
+ o:[
+  {l:'Zapewniam, że wrócę silniejszy niż przed kontuzją.', f:()=>[fxP(8), fxM(4), 'Zarząd zapisuje to sobie na przyszłość — dobrze albo źle, zależy, jak wróci sezon.']},
+  {l:'Mówię wprost: decyzja należy do nich, ja teraz się nie liczę.', f:()=>[fxL(-4), fxP(3), 'Szczerze, ale zarząd zapamiętuje taki ton.']}
+ ]},
+{id:'kontuzja_zima_dieta', t:'ZIMA NA KANAPIE',
+ x:'Bez treningów i bez toru dni w gipsie ciągną się jednakowo — kanapa, telewizor, jedzenie na pocieszenie. Dietetyk klubowy dzwoni z przypomnieniem, że mięśnie, których nie używasz, nie czekają w miejscu.',
+ cond:(p)=>injured(p),
+ o:[
+  {l:'Trzymam dietę mimo wszystko, choć nie mogę jeździć.', f:()=>[fxP(7), fxIN(-4)+' (wracasz z mniejszą nadwyżką kilogramów do zrzucenia)']},
+  {l:'Odpuszczam sobie — i tak nikt tego nie widzi.', f:()=>[fxP(-6), 'Kilka kilogramów, które trener zauważy pierwszego dnia zbiórki.']}
  ]}
 ];
- 
+
 /* --- PROGI UPADŁOŚCI (jedno miejsce do kręcenia gałką) ---
    Uwaga na skalę: ARESZTOWANIE PREZESA losuje się teraz z szansą ok. 1,5% na klub
    na sezon (patrz clubEconomy() w engine.js), a klubów jest 24. Przy onArrest:40
@@ -2506,6 +2631,22 @@ const NAZW=['Nowak','Wiśniewski','Wójcik','Kamiński','Zieliński','Szymański
  'Zawadzki','Sadowski','Chmielewski','Włodarczyk','Borkowski','Czarnecki','Sawicki','Sokołowski','Urbański',
  'Kubiak','Maciejewski','Szczepański','Kucharski','Wilk','Kalinowski','Mazurek','Wysocki','Adamski',
  'Kaźmierczak','Sobczak','Czerwiński','Konieczny','Kaczmarek','Głowacki','Bednarek','Ziółkowski'];
+
+/* ============================================================
+   PULA NAZWISK ZAGRANICZNYCH — PUCHAR MACEC
+   Fikcyjne imiona i nazwiska z krajów startujących w Pucharze MACEC
+   (Słowacja, Czechy, Rumunia, Bułgaria, Węgry, Ukraina), używane WYŁĄCZNIE
+   do wygenerowania stawki rywali w simMacecCup() (engine.js). Żadna z tych
+   osób nie odpowiada realnemu zawodnikowi.
+   ============================================================ */
+const MACEC_NAMES=[
+ {n:'Ján Baláž',        c:'SVK'}, {n:'Tomáš Vrba',        c:'SVK'}, {n:'Filip Krajčí',    c:'SVK'},
+ {n:'Ondřej Novotný',   c:'CZE'}, {n:'Václav Beneš',      c:'CZE'}, {n:'Jakub Procházka', c:'CZE'},
+ {n:'Cristian Dumitrescu', c:'ROU'}, {n:'Andrei Popescu', c:'ROU'},
+ {n:'Ivan Georgiev',    c:'BGR'}, {n:'Dimitar Petrov',    c:'BGR'},
+ {n:'Bálint Kovács',    c:'HUN'}, {n:'Zsolt Nagy',        c:'HUN'},
+ {n:'Andrij Kovalenko', c:'UKR'}, {n:'Roman Tkachenko',   c:'UKR'}, {n:'Ołeksandr Bondar', c:'UKR'}
+];
 
 /* ============================================================
    PULA IMION I NAZWISK DLA PROPOZYCJI NA EKRANIE TWORZENIA POSTACI

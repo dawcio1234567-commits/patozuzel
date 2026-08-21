@@ -156,31 +156,17 @@ function liveOrderBox(order, title){
   </div></div>`;
 }
 /* SPRINT 5b: skrótowe skutki decyzji na torze, ZAWSZE widoczne (nie .hint) —
-   gracz w trakcie biegu ma sekundę, a nie minutę na czytanie. Liczby lecą
-   wprost z COLL (engine/29b-live-kolizje.js), więc przekręcenie stałej tam
-   od razu widać tutaj — nic nie jest przepisane na sztywno.
-   Werdykt sędziego po „LEŻ" to trzy WAGI, nie procenty: dzielimy je przez
-   sumę i dopiero to jest szansa. Profesjonalizm przesuwa wszystkie trzy
-   (im niższy, tym chętniej sędzia obwinia ciebie i tym częściej widzi
-   symulowanie) — dokładnie tak, jak liczy to liveFallResolve(). */
-function liveLieOdds(live){
- const C=(typeof COLL!=='undefined')?COLL:{};
- const prof=(G&&G.p)?G.p.prof:50, d=50-prof;
- const you=Math.max(1,(C.fallLieYou!=null?C.fallLieYou:45)+d*0.20);
- const riv=Math.max(0,(C.fallLieRival!=null?C.fallLieRival:30)-d*0.10);
- const red=Math.max(1,(C.fallLieRed!=null?C.fallLieRed:25)+((live&&live.layDown)||0)*10+d*0.10);
- const t=you+riv+red;
- return {you:Math.round(you/t*100), riv:Math.round(riv/t*100), red:Math.round(red/t*100)};
-}
+   gracz w trakcie biegu ma sekundę, a nie minutę na czytanie.
+   COLL siedzi w engine/29b-live-kolizje.js; gdyby któraś nazwa pola była tam
+   inna, wartości spadną na bezpieczne domyślne i wystarczy je podmienić TU. */
 function moveNote(id){
  const C=(typeof COLL!=='undefined')?COLL:{};
- const O=liveLieOdds(null);
- const injPlot=C.rivalInjuryPlot!=null?C.rivalInjuryPlot:34;
- const injPika=C.rivalInjuryPika!=null?C.rivalInjuryPika:30;
+ const inj = C.rivalInjury!=null?C.rivalInjury:22;
+ const bl  = C.blameRival!=null?C.blameRival:35;
  return id==='ajs'   ? `<span style="color:#fdba74"> · sufit 15% · udany = OD RAZU 1. MIEJSCE · nieudany = kraksa, sprzęt i czasem OVR</span>`
-      : id==='plot'  ? `<span style="color:#fca5a5"> · ${injPlot}% że rywal nie wstaje (karetka, −OVR, koniec jego zawodów) · jak sam wylądujesz na piachu i zostaniesz leżeć: ${O.riv}% że sędzia wskaże JEGO, ${O.you}% że ciebie, ${O.red}% czerwona za symulowanie</span>`
-      : id==='pika'  ? `<span class="text-zinc-500"> · udane = wyprzedzenie · nieudane = obaj po dmuchawie · ${injPika}% kontuzji rywala przy kontakcie</span>`
+      : id==='plot'  ? `<span style="color:#fca5a5"> · ${inj}% że rywal się nie podniesie · ${bl}% że sędzia wyklucza JEGO, nie ciebie · reszta: lecisz sam</span>`
       : id==='nozyce'? `<span class="text-zinc-500"> · udane = wyprzedzenie i zamknięte wyjście · nieudane = tracisz pozycję</span>`
+      : id==='pika'  ? `<span class="text-zinc-500"> · udane = wyprzedzenie · nieudane = obaj po dmuchawie</span>`
       : '';
 }
 function scLive(){
@@ -294,7 +280,7 @@ function scLive(){
        spiker milczy. Masz sekundę.</div>
      <div class="space-y-2">
       <button onclick="liveAct('lie')" class="btn-d w-full text-left px-3 py-2 text-[12px]">
-        <b>LEŻ</b> <span style="color:#fca5a5">— ${(()=>{const O=liveLieOdds(L);return O.riv+'% wykluczą RYWALA · '+O.you+'% ciebie · '+O.red+'% czerwona za symulowanie';})()}</span>
+        <b>LEŻ</b>
         <div class="hint text-[10.5px] mt-0.5" style="color:#fca5a5">Sędzia MUSI przerwać bieg — i MUSI kogoś wskazać.
         Wyklucza ciebie jako sprawcę, wyklucza rywala, który cię dołożył, albo daje ci
         <b>czerwoną kartkę za symulowanie</b>. Do tego szansa, że karetka zabierze cię z toru i skończy ci zawody.</div></button>

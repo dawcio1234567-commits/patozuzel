@@ -21,14 +21,14 @@ function scCreate(){
      <input id="pname" maxlength="28" value="${esc(suggestName())}" class="w-full sm:w-96">
      <button onclick="rollName()" class="btn px-3 py-2 text-[11px] font-bold tracking-widest text-orange-500">LOSUJ</button>
    </div>
-   <div class="hint text-[11px] text-zinc-400 mt-1">Propozycja jest losowana z puli imion i nazwisk. Możesz ją nadpisać własną.</div></div>
+   <div class="text-[11px] text-zinc-400 mt-1">Propozycja jest losowana z puli imion i nazwisk. Możesz ją nadpisać własną.</div></div>
    <div><label class="block text-[11px] text-zinc-300 tracking-widest mb-2">KLASA POSTACI</label>
    <div class="grid sm:grid-cols-2 gap-2">
    ${CLASSES.map(c=>`<label class="brut p-3 cursor-pointer hover:border-orange-600 block">
      <div class="flex items-start gap-2"><input type="radio" name="cls" value="${c.id}" ${c.id==='bez'?'checked':''} class="mt-1 accent-orange-500">
      <div><div class="font-bold text-zinc-100">${c.n}</div>
      <div class="text-[11px] text-orange-600 tracking-widest">OVR ${c.ovr[0]}–${c.ovr[1]}</div>
-     <div class="hint text-[11px] text-zinc-300 mt-1">${c.d}</div></div></div></label>`).join('')}
+     <div class="text-[11px] text-zinc-300 mt-1">${c.d}</div></div></div></label>`).join('')}
    </div></div>
 
    <div><label class="block text-[11px] text-zinc-300 tracking-widest mb-2">CZY CHCESZ SAM JEŹDZIĆ NAJWAŻNIEJSZE MECZE?</label>

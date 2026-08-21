@@ -55,7 +55,7 @@ function liveSetupBox(L, editable){
  const mw=L.mechWx||null;
  const risk = S.risk||0;
  const row=(lab, key, list, cur, hintTxt, ideal)=>`<div class="mb-2.5">
-   <div class="text-[10px] text-zinc-500 tracking-widest mb-1">${lab}${hintTxt?`<span class="hint text-zinc-600 normal-case"> — ${hintTxt}</span>`:''}</div>
+   <div class="text-[10px] text-zinc-500 tracking-widest mb-1">${lab}${hintTxt?`<span class="text-zinc-600 normal-case"> — ${hintTxt}</span>`:''}</div>
    ${liveRowBtns(L, editable, key, list, cur, ideal)}
  </div>`;
  return `<div class="p-3 pt-0">
@@ -72,10 +72,10 @@ function liveSetupBox(L, editable){
      Gaźnik idzie za samą wilgotnością, długość i zapłon za stanem toru. Silnik to sprawdza i nie udaje, że nie widzi.
    </div>
   </div>
-  ${row('DYSZA (0-5)','jet',SETUPB.jet,S.jet,'zależy od TEMPERATURY i WILGOTNOŚCI', mw?mw.jet:null)}
-  ${row('GAŹNIK — igła (0-3)','carb',SETUPB.carb,S.carb,'zależy od WILGOTNOŚCI', mw?mw.carb:null)}
-  ${row('DŁUGOŚĆ MOTOCYKLA (0-3)','len',SETUPB.len,S.len,'zależy od PRZYCZEPNOŚCI TORU', mw?mw.len:null)}
-  ${row('ZAPŁON (0-3)','ign',SETUPB.ign,S.ign,'zależy od PRZYCZEPNOŚCI TORU', mw?mw.ign:null)}
+  ${row('DYSZA (0-5)','jet',SETUPB.jet,S.jet,'ZIMNO i SUCHO = wyżej, CIEPŁO i MOKRO = niżej', mw?mw.jet:null)}
+  ${row('GAŹNIK — igła (0-3)','carb',SETUPB.carb,S.carb,'SUCHO = wyżej, WILGOTNO = niżej', mw?mw.carb:null)}
+  ${row('DŁUGOŚĆ MOTOCYKLA (0-3)','len',SETUPB.len,S.len,'TOR TRZYMA = dłuższy, BETON = krótszy', mw?mw.len:null)}
+  ${row('ZAPŁON (0-3)','ign',SETUPB.ign,S.ign,'TOR TRZYMA = późniejszy, BETON = wcześniejszy', mw?mw.ign:null)}
   <div class="text-[12px] font-bold mt-2" style="color:${V.c}">${esc(V.t)}</div>
   ${mw?`<div class="text-[12px] text-zinc-200 mt-2 border-l-2 border-zinc-600 pl-3">
     <b class="text-zinc-400">${esc(G.p.mechName)}:</b> ${esc(mw.txt)}
@@ -143,6 +143,11 @@ function liveTrackBox(L, editable){
      <div class="hint text-[10px] text-zinc-500 mt-0.5">trafność podpowiedzi tego mechanika: ok. ${L.mech.acc}%</div></div>`:''}
   </div>
   ${liveSetupBox(L, ed)}
+  ${auto?'':`<div class="p-3 pt-0"><button onclick="liveAct('setup','auto:1')" class="btn w-full text-left px-3 py-2 text-[12px]" style="border-color:#38bdf8">
+    <b style="color:#7dd3fc">JESTEM NIEDŹWIEDZIAKIEM I ZOSTAWIAM USTAWIENIA STAREMU</b>
+    <span class="text-zinc-500">— profesjonalizm −${(typeof BIGM!=='undefined'&&BIGM.autoProf!=null)?BIGM.autoProf:5} p.p.</span>
+    <div class="text-[10.5px] text-zinc-400 mt-0.5">Mechanik (${G.p.mech}/99) ustawia wszystko sam do końca zawodów, ty nie ruszasz nic.
+    Ryzyko „dwóch minut" zostaje. Nie do cofnięcia.</div></button></div>`}
  </div>`;
 }
 /* --- PATO-KOMENTARZE POMECZOWE (Sprint 4) --- */

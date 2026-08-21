@@ -65,6 +65,13 @@ gra/
 > Do `index.html` doszły też dwie klasy CSS: `.pulse-hot` i `.pulse-txt` (pulsujący
 > boks warsztatu), razem z `@media (prefers-reduced-motion:reduce)`.
 
+> **Po Sprincie 5 NIE DOSZEDŁ ANI JEDEN PLIK.** Cała paczka (podpowiedzi mechanika
+> na wszystkie ustawienia, czystka zdarzeń w turniejach indywidualnych, chowanie
+> opisów, wybór trybu na starcie kariery, tryb „Jestem Niedźwiedziakiem" i limit
+> jednego wywiadu na zawody) zmieściła się w plikach, które już są — więc
+> **listy `<script>` w `index.html` nie ruszasz**. Doszła za to jedna sekcja CSS:
+> klasa `.hint` i `body.ui-full .hint` (opisy pod przyciskami).
+
 Wszystko to **zwykłe skrypty globalne**, bez `import`/`export` — dokładnie tak jak było.
 Kolejność ładowania w `index.html` **ma znaczenie** i idzie po numerkach w nazwach:
 `data/` → `engine/` → `ui/`, a `boot` (`G=newGame(); render();`) jest na końcu `index.html`.
@@ -194,6 +201,12 @@ i sam nowy plik. Powiedz tylko, jak ma się nazywać — resztę dopiszę.
 | zmienić przebieg meczu drużynowego na żywo | `engine/31-live-mecz.js` |
 | zmienić przebieg turnieju na żywo | `engine/32-live-turniej.js` |
 | poprawić sam wygląd ekranu jazdy | `ui/09-ekran-live.js` |
+| zmienić **podpowiedzi mechanika** (na co typuje, jak celnie, kiedy się pojawiają) | `engine/28b-sprzet-live.js` (`liveMechWeather`, `liveTrackInit`) + `data/70-wielki-mecz.js` (`BIGM.mechMin` / `mechMax`) |
+| przekręcić tryb **„Jestem Niedźwiedziakiem"** (cena, celność mechanika) | `data/70-wielki-mecz.js` (`BIGM.autoProf`) + `engine/28b-sprzet-live.js` (`liveMechAutoSet`) |
+| zmienić **teksty mechanika** przy oddanym sprzęcie | `engine/28b-sprzet-live.js` (`SETUPB.autoOn`, `SETUPB.autoNone`, `SETUPB.trkGrip`, `SETUPB.trkHard`) |
+| zmienić **limit wywiadów na zawody** | `data/70-wielki-mecz.js` (`BIGM.side.itwCap`) |
+| wyciąć / dopuścić zdarzenie albo pytanie **w turnieju indywidualnym** | `data/71-mecz-zdarzenia.js` (flaga `team:true`) |
+| zmienić głosy pomeczowe **osobno dla turniejów** | `data/72-glosy-pomeczowe.js` (`team:true` i blok `ind:{who,lines}`) |
 
 ### Kontrakty i rynek
 
@@ -208,7 +221,9 @@ i sam nowy plik. Powiedz tylko, jak ma się nazywać — resztę dopiszę.
 
 | chcę | podeślij |
 |---|---|
-| ekran tworzenia postaci, changelog na stronie | `ui/01-ekran-tworzenia.js` |
+| ekran tworzenia postaci, changelog na stronie, **wybór trybu rozgrywki** | `ui/01-ekran-tworzenia.js` |
+| **schowane opisy pod przyciskami** (klasa `.hint`) i przełącznik w nagłówku | `ui/00-wspolne.js` (`toggleHints`, `applyHints`) + `index.html` (CSS `.hint`) |
+| ustawienia całej kariery (np. czy gra proponuje jazdę na żywo) | `engine/03-stan-gry.js` (`G.opts`, `gameOpt`, `setGameOpt`) |
 | hub między sezonami, podgląd kadry | `ui/04-ekran-hub.js` |
 | warsztat, ostrzeżenia, prognoza kariery | `ui/05-ekran-warsztat.js` |
 | raport sezonu: zakładki i kafelki | `ui/10-podsumowanie.js` |
@@ -658,3 +673,184 @@ a także do `G.S.bigLog[].voices`.
   tamte `fx*` działają na sezonie, te na zawodach.
 - **Dług ze Sprintu 2 nadal otwarty:** `engine/17-playoff.js`, `engine/18-dmpj.js`
   i `engine/09-sezon-przebieg.js` wciąż nie sprawdzają `M.abandoned && !M.abandonCounted`.
+
+Co siedzi gdzie
+
+data/41-zdarzenia-zwiazek.js — zdarzenia 1–8 (Gollob, Niedoszły, Związek zawodowy, Telewizja Pustacki, Wkopywanie band, Wystające gwoździe, UOKiK, Uprowadzenie rodzicielskie)
+data/42-zima-zwiazek.js — zdarzenia 9–10 (Wylotówka i zbiórki, Szantaż wybitnego)
+engine/34-zwiazek-cegla.js — flagi, ryczałt, KSM, forceClub='rival', brakujące helpery
+ui/23-zwiazek-cegla.js — boks „ZWIĄZEK ZAWODOWY I CEGIELSKI"
+
+Trzy decyzje, o które pytałeś
+
+Ryczałt +50 000 zł dopisuje opakowany startSeason() — jedna linijka na sezon, z wpisem do G.szzzLog. Wyświetla się w boksie (HUB przed każdym sezonem + raport sezonu).
+Wyrok UOKiK ustawia G.ksmMul, który mnoży stawkę w opakowanym offerRate() — czyli wchodzi do każdej przyszłej oferty, z osobną linijką w rozpisce „skąd ta stawka". Bieżący kontrakt dostaje ×1,25 od razu (rate i bonus — w tym silniku premia nazywa się bonus, nie sign).
+p.ceglaLvl bez sufitu, widoczny jako „poziom N — Podlizywacz / Cegielski / Betoniarz / Fundament centrali".
+
+
+---
+
+## Sprint 5 — co dokładnie się zmieniło (24.08.2026)
+
+**Zero nowych plików.** Wszystko weszło w istniejące moduły, więc `index.html`
+dostał tylko jedną nową sekcję CSS. Lista ruszonych plików na końcu rozdziału.
+
+### 1. Podpowiedzi mechanika WIDAĆ, i to przy każdym ustawieniu
+
+Zgłoszenie było dwuczęściowe i obie części miały ten sam korzeń — `live.grip`.
+
+**a) „Przed meczem nie wyświetlają się podpowiedzi mechaników".** Stan toru był
+`null` aż do wejścia w PIERWSZY WŁASNY bieg, a `liveTrackBox()` (ui/09c) zaczyna
+od `if(L.grip==null) return ''`. Skutek: w parku maszyn przed zawodami i na
+ekranie „między biegami" nie było ANI boksu warsztatu, ANI jednego słowa
+mechanika — gracz dostawał go dopiero wtedy, gdy i tak było już późno.
+Teraz **`liveTrackInit(live)`** (engine/28b) losuje tor i pierwszy typ mechanika
+razem z pogodą, zaraz po `liveSetupInit()`. Do tego **`liveMechRefresh(live)`**
+odświeża podpowiedź na ekranie „między biegami" w obu generatorach.
+
+**b) „Podpowiedzi dokładne mechanika powinny się wyświetlać co do wszystkich
+ustawień, nie tylko zębatki".** `liveMechWeather()` typował wyłącznie DYSZĘ
+i GAŹNIK, więc przy DŁUGOŚCI i ZAPŁONIE nie było żadnej liczby — tylko napis
+„zależy od PRZYCZEPNOŚCI TORU". Teraz typuje **wszystkie cztery** (`jet`, `carb`,
+`len`, `ign`), a zębatka ma swój typ jak dotąd (`liveMech`). **Każda podpowiedź
+losowana jest OSOBNO** tą samą trafnością `BIGM.mechMin`–`BIGM.mechMax` (45–96%
+wg `p.mech`), więc szwagier Mirek potrafi trafić dyszę i spudłować zapłon —
+i to jest zamierzone, bo inaczej mechanik byłby przełącznikiem „wiem / nie wiem".
+Boks pokazuje teraz **zielone „mechanik: TAK ZOSTAW"**, kiedy jego typ zgadza się
+z tym, co masz ustawione.
+
+### 2. Turniej indywidualny bez trenera i bez kolegi z pary
+
+W zawodach indywidualnych nie ma drużyny, więc nie ma kolegi z pary, kierownika
+drużyny ani „naszego" prezesa. `engine/32-live-turniej.js` zapala teraz
+**`live.ind = true`**, a `engine/30b-live-zdarzenia.js` wycina po tej fladze:
+
+| co | jak oznaczone | gdzie |
+|---|---|---|
+| całe zdarzenie (`KOLEGA Z PARY PROSI CIĘ O SILNIK`, `PREZES SCHODZI DO PARKU MASZYN`) | `team:true` przy zdarzeniu | `data/71` |
+| pojedyncza opcja (`POŻYCZ BUTY OD JUNIORA`) | `team:true` przy opcji | `data/71` |
+| pytanie wywiadu (o trenera, o gospodarzy, o „pana klub") | `team:true` przy pytaniu | `data/71` |
+| głos pomeczowy spikera o wyniku drużyny | `team:true` przy boksie | `data/72` |
+
+Trzy głosy, które miały sens także bez drużyny, dostały **wariant `ind:{who,lines}`**:
+KOLEGA Z PARY → RYWAL Z SĄSIEDNIEGO BOKSU, KIEROWNIK DRUŻYNY → SĘDZIA ZAWODÓW,
+RZECZNIK KLUBU → MENEDŻER / REDAKTOR. Przy okazji naprawiony cichy błąd: pętla
+dobijająca listę do `SIDE.voices` brała klucze **z całego `LIVE_TALK`**, więc po
+turnieju indywidualnym potrafił się odezwać spiker gratulujący „łomotu" drużynie,
+której tam nie było.
+
+Opcja `POKAŻ TO KIEROWNIKOWI DRUŻYNY` w zdarzeniu z SMS-em nie została wycięta,
+tylko **przepisana na neutralną** (`ZANIEŚ TELEFON DO WIEŻY, DO SĘDZIEGO ZAWODÓW`) —
+działa w obu trybach, bo sędzia zawodów jest wszędzie.
+
+### 3. Interfejs: opisy schowane domyślnie
+
+Zgłoszenie: „znowu jest za dużo małego tekstu". Rozwiązanie jest jedno i globalne,
+a nie punktowe: **każdy akapit tłumaczący mechanikę ma klasę `.hint`**, którą CSS
+w `index.html` chowa, dopóki na `<body>` nie ma klasy `ui-full`. W nagłówku
+każdego ekranu (`head()` w `ui/00-wspolne.js`) stoi przełącznik
+**„▸ POKAŻ OPISY / ▾ UKRYJ OPISY"** — działa na całą grę i przeżywa zmianę ekranu,
+bo `render()` woła `applyHints()`.
+
+Domyślnie: **schowane**. Zasada przy dopisywaniu nowych ekranów jest jedna:
+liczba, nazwa i procent zostają widoczne, tłumaczenie idzie do `.hint`. Po
+zwinięciu opisów ekran musi dalej dać się OBSŁUŻYĆ — tylko bez wykładu.
+
+Objęte: `ui/09` (13 opisów akcji parku maszyn i biegu), `ui/09b` (typ trenera,
+warsztat, autorytet, cytat, paragraf), `ui/09c` (cały warsztat, wywiad, zdarzenie),
+`ui/08` (trzy drogi wielkiego meczu), `ui/01` (klasy postaci, tryb rozgrywki).
+Przy okazji warsztat pokazuje krótsze etykiety (`DYSZA (0-5)` zamiast
+`DYSZA (0 = najuboższa, 5 = najbogatsza)`) — pełny opis siedzi w `.hint`.
+
+### 4. Wybór na starcie kariery: czy w ogóle chcesz jeździć sam
+
+Na ekranie tworzenia zawodnika doszła trzecia decyzja, obok nazwiska i klasy:
+**TAK, SIADAM NA MOTOCYKLU** albo **NIE, PRZESYMULUJ MI WSZYSTKO**.
+
+Wybór ląduje w **`G.opts.liveMatches`** (`engine/03-stan-gry.js`), a bramka stoi
+w **`bigMatchAsk()`** (`engine/28-wielki-mecz.js`) — czyli w jedynym miejscu,
+przez które przechodzą wszystkie trzy drogi do jazdy na żywo (mecz klubowy,
+dwumecz, turniej indywidualny). Przy `false` gra nigdy nie pokaże ekranu wyboru
+i nigdy nie wejdzie w `liveMeetingGen()` / `liveGpRoundGen()`.
+
+Stare zapisy nie mają `G.opts`, dlatego wszędzie czyta się to przez
+**`gameOpt('liveMatches')`**, które przy braku pola zwraca `true` — rozgrywka
+sprzed patcha zachowuje się dokładnie tak, jak dotąd.
+
+### 5. „JESTEM NIEDŹWIEDZIAKIEM I ZOSTAWIAM USTAWIENIA STAREMU"
+
+Nowa akcja parku maszyn, dostępna w meczu drużynowym i w turnieju indywidualnym.
+Oddajesz mechanikowi CAŁY motocykl do końca tych zawodów.
+
+- **Nie ruszasz już niczego**: ani zębatki, ani dyszy, ani gaźnika, ani długości,
+  ani zapłonu. Silnik odbija każdą próbę jednym zdaniem (`liveMechAutoBlock()`),
+  a warsztat na ekranie przestaje pulsować i klikać się.
+- **Mechanik ustawia wszystko SAM**, przed każdym twoim biegiem
+  (`liveMechAutoSet()`), z celnością **zależną od jego poziomu** — tą samą
+  skalą 45–96% wg `p.mech`, losowaną osobno dla każdego ustawienia. Sztab jak
+  u mistrza świata trafi prawie zawsze; szwagier Mirek zrobi ci motocykl
+  z innego toru i z innej pogody, a ty nie masz jak tego poprawić.
+- **Ryzyko „dwóch minut" zostaje w mocy.** Jeżeli mechanik grzebie w sprzęcie
+  w trakcie zawodów (czyli po pierwszym, darmowym ustawieniu), `liveSetupTouch()`
+  zapala `setupDirty` dokładnie tak samo jak przy zmianie ręcznej — i tak samo
+  możesz nie zdążyć pod taśmę, z kodem „w" w tym biegu. Sędzia nie pyta, czyja
+  ręka trzymała klucz.
+- **Cena: −5 punktów procentowych profesjonalizmu** (`BIGM.autoProf`), naliczane
+  raz, przy włączeniu. Decyzja jest **nieodwracalna w tych zawodach**.
+- Kiedy sprzęt prowadzi mechanik, **podpowiedź na ekranie = to, co on właśnie
+  ustawił**. Inaczej boks pokazywałby „mechanik obstawia 3" przy ustawionej przez
+  niego czwórce, bo typ i nastawa losowałyby się osobno.
+- Do `LIVE_TALK` doszedł głos `auto` (z wariantem `ind`) — mechanik po zawodach
+  komentuje, że raz w życiu ktoś mu zaufał.
+
+**Uwaga implementacyjna:** akcja idzie **tym samym kanałem co suwaki warsztatu** —
+`liveAct('setup','auto:1')`. Zrobione świadomie: gdyby `liveAct()` miało gdzieś
+białą listę akcji, nowa nazwa wymagałaby dopisania jej do tej listy, a `setup`
+jest tam od Sprintu 4. Nic poza tym nie trzeba ruszać.
+
+### 6. Maksymalnie jeden wywiad na zawody
+
+Do tej pory limity były **trzy osobne** (`itw_pre`, `itwMid`, `itw_post`), więc
+w jednym meczu dało się zaliczyć wywiad przed, w trakcie i po — a odmowa nie
+zamykała tematu, bo licznik i tak stał na swoim.
+
+Teraz jest **jeden twardy licznik `live.itwCount`** z limitem `SIDE.itwCap`
+(domyślnie 1, nadpisywalny przez `BIGM.side.itwCap` w `data/70`), i podbija go
+**samo wylosowanie** wywiadu — niezależnie od tego, czy weźmiesz w nim udział,
+czy odmówisz. Ekran „weź udział / odmów" mówi to teraz wprost, a po odmowie
+w logu zawodów pada zdanie, że na dziś temat jest zamknięty.
+
+### Pliki ruszone w Sprincie 5
+
+| plik | co się zmieniło |
+|---|---|
+| `data/70-wielki-mecz.js` | `BIGM.autoProf` (cena trybu Niedźwiedziaka), `BIGM.side.itwCap` |
+| `data/71-mecz-zdarzenia.js` | flagi `team:true` (zdarzenia, opcje, pytania), neutralna opcja w zdarzeniu z SMS-em, dwa teksty bez trenera |
+| `data/72-glosy-pomeczowe.js` | `team:true` przy głosach o wyniku drużyny, warianty `ind:{who,lines}`, nowy głos `auto` |
+| `engine/03-stan-gry.js` | `G.opts`, `gameOpt()`, `setGameOpt()` |
+| `engine/28-wielki-mecz.js` | bramka `gameOpt('liveMatches')` w `bigMatchAsk()` |
+| `engine/28b-sprzet-live.js` | `liveTrackInit()`, `liveMechRefresh()`, `liveMechWeather()` na 4 ustawienia, `liveMechAutoOn/Set/Block()`, `AUTO_PROF`, teksty `trkGrip`/`trkHard`/`autoOn`/`autoNone` |
+| `engine/30b-live-zdarzenia.js` | `SIDE.itwCap`, `liveIsInd()`, filtrowanie `team:true` w zdarzeniach, opcjach i wywiadach, `bigMatchVoices()` z wariantami `ind` |
+| `engine/31-live-mecz.js` | `liveTrackInit`, `mechAuto` w stanie i w snapshocie, akcja `setup:auto`, mechanik ustawia sam przed każdym biegiem, `liveMechRefresh` między biegami, notka do raportu |
+| `engine/32-live-turniej.js` | `ind:true`, to samo co wyżej dla turnieju |
+| `ui/00-wspolne.js` | `UI_FULL`, `applyHints()`, `toggleHints()`, `hint()`, przełącznik w `head()` |
+| `ui/01-ekran-tworzenia.js` | wybór trybu rozgrywki + zapis do `G.opts` |
+| `ui/08-ekran-wielki-mecz.js` | opisy trzech dróg pod `.hint` |
+| `ui/09-ekran-live.js` | 13 opisów pod `.hint`, przycisk „JESTEM NIEDŹWIEDZIAKIEM", pasek „sprzęt prowadzi mechanik" |
+| `ui/09b-live-trener.js` | drugorzędne dane trenera pod `.hint` |
+| `ui/09c-warsztat-live.js` | typy mechanika przy wszystkich ustawieniach i przy zębatce, blokada warsztatu przy `mechAuto`, opisy pod `.hint`, krótsze etykiety |
+| `index.html` | sekcja CSS `.hint` / `body.ui-full .hint` |
+
+### Czego pilnować przy kolejnym patchu
+
+- **`liveAct(a, v)`** — Sprint 5 świadomie NIE dodaje nowej akcji. Tryb
+  Niedźwiedziaka jedzie przez `setup` z wartością `'auto:1'`. Jeżeli kiedyś
+  dołożysz osobną akcję, pamiętaj o białej liście (patrz dług ze Sprintu 4).
+- **Nowe ekrany** — opis mechaniki zawsze do `.hint`, liczba zawsze poza nią.
+  Inaczej za trzy sprinty wrócimy do tego samego zgłoszenia.
+- **Nowe zdarzenia i pytania** — jeżeli wspominają trenera, kierownika drużyny,
+  kolegę z pary, prezesa klubu albo „gospodarzy", postaw `team:true`. Inaczej
+  wypadną w turnieju indywidualnym i znowu zrobi się nieprawda.
+- **Dług ze Sprintu 2 nadal otwarty:** `engine/17-playoff.js`, `engine/18-dmpj.js`
+  i `engine/09-sezon-przebieg.js` wciąż nie sprawdzają
+  `M.abandoned && !M.abandonCounted`.

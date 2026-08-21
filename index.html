@@ -58,6 +58,16 @@ select:focus,input:focus{border-color:#fb923c;box-shadow:0 0 0 2px rgba(251,146,
 .fade{animation:fi .18s ease-out}
 @keyframes fi{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 
+/* ---- OPISY POD PRZYCISKAMI (Sprint 5, 24.08.2026) ----
+   Każdy akapit tłumaczący mechanikę ma klasę .hint i jest DOMYŚLNIE
+   NIEWIDOCZNY. Wraca w komplecie, kiedy ui/00-wspolne.js (toggleHints)
+   dołoży <body class="ui-full"> — przycisk „POKAŻ OPISY" stoi w nagłówku
+   każdego ekranu. Powód: ekrany meczowe tonęły w tekście 10,5 px, przez
+   który nie było widać procentów i nazw ustawień. */
+.hint{display:none}
+body.ui-full .hint{display:block}
+body.ui-full span.hint{display:inline}
+
 /* ---- ROZWIJANE SEKCJE (accordion) ----
    .acc  = samodzielny boks (własna ramka, jak .brut) na drugorzędne dane.
    .acc-lite = lżejsza wersja, do wpięcia WEWNĄTRZ istniejącego .brut
@@ -122,6 +132,7 @@ select:focus,input:focus{border-color:#fb923c;box-shadow:0 0 0 2px rgba(251,146,
 <script src="data/18-zdarzenia-patologie.js"></script>
 <script src="data/19-zdarzenia-messenger.js"></script>
 <script src="data/20-zdarzenia-kontuzjowany.js"></script>
+<script src="data/21-zdarzenia-nowe-2026.js"></script>
 <script src="data/30-zima-podstawa.js"></script>
 <script src="data/31-zima-patologie.js"></script>
 <script src="data/32-zima-poza-torem.js"></script>
@@ -129,7 +140,10 @@ select:focus,input:focus{border-color:#fb923c;box-shadow:0 0 0 2px rgba(251,146,
 <script src="data/34-zima-uniwersalne.js"></script>
 <script src="data/35-zima-messenger.js"></script>
 <script src="data/36-zima-kontuzjowany.js"></script>
+<script src="data/37-zima-nowe-2026.js"></script>
 <script src="data/40-zdarzenia-index.js"></script>
+<script src="data/41-zdarzenia-zwiazek.js"></script>      <!-- NOWE: SZZZ / Cegielski / UOKiK -->
+<script src="data/42-zima-zwiazek.js"></script>           <!-- NOWE: zimowe negocjacje i szantaż -->
 <script src="data/50-upadlosci-sponsorzy.js"></script>
 <script src="data/51-nazwiska.js"></script>
 <script src="data/52-swiat-ims.js"></script>
@@ -166,6 +180,7 @@ select:focus,input:focus{border-color:#fb923c;box-shadow:0 0 0 2px rgba(251,146,
 <script src="engine/22-turnieje-polskie.js"></script>
 <script src="engine/23-ims-cykl.js"></script>
 <script src="engine/24-ims-eliminacje.js"></script>
+<script src="engine/22c-imp-gp-finale-flavor.js"></script>
 <script src="engine/25-upadlosci-awanse.js"></script>
 <script src="engine/26-rynek-wartosc.js"></script>
 <script src="engine/27-rynek-oferty.js"></script>
@@ -178,6 +193,7 @@ select:focus,input:focus{border-color:#fb923c;box-shadow:0 0 0 2px rgba(251,146,
 <script src="engine/31-live-mecz.js"></script>
 <script src="engine/32-live-turniej.js"></script>
 <script src="engine/33-imsj2-eliminacje.js"></script>
+<script src="engine/34-zwiazek-cegla.js"></script>        <!-- NOWE: flagi, ryczałt SZZZ, KSM po UOKiK -->
 <script src="ui/00-wspolne.js"></script>
 <script src="ui/01-ekran-tworzenia.js"></script>
 <script src="ui/02-ekran-ofert.js"></script>
@@ -203,6 +219,7 @@ select:focus,input:focus{border-color:#fb923c;box-shadow:0 0 0 2px rgba(251,146,
 <script src="ui/20-karta-kariery-html.js"></script>
 <script src="ui/21-karta-kariery-png.js"></script>
 <script src="ui/22-ekran-konca.js"></script>
+<script src="ui/23-zwiazek-cegla.js"></script>            <!-- NOWE: boks ZWIĄZEK ZAWODOWY I CEGIELSKI -->
 
 <script>
 /* ---- BOOT ---- */

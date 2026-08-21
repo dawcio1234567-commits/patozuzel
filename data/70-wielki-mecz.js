@@ -77,10 +77,22 @@ const BIGM = {
    d:'Wchodzisz mu pod koło i zamykasz. Albo go wyprzedzasz, albo obaj lecicie po dmuchawie.'},
   {id:'obrona',l:'OBRONA (trzymam linię)',
    d:'Żadnych fajerwerków. Zamykasz wewnętrzną i pilnujesz tego, co masz.'},
+  {id:'nozyce',l:'KLASYCZNE, ŻUŻLOWE NOŻYCE',
+   d:'Wychodzisz na zewnętrzną, ścinasz do małej i zamykasz mu wyjście z łuku. Kiedyś tak jeździła cała liga.'},
+  {id:'ajs',   l:'AJS SPIDŁEJ, AJS SPIDŁEJ AHAHAHAHA',
+   d:'Motocykl wyprostowany, gaz zablokowany, jazda po bandach. Uda się — wyprzedzasz WSZYSTKICH przed sobą naraz. Nie uda się — a prawie nigdy się nie udaje — i zbierają cię z prostej.'},
   {id:'plot',  l:'ŁADUJEMY W PŁOT',
    d:'Gaz do dechy, kierunek banda, myślenie na potem. Ojciec by tego nie pochwalił. Ojciec nie odbiera.'}
  ],
  phases:['START','1. OKRĄŻENIE — ŁUK 1 i 2','2-3. OKRĄŻENIE — WALKA','OSTATNI ŁUK'],
+ /* --- SPRINT 4: ZDARZENIA W TRAKCIE ZAWODÓW I WYWIADY ---
+    Nadpisuje wartości domyślne stałej SIDE z engine/30b-live-zdarzenia.js.
+    Zostawione jawnie, żeby dało się to kręcić bez ruszania silnika. */
+ side:{
+  evChance:26, evCap:3, evCool:2,
+  itwPre:45, itwMid:22, itwPost:60, itwMidCap:1, itwMedK:0.35,
+  voices:6
+ },
  /* --- KOMENTARZ SPIKERA (do smaku, losowany) --- */
  crowd:[
   'Sektor B stoi na krzesełkach.','Spiker urywa zdanie w połowie.',

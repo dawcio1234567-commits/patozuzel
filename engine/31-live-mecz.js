@@ -72,8 +72,15 @@ function* liveMeetingGen(homeName, awayName, ctx, meId, meta){
    /* --- SPRINT 3 ---
       refuse     : ostatnia odmowa trenera (regulamin) — pokazuje ją ui/09;
       pushTarget : za kogo trener obiecał cię wpuścić. */
-   refuse:null, pushTarget:null, coachRow:0
+   refuse:null, pushTarget:null, coachRow:0,
+   /* --- SPRINT 4 ---
+      pogoda, ustawienia motocykla, ryzyko dwóch minut, zdarzenia,
+      wywiady i dyspozycja doklejana przez to wszystko (formBonus). */
+   jet:null, carb:null, len:null, ign:null, weather:null, mechWx:null,
+   setupDone:false, setupDirty:false, setupChanges:0, formBonus:0,
+   evUsed:[], evDone:0, evLast:null, voices:null
  };
+ liveSetupInit(live);        // pogoda losuje się RAZ na zawody
  /* Pozostałe biegi Gracza (program 1-13, limit 5 startów wg art. 719).
     skipCurrent = bieg właśnie jechany już się liczy (kraksa w jego trakcie). */
  let curH=0;
@@ -110,7 +117,14 @@ function* liveMeetingGen(homeName, awayName, ctx, meId, meta){
                      codes:st[meId].codes.slice(), num:st[meId].num} : null,
      rows:{h:rowsOf('h'), a:rowsOf('a')},
      heats:heats.map(h=>({label:h.label, res:h.res})),
-     race:null, coach:null, next:null, push:null, fall:null,
+     race:null, coach:null, next:null, push:null, fall:null, mevent:null, itw:null,
+     /* SPRINT 4: warsztat live — pogoda, ustawienia i ryzyko dwóch minut */
+     weather: live.weather||null, mechWx: live.mechWx||null,
+     setup:{jet:live.jet, carb:live.carb, len:live.len, ign:live.ign,
+            verdict: liveSetupVerdict(liveSetupEval(live)),
+            risk: liveSetupRisk(live), dirty:!!live.setupDirty,
+            done:!!live.setupDone, changes:live.setupChanges||0},
+     voices: live.voices||null,
      /* SPRINT 3: kim jest trener, co o tobie myśli i czy właśnie ci odmówił */
      coachInfo: coachSnap(), refuse: live.refuse||null,
      /* SPRINT 2: pasek „zawody przerwane", protest i cena wyjazdu z parku */
@@ -328,7 +342,36 @@ function* liveMeetingGen(homeName, awayName, ctx, meId, meta){
    if(a==='gear'){
      const v=cl(Number(act.v)||0,0,5);
      if(v===live.gear) say('Mechanik patrzy na ciebie, potem na zębatkę, potem znowu na ciebie. Zostaje jak było.');
-     else { say('Zębatka '+live.gear+' → '+v+'. Mechanik robi to w dziewięćdziesiąt sekund i zdąży jeszcze splunąć.'); live.gear=v; }
+     else {
+       say('Zębatka '+live.gear+' → '+v+'. Mechanik robi to w dziewięćdziesiąt sekund i zdąży jeszcze splunąć.');
+       live.gear=v;
+       const r=liveSetupTouch(live);
+       if(r>0) say('Sprzęt ruszony w trakcie zawodów — '+r+'% szans, że nie zdążysz pod taśmę w najbliższym biegu.');
+     }
+     return false;
+   }
+   /* ------------------------------------------------------------
+      SPRINT 4: WARSZTAT LIVE — DŁUGOŚĆ, ZAPŁON, GAŹNIK, DYSZA.
+      Dysza i gaźnik muszą pasować do POGODY (temperatura + wilgotność),
+      długość i zapłon do STANU TORU. Sprawdza to liveSetupEval()
+      w engine/28b — źle dobrane ustawienia zabierają moc i podnoszą
+      ryzyko defektu, i nie ma od tego odwołania.
+      ------------------------------------------------------------ */
+   if(a==='setup'){
+     const parts=String((act&&act.v)||'').split(':');
+     const k=parts[0], max={jet:5, carb:3, len:3, ign:3}[k];
+     if(max==null) return false;
+     const v=cl(Number(parts[1])||0, 0, max);
+     const nm={jet:'DYSZA', carb:'GAŹNIK (igła)', len:'DŁUGOŚĆ MOTOCYKLA', ign:'ZAPŁON'}[k];
+     const lab={jet:SETUPB.jet, carb:SETUPB.carb, len:SETUPB.len, ign:SETUPB.ign}[k];
+     if(live[k]===v){ say(nm+' zostaje bez zmian. Mechanik nawet nie odkłada papierosa.'); return false; }
+     const from=lab[live[k]] ? lab[live[k]].n : String(live[k]);
+     live[k]=v;
+     const r=liveSetupTouch(live);
+     say(nm+': '+from+' → '+lab[v].n+'.');
+     if(r>0) say('Sprzęt ruszony w trakcie zawodów — '+r+'% szans, że mechanik nie zdąży i sędzia zamknie temat '+
+       'kodem „w" w najbliższym biegu.');
+     else say('Pierwsze ustawienie przed pierwszym biegiem. Nikt nikogo nie goni — 0% ryzyka.');
      return false;
    }
    if(a==='spy'){
@@ -438,6 +481,9 @@ function* liveMeetingGen(homeName, awayName, ctx, meId, meta){
 
  /* --- EKRAN „MIĘDZY BIEGAMI" --- */
  const between=function*(nextHeat, nums){
+   /* SPRINT 4: zanim pokażemy park maszyn — zdarzenie i/albo wywiad. */
+   yield* liveSideGen(live, snap, say, 'mid', nextHeat);
+   if(live.abandoned) return;
    while(true){
      const mates=availableRiders(myClub).filter(r=>st[r.id] && r.id!==meId && st[r.id].starts<5)
        .sort((a2,b2)=>b2.ovr-a2.ovr);
@@ -467,7 +513,10 @@ function* liveMeetingGen(homeName, awayName, ctx, meId, meta){
    live.ideal=liveIdeal(live.grip);
    live.spyKnown=false; live.spyDone=false;
    live.mech=liveMech(live.ideal, live.gear);
+   live.mechWx=liveMechWeather(live);          // SPRINT 4: typ mechanika na dyszę i gaźnik
    clearMsg(); live.refuse=null;
+   yield* liveSideGen(live, snap, say, 'mid', label);   // SPRINT 4: zdarzenie / wywiad
+   if(live.abandoned) return;
    /* PARK MASZYN */
    while(true){
      const act = yield snap('pit', {
@@ -484,6 +533,22 @@ function* liveMeetingGen(homeName, awayName, ctx, meId, meta){
    if(live.outOfMeeting){
      // kody za ten i pozostałe biegi wpisało już liveExcludeRest() — nic nie dopisujemy
      simHeat(nums, label, nominated);
+     return;
+   }
+   /* ------------------------------------------------------------
+      SPRINT 4: LIMIT DWÓCH MINUT PO GRZEBANIU W SPRZĘCIE.
+      Pierwsze ustawienie przed pierwszym biegiem jest darmowe. Każda
+      kolejna zmiana czegokolwiek (zębatka, dysza, gaźnik, długość,
+      zapłon) to 0,5-5% — zależnie od tego, kogo masz za mechanika.
+      ------------------------------------------------------------ */
+   liveSetupTapeRoll(live, []).forEach(x=>say(x));
+   if(live.lateOut){
+     live.lateOut=false;
+     if(st[meId]) st[meId].codes.push(LIVE_EXC);
+     say('Bieg '+label+' odjeżdża bez ciebie. W karcie meczowej: „'+LIVE_EXC+'".');
+     const ns=nums.filter(n=>!(map[n] && map[n].id===meId));
+     simHeat(ns, label, nominated);
+     yield snap('heatres', {next:{label, mine:false}});
      return;
    }
    if(live.benchNext){
@@ -503,7 +568,7 @@ function* liveMeetingGen(homeName, awayName, ctx, meId, meta){
    const entries=buildEntries(nums);
    if(!entries.some(e=>e.r.id===meId)){ simHeat(nums, label, nominated); return; }
    const fit=liveFit(live.gear, live.ideal);
-   const rc=liveMkRace(entries, ctx, meId, fit, live.spyKnown);
+   const rc=liveMkRace(entries, ctx, meId, fit, live.spyKnown, liveRideMod(live));
    live.rc=rc; live.inRace=true;     // kraksa w tym biegu wyklucza dopiero NASTĘPNE
    const meX=()=>rc.rid.find(x=>x.me);
    /* ------------------------------------------------------------
@@ -622,6 +687,8 @@ function* liveMeetingGen(homeName, awayName, ctx, meId, meta){
  /* ============================================================
     PRZEBIEG SPOTKANIA — 13 biegów programu + 2 nominowane
     ============================================================ */
+ /* SPRINT 4: wywiad przed pierwszym biegiem — jeszcze w parku maszyn. */
+ yield* liveSideGen(live, snap, say, 'pre', 0);
  let h=0;
  while(h<13){
    if(live.abandoned) break;                  // Sprint 2: sędzia przerwał zawody
@@ -728,6 +795,15 @@ function* liveMeetingGen(homeName, awayName, ctx, meId, meta){
    if(live.layDown)    note.push(live.layDown+'× Rejtan (zostałeś na torze)');
    if(live.hurtRivals) note.push(live.hurtRivals+'× kontuzjowany rywal');
    if(live.mateHits)   note.push(live.mateHits+'× kolizja z kolegą z pary');
+   /* Sprint 4 */
+   if(live.lateCount)  note.push(live.lateCount+'× wykluczenie za limit dwóch minut (grzebanie w sprzęcie)');
+   if(live.setupChanges) note.push(live.setupChanges+'× zmiana ustawień motocykla w trakcie zawodów');
+   if(live.ajsOk)      note.push(live.ajsOk+'× UDANY AJS SPIDŁEJ');
+   if(live.ajsFail)    note.push(live.ajsFail+'× nieudany AJS SPIDŁEJ');
+   if(live.nozyceOk)   note.push(live.nozyceOk+'× udane nożyce');
+   if(live.evDone)     note.push(live.evDone+'× zdarzenie w parku maszyn');
+   if(live.itwGiven)   note.push('wywiady: '+live.itwGiven+' odpowiedzi');
+   if(live.itwRefused) note.push(live.itwRefused+'× odmowa wywiadu');
    if(live.abandoned)  note.push('ZAWODY PRZERWANE ('+live.abandonWhy+') — '+
      (live.abandonCounted ? 'wynik zaliczony po '+live.abandonHeat+'. biegu'
                           : 'mecz anulowany, do powtórki od 0:0'));
@@ -740,6 +816,7 @@ function* liveMeetingGen(homeName, awayName, ctx, meId, meta){
      me: meSt ? {starts:meSt.starts, pts:meSt.pts, bon:meSt.bon, codes:meSt.codes.slice()} : null,
      abandoned: !!live.abandoned, abandonCounted: !!live.abandonCounted,
      coach:{name:myCoach.name, rel:REL.rel, status:REL.status.n},
+     voices: live.voices||null,          // SPRINT 4: pato-komentarze pomeczowe
      story: live.story.slice()});
  };
  const annulled = !!(live.abandoned && !live.abandonCounted);
@@ -787,6 +864,8 @@ function* liveMeetingGen(homeName, awayName, ctx, meId, meta){
       (chronoAnnul → scheduleReplay). Ten sam warunek warto dopisać wszędzie,
       gdzie jeszcze woła się liveMeetingGen(): engine/09-sezon-przebieg.js,
       engine/17-playoff.js, engine/18-dmpj.js. */
+   live.voices = bigMatchVoices({mine:mySide==='h'?hs:as, theirs:mySide==='h'?as:hs,
+     me: meSt?{starts:meSt.starts, pts:meSt.pts, bon:meSt.bon, codes:meSt.codes.slice()}:null, live});
    finishNotes(meSt);
    clearMsg();
    yield snap('abandon', {result:{hs, as, mine:mySide==='h'?hs:as, theirs:mySide==='h'?as:hs}});
@@ -798,6 +877,11 @@ function* liveMeetingGen(homeName, awayName, ctx, meId, meta){
      abandonInfo);
  }
  /* --- PODSUMOWANIE SPOTKANIA NA EKRAN --- */
+ clearMsg();
+ /* SPRINT 4: wywiad po zawodach — jeszcze zanim zobaczysz wynik na dużym ekranie. */
+ yield* liveSideGen(live, snap, say, 'post', 15);
+ live.voices = bigMatchVoices({mine:mySide==='h'?hs:as, theirs:mySide==='h'?as:hs,
+   me: meSt?{starts:meSt.starts, pts:meSt.pts, bon:meSt.bon, codes:meSt.codes.slice()}:null, live});
  clearMsg();
  yield snap('end', {result:{
    hs, as, mine: mySide==='h'?hs:as, theirs: mySide==='h'?as:hs,

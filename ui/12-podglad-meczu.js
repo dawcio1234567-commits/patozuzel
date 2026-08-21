@@ -36,12 +36,36 @@ function bigMatchHtml(r){
       ${b.mine}:${b.theirs}</div>`}
     ${b.me?`<div class="text-[12px] text-zinc-300 mb-2">Twój dorobek: <b class="text-orange-400">${b.me.pts}${b.me.bon?'+'+b.me.bon:''} pkt</b>
       z ${b.me.starts} startów <span class="text-zinc-500">(${(b.me.codes||[]).join(', ')||'—'})</span></div>`:''}
+    ${bigVoicesHtml(b.voices)}
     ${(b.story&&b.story.length)?accLite('PRZEBIEG — BIEG PO BIEGU',
       `<div class="text-[11.5px] text-zinc-400 leading-relaxed">${b.story.map(x=>`<div class="mb-1">› ${esc(x)}</div>`).join('')}</div>`):''}
    </div></div>`).join('');
  return `<div class="mb-3">
   <div class="text-[11px] text-orange-500 tracking-[.2em] font-bold mb-2">WIELKI MECZ SEZONU</div>
   ${box}${cry}</div>`;
+}
+/* ============================================================
+   PATO-KOMENTARZE POMECZOWE (Sprint 4, 23.08.2026)
+   ------------------------------------------------------------
+   Zgłoszenie: „po wielkim meczu nie ma żadnej reakcji świata".
+   Racja — dostawałeś wynik i przebieg, i tyle. Teraz pod wynikiem
+   siedzi zestaw głosów o TWOIM występie i o wyniku drużyny, w tej
+   samej konwencji co głosy z końca sezonu (data/60-62): spiker,
+   kibic z sektora B, mechanik, sędzia Lis, rzecznik klubu i ten
+   jeden facet z parkingu, którego bus nigdy nie odpala.
+   Kto je dobiera: bigMatchVoices() w engine/30b-live-zdarzenia.js.
+   Ten sam zestaw pokazuje ekran końca meczu (ui/09c).
+   ============================================================ */
+function bigVoicesHtml(voices){
+ if(!voices || !voices.length) return '';
+ return `<div class="brut mt-2 mb-1" style="border-color:#a16207">
+  <div class="brut-h px-3 py-1 text-[10px] font-bold tracking-widest" style="border-color:#a16207;color:#eab308">
+    CO MÓWIĄ PO TYCH ZAWODACH</div>
+  <div class="p-3 space-y-2">
+   ${voices.map(v=>`<div class="text-[12.5px] leading-relaxed">
+     <div class="text-[10px] text-zinc-500 tracking-[.2em]">${esc(v.who)}</div>
+     <div class="text-zinc-200">${esc(v.txt)}</div></div>`).join('')}
+  </div></div>`;
 }
 /* ---- SUFIT TALENTU: co się z nim stało w tym sezonie ---- */
 function potHtml(r){

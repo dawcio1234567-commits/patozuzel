@@ -14,12 +14,15 @@
    albo w dół, więc potrafi zmienić miejsce w biegu, ale nie zamieni
    zawodnika z OVR 30 w mistrza świata.
    ============================================================ */
-function liveMkRace(entries, ctx, meId, fitIdx, spy){
+function liveMkRace(entries, ctx, meId, fitIdx, spy, mod){
+ /* SPRINT 4: `mod` to korekta z liveRideMod() — ustawienia motocykla
+    (dysza, gaźnik, długość, zapłon) plus skutki zdarzeń i wywiadów. */
+ const mS=(mod&&mod.str)||0, mD=(mod&&mod.def)||0;
  const rid = entries.map(e=>{
    const me = e.r.id===meId;
    const trb = (e.trouble||0) * (me?0.5:1);
    const base = rideStr(e.r.ovr + (e.r.form||0) - trb, e.ref, e.home?BAL.home:0);
-   const val = base + (me ? BIGM.fitStr[fitIdx] + (spy?1.2:0) : 0);
+   const val = base + (me ? BIGM.fitStr[fitIdx] + (spy?1.2:0) + mS : 0);
    /* `base` to wartość SPRZED pierwszej decyzji. Powtórka biegu (Sprint 2)
       cofa wszystkich do niej — inaczej wykluczenie kogokolwiek byłoby premią
       dla tego, kto zdążył już ugrać kilka punktów na łuku. */
@@ -31,7 +34,7 @@ function liveMkRace(entries, ctx, meId, fitIdx, spy){
     i tak nie dojedzie. */
  rid.forEach(x=>{
    const me = x.id===meId;
-   const dP = me&&ctx ? ctx.defP + BIGM.fitDef[fitIdx] + (x.e.trouble||0)*0.0016
+   const dP = me&&ctx ? ctx.defP + BIGM.fitDef[fitIdx] + mD + (x.e.trouble||0)*0.0016
                       : cl(0.028 + (78-x.e.r.ovr)*0.0006 + (x.e.trouble||0)*0.0022, 0.012, 0.14);
    const eP = me&&ctx ? ctx.excP : cl(0.024 + (74-x.e.r.ovr)*0.0005, 0.010, 0.065);
    const rr=Math.random();
@@ -77,11 +80,22 @@ function liveMoveChance(rc, move, grip, fitIdx){
  const opp=rc.rid.filter(x=>!x.me && !x.out);
  const avg=opp.length? opp.reduce((a,x)=>a+x.val,0)/opp.length : me.val;
  const edge=cl(me.val-avg, -30, 30);
- let base = {kreda:48, zewn:48, pika:44, obrona:76, plot:12}[move]||45;
+ let base = {kreda:48, zewn:48, pika:44, obrona:76, nozyce:41, ajs:4, plot:12}[move]||45;
  if(move==='kreda') base += (2-grip)*4.5;         // sucho i szklisto — kreda jedzie
  if(move==='zewn')  base += (grip-2)*4.5;         // ciężko i mokro — świeży tor przy bandzie
  if(move==='pika')  base += (p.prof-50)*0.06;
+ /* SPRINT 4 — DWIE NOWE LINIE.
+    NOŻYCE: ścinka z zewnętrznej do małej. Klasyka, więc liczy się to,
+    co w klasyce: umiejętności (OVR), stan toru i to, o ile jesteś
+    szybszy od reszty. Solidna szansa na wyprzedzenie, uczciwa cena.
+    AJS SPIDŁEJ: wyprostowany motocykl po bandach. Baza 4%, bo to nie
+    jest manewr — to jest zdarzenie losowe, które sam na siebie
+    sprowadzasz. Umiejętności podnoszą ją najwyżej do kilkunastu procent
+    i ANI PUNKTU WIĘCEJ (twardy sufit w cl() niżej). */
+ if(move==='nozyce') base += (grip-2)*2.2 + (p.ovr-52)*0.26 + (p.prof-50)*0.05;
+ if(move==='ajs')    base += (p.ovr-70)*0.16 + (p.prof-50)*0.04 + (2-Math.abs(grip-2))*0.8;
  base += edge*0.85 + (p.prof-50)*0.09 - fitIdx*2.2;
+ if(move==='ajs') return Math.round(cl(base, 1, 15));
  return Math.round(cl(base, 4, 93));
 }
 /* Kolizje, powtórki biegu i modal po upadku (Sprint 2) wyprowadziliśmy do
@@ -140,6 +154,86 @@ function liveResolveMove(rc, move, grip, fitIdx, live){
        crash('spowodowanie kolizji');
      }
      else { me.val -= R(3,6); out.push('Zamknął ci drzwi wcześniej, niż zdążyłeś wjechać. Musisz się cofnąć i odpuścić.'); }
+   }
+ } else if(move==='nozyce'){
+   /* KLASYCZNE, ŻUŻLOWE NOŻYCE — wychodzisz szeroko, ścinasz do małej
+      i zamykasz mu drzwi na wyjściu. Kiedyś tak jeździła cała liga. */
+   if(ok){
+     me.val += R(6,11);
+     live.nozyceOk=(live.nozyceOk||0)+1;
+     out.push('NOŻYCE. Wyprowadzasz motocykl na zewnętrzną, ścinasz do małej i wychodzisz z łuku dokładnie tam, '+
+       'gdzie on chciał być za pół sekundy. Podręcznikowo.');
+     if(chance(10)){
+       const v=liveVictim(rc);
+       if(v){
+         out.push('Ścinka była o dziesięć centymetrów za ostra — '+esc0(v.name)+' musiał puścić gaz i położył motocykl.');
+         liveCollide(rc, live, v, out, {down:false});
+       }
+     }
+   } else {
+     const r=R(1,100);
+     if(r<=9){ crash('upadek przy ścince do wewnętrznej'); }
+     else if(r<=16){
+       const v=liveVictim(rc);
+       out.push('Ściąłeś w miejsce, w którym już ktoś był.');
+       if(v) liveCollide(rc, live, v, out, {down:false});
+       me.val -= R(3,7);
+     }
+     else { me.val -= R(2,6); out.push('Wyszedłeś na zewnętrzną i nie miałeś już czym wrócić do środka. Ścinka spóźniona o pół łuku.'); }
+   }
+ } else if(move==='ajs'){
+   /* AJS SPIDŁEJ. Wyprostowany motocykl, gaz do dechy, jazda po bandach.
+      Uda się — wyprzedzasz WSZYSTKICH przed sobą naraz. Nie uda się —
+      a nie uda się prawie zawsze — to jest jeden z najcięższych upadków,
+      jakie ta gra potrafi zrobić. Szanse skalują się umiejętnościami:
+      lepszy zawodnik częściej trafia i rzadziej się zabija, ale nikt,
+      nigdy, nie ma tu przewagi większej niż kilkanaście procent. */
+   live.ajsTries=(live.ajsTries||0)+1;
+   if(ok){
+     const others=rc.rid.filter(x=>!x.out && !x.me);
+     const top = others.length ? Math.max.apply(null, others.map(x=>x.val)) : me.val;
+     me.val = Math.max(me.val, top) + R(4,9);
+     live.ajsOk=(live.ajsOk||0)+1;
+     out.push('AJS SPIDŁEJ, AJS SPIDŁEJ AHAHAHAHA — motocykl wyprostowany jak struna, koło na bandzie, '+
+       'gaz zablokowany i cztery sekundy, w których nikt na tym stadionie nie oddycha.');
+     out.push('TO NIE JEST ZEWNĘTRZNA, NIE WIEM, JAK NAZWAĆ TOR KTÓRYM PODRÓŻUJE');
+     out.push('WYPRZEDZASZ WSZYSTKICH PRZED SOBĄ. Jednym manewrem, po bandach, na pierwsze miejsce.');
+     const med=R(8,14);
+     G.p.med=cl(G.p.med+med,0,99);
+     if(G.S) G.S.bigMed=(G.S.bigMed||0)+med;
+     live.medGain=(live.medGain||0)+med;
+   } else {
+     live.ajsFail=(live.ajsFail||0)+1;
+     const p2=G.p;
+     /* im lepszy zawodnik, tym częściej z tego wychodzi bez katastrofy */
+     const crashCh = Math.round(cl(84 - (p2.ovr-50)*0.32 - (p2.prof-50)*0.10, 52, 94));
+     const r=R(1,100);
+     if(r<=crashCh){
+       /* POTĘŻNY UPADEK — dokładka do zwykłej kraksy */
+       const eq=R(3,9);
+       p2.equip=cl(p2.equip-eq,1,99);
+       out.push('Motocykl wchodzi w bandę bokiem, odbija się i leci przez pół prostej. '+
+         'Sprzęt po tym locie: -'+eq+' dodatkowo (przód, tył, zbiornik i kilka rzeczy bez nazwy).');
+       if(chance(24)){
+         const dmg=R(2,4);
+         p2.ovr=cl(p2.ovr-dmg,1,99);
+         const meR=G.riders.find(r2=>r2.me); if(meR) meR.ovr=cl(meR.ovr-dmg,1,99);
+         if(typeof logOvr==='function') logOvr(-dmg, 'AJS SPIDŁEJ — upadek po bandach');
+         live.hurt=(live.hurt||0)+dmg;
+         out.push('Bark, obojczyk i lewa strona żeber. -'+dmg+' OVR i rozmowa z lekarzem zawodów.');
+         if(chance(45)) liveMedicalOut(live, out, 'uraz po jeździe po bandach (-'+dmg+' OVR)');
+       }
+       crash('AJS SPIDŁEJ — jazda po bandach');
+     } else if(r<=crashCh+9){
+       const v=liveVictim(rc);
+       out.push('Zszedłeś z bandy dokładnie na tor, po którym jechał '+(v?esc0(v.name):'rywal')+'.');
+       if(v) liveCollide(rc, live, v, out, {injCh:COLL.rivalInjuryPlot});
+       crash('zabranie rywala z bandy');
+     } else {
+       me.val -= R(5,10);
+       out.push('W ostatniej chwili puściłeś gaz i zjechałeś z bandy na tor. Straciłeś dwa miejsca, '+
+         'ale masz jeszcze wszystkie kości tam, gdzie powinny być.');
+     }
    }
  } else if(move==='obrona'){
    if(ok){ me.val += R(0,1); out.push('Zamykasz wewnętrzną i pilnujesz tego, co masz. Nudno. Skutecznie.'); }

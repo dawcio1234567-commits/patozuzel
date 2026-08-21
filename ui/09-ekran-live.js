@@ -28,34 +28,8 @@ function liveHeadBar(L){
         ${L.hs}:${L.as}</div></div>`}
  </div>`;
 }
-/* Tor + zębatka + mechanik — pasek widoczny w parku maszyn i w biegu. */
-function liveTrackBox(L, editable){
- if(L.grip==null) return '';
- const fitCol = L.ideal!=null ? (L.fit<=0?'#22c55e':L.fit===1?'#84cc16':L.fit===2?'#eab308':'#ef4444') : '#71717a';
- return `<div class="brut mb-3">
-  <div class="brut-h px-3 py-1 text-[10px] text-zinc-400 font-bold tracking-widest">TOR I MOTOCYKL</div>
-  <div class="p-3">
-   <div class="flex justify-between items-baseline flex-wrap gap-2 mb-1">
-     <div class="text-[13px] font-extrabold text-orange-400">PRZYCZEPNOŚĆ: ${esc(L.grip.n)}</div>
-     <div class="text-[10px] text-zinc-500 tracking-widest">stan toru zmienia się co bieg</div>
-   </div>
-   <div class="text-[11.5px] text-zinc-300 leading-relaxed mb-3">${esc(L.grip.d)}</div>
-   <div class="text-[10px] text-zinc-500 tracking-widest mb-1">ZĘBATKA (0 = najkrótsza, 5 = najdłuższa)</div>
-   <div class="flex gap-1 flex-wrap mb-2">
-     ${[0,1,2,3,4,5].map(i=>`<button ${editable?`onclick="liveAct('gear',${i})"`:'disabled'}
-       class="${i===L.gear?'btn':'btn'} px-3 py-2 text-[12px] font-bold"
-       style="${i===L.gear?'background:#f97316;color:#000;border-color:#fdba74':''}${editable?'':';opacity:.55;cursor:default'}">${i}</button>`).join('')}
-     <div class="text-[11px] text-zinc-400 self-center ml-2">${esc(BIGM.gearTxt[L.gear])}</div>
-   </div>
-   ${L.ideal!=null
-     ? `<div class="text-[11.5px] font-bold" style="color:${fitCol}">PODEJRZANE U RYWALA: dziś jedzie zębatka <b>${L.ideal}</b> — ${esc(BIGM.fitTxt[L.fit])}.</div>`
-     : `<div class="text-[11px] text-zinc-500">Idealnej zębatki nie widzisz. Widzisz tor i mechanika.</div>`}
-   ${L.mech?`<div class="text-[12px] text-zinc-200 mt-2 border-l-2 border-zinc-600 pl-3">
-     <b class="text-zinc-400">${esc(G.p.mechName)}:</b> ${esc(L.mech.txt)}
-     <div class="text-[10px] text-zinc-500 mt-0.5">trafność podpowiedzi tego mechanika: ok. ${L.mech.acc}%</div></div>`:''}
-  </div>
- </div>`;
-}
+/* Warsztat live (liveTrackBox, liveSetupBox) i pato-komentarze pomeczowe
+   (liveVoicesHtml) siedzą w ui/09c-warsztat-live.js — ten plik dobijał do 25 KB. */
 function liveMsgBox(L){
  if(!L.msgs || !L.msgs.length) return '';
  return `<div class="brut mb-3" style="border-color:#f97316">
@@ -171,7 +145,7 @@ function scLive(){
      <button onclick="liveAct('go')" class="btn w-full px-4 py-3 text-[13px] font-extrabold tracking-widest text-orange-500 mb-2">
        PRZESYMULUJ BIEGI DO TWOJEGO STARTU ▸</button>
      ${livePitActions(L, true)}
-    </div></div>` + liveTableBox(L);
+    </div></div>` + liveTrackBox(L, true) + liveTableBox(L);
  } else if(L.phase==='pit'){
    body = liveMsgBox(L) + `
    <div class="brut mb-3" style="border-color:#f97316">
@@ -226,10 +200,12 @@ function scLive(){
        tor: <b class="text-zinc-300">${esc(BIGM.grip[RC.grip].n)}</b>
        ${RC.ph===0?'':' · procenty liczone z twojej dyspozycji, profesjonalizmu, zębatki i stanu toru'}</div>
      <div class="space-y-2">
-      ${RC.options.map(o=>`<button onclick="liveAct('${RC.ph===0?'start':'move'}','${o.id}')"
-        class="${o.id==='plot'?'btn-d':'btn'} w-full text-left px-3 py-2 text-[12px]">
-        <b>${esc(o.l)}</b>${o.ch!=null?` <span class="${o.ch>=60?'text-emerald-400':o.ch>=35?'text-yellow-400':'text-red-400'}">— ${o.ch}%</span>`:''}
-        <div class="text-[10.5px] ${o.id==='plot'?'':'text-zinc-400'} mt-0.5" ${o.id==='plot'?'style="color:#fca5a5"':''}>${esc(o.d)}</div></button>`).join('')}
+      ${RC.options.map(o=>{
+        const hot = (o.id==='plot'||o.id==='ajs');
+        return `<button onclick="liveAct('${RC.ph===0?'start':'move'}','${o.id}')"
+        class="${hot?'btn-d':'btn'} w-full text-left px-3 py-2 text-[12px]"${o.id==='ajs'?' style="border-color:#f97316"':''}>
+        <b${o.id==='ajs'?' class="blink" style="color:#fdba74"':''}>${esc(o.l)}</b>${o.ch!=null?` <span class="${o.ch>=60?'text-emerald-400':o.ch>=35?'text-yellow-400':'text-red-400'}">— ${o.ch}%</span>`:''}
+        <div class="text-[10.5px] ${hot?'':'text-zinc-400'} mt-0.5" ${hot?'style="color:#fca5a5"':''}>${esc(o.d)}</div></button>`;}).join('')}
      </div>
      ${RC.sim&&RC.sim.show?`<div class="mt-3 pt-3" style="border-top:1px solid #3f3f46">
       <div class="text-[10px] text-zinc-500 tracking-[.25em] mb-2">POZA REGULAMINEM</div>
@@ -247,6 +223,10 @@ function scLive(){
          albo od <b>kolegi z pary, jeżeli zabierasz mu punkt bonusowy</b>.</div></button>
       </div></div>`:''}
     </div></div>`;
+ } else if(L.phase==='mevent'){
+   body = liveMsgBox(L) + liveEventScreen(L) + liveTableBox(L);
+ } else if(L.phase==='itw'){
+   body = liveMsgBox(L) + liveItwScreen(L);
  } else if(L.phase==='fall'){
    /* REJTAN (Sprint 2): leżysz na torze i to TY decydujesz, co dalej. */
    const F=L.fall||{};
@@ -308,7 +288,7 @@ function scLive(){
        z ${RS.me.starts} startów <span class="text-zinc-500">(${RS.me.codes.join(', ')||'—'})</span></div>`
        :`<div class="text-[13px] text-zinc-400">Nie dojechałeś tego spotkania do końca.</div>`}
      <button onclick="liveAct('go')" class="btn px-8 py-3 mt-4 text-[13px] font-extrabold tracking-widest text-orange-500">DALEJ ▸</button>
-    </div></div>` + liveTableBox(L);
+    </div></div>` + liveVoicesHtml(L.voices, 'CO MÓWIĄ PO TYCH ZAWODACH') + liveTableBox(L);
  } else {
    body = liveMsgBox(L)+`<div class="brut p-3"><button onclick="liveAct('go')" class="btn px-6 py-2 text-orange-500 font-bold">DALEJ ▸</button></div>`;
  }

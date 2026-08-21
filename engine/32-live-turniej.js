@@ -17,8 +17,16 @@ function liveNewState(){
  /* `noFill:true` — w turnieju indywidualnym kodów nie wpisujemy „na zapas".
     Każdy bieg i tak trzeba przeliczyć bez wykluczonego (patrz liveDropExcluded),
     więc kod „w" wpada do tabeli dokładnie wtedy, kiedy bieg się odbywa. */
- return {grip:null, ideal:null, gear:2, mech:null, spyKnown:false, spyDone:false,
-   yellow:0, red:false, outOfMeeting:false, noFill:true, crashed:0, hurt:0, msgs:[], story:[]};
+ /* SPRINT 4: turniej dostaje ten sam warsztat live co mecz drużynowy —
+    pogodę, dyszę, gaźnik, długość, zapłon, ryzyko dwóch minut, zdarzenia
+    w parku maszyn i wywiady. Trenera dalej nie ma, bo to turniej indywidualny. */
+ const L = {grip:null, ideal:null, gear:2, mech:null, mechWx:null, spyKnown:false, spyDone:false,
+   yellow:0, red:false, outOfMeeting:false, noFill:true, crashed:0, hurt:0, msgs:[], story:[],
+   jet:null, carb:null, len:null, ign:null, weather:null,
+   setupDone:false, setupDirty:false, setupChanges:0, formBonus:0,
+   evUsed:[], evDone:0, evLast:null, voices:null};
+ liveSetupInit(L);
+ return L;
 }
 /* ============================================================
    NAPRAWA (patch 21.08.2026, Sprint 1): WYKLUCZONY JECHAŁ DALEJ.
@@ -52,7 +60,29 @@ function liveIndPit(act, live){
  if(a==='gear'){
    const v=cl(Number(act.v)||0,0,5);
    if(v===live.gear) say('Mechanik nawet nie sięga po klucz. Zostaje jak było.');
-   else { say('Zębatka '+live.gear+' → '+v+'.'); live.gear=v; }
+   else {
+     say('Zębatka '+live.gear+' → '+v+'.'); live.gear=v;
+     const r=liveSetupTouch(live);
+     if(r>0) say('Sprzęt ruszony w trakcie turnieju — '+r+'% szans, że nie zdążysz pod taśmę.');
+   }
+   return false;
+ }
+ /* SPRINT 4: DŁUGOŚĆ, ZAPŁON, GAŹNIK, DYSZA — dokładnie ta sama mechanika
+    co w meczu drużynowym (engine/31), łącznie z ryzykiem dwóch minut. */
+ if(a==='setup'){
+   const parts=String((act&&act.v)||'').split(':');
+   const k=parts[0], max={jet:5, carb:3, len:3, ign:3}[k];
+   if(max==null) return false;
+   const v=cl(Number(parts[1])||0, 0, max);
+   const nm={jet:'DYSZA', carb:'GAŹNIK (igła)', len:'DŁUGOŚĆ MOTOCYKLA', ign:'ZAPŁON'}[k];
+   const lab={jet:SETUPB.jet, carb:SETUPB.carb, len:SETUPB.len, ign:SETUPB.ign}[k];
+   if(live[k]===v){ say(nm+' zostaje bez zmian.'); return false; }
+   const from=lab[live[k]] ? lab[live[k]].n : String(live[k]);
+   live[k]=v;
+   const r=liveSetupTouch(live);
+   say(nm+': '+from+' → '+lab[v].n+'.');
+   if(r>0) say('Sprzęt ruszony w trakcie turnieju — '+r+'% szans na wykluczenie za limit dwóch minut.');
+   else say('Pierwsze ustawienie przed pierwszym biegiem — 0% ryzyka.');
    return false;
  }
  if(a==='spy'){
@@ -97,7 +127,10 @@ function* liveIndHeatGen(idxs, field, meIdx, ctx, live, label, snap){
  live.ideal=liveIdeal(live.grip);
  live.spyKnown=false; live.spyDone=false;
  live.mech=liveMech(live.ideal, live.gear);
+ live.mechWx=liveMechWeather(live);
  live.msgs=[];
+ const say0=(x)=>{ live.msgs.push(x); live.story.push(x); };
+ yield* liveSideGen(live, snap, say0, 'mid', label);   // SPRINT 4
  while(true){
    const act = yield snap('pit', {next:{label, mine:true},
      field: idxs.map(i=>({name:field[i].name, me:i===meIdx, ctry:field[i].ctry||null}))});
@@ -105,11 +138,14 @@ function* liveIndHeatGen(idxs, field, meIdx, ctx, live, label, snap){
    if(liveIndPit(act, live)) break;
  }
  if(live.outOfMeeting) return null;
+ /* SPRINT 4: grzebałeś w sprzęcie między biegami — sędzia odlicza dwie minuty. */
+ liveSetupTapeRoll(live, []).forEach(x=>say0(x));
+ if(live.lateOut){ live.lateOut=false; live.lateHeat=true; return null; }
  const entries = idxs.map(i=>({r:{id:field[i].id, name:field[i].name, ovr:field[i].ovr, form:0},
    side:'x', home:false, num:null, ref, trouble:0, idx:i}));
  const fit=liveFit(live.gear, live.ideal);
  const meId=field[meIdx].id;
- const rc=liveMkRace(entries, ctx, meId, fit, live.spyKnown);
+ const rc=liveMkRace(entries, ctx, meId, fit, live.spyKnown, liveRideMod(live));
  const say=(...xs)=>xs.filter(Boolean).forEach(x=>{ live.msgs.push(x); live.story.push(x); });
  live.msgs=[];
  /* TAŚMA */
@@ -174,7 +210,15 @@ function* liveInd20Gen(field, meIdx, ctx, live, meta){
      table:T.slice().sort((a,b)=>b.pts-a.pts||b.places[1]-a.places[1])
             .map((t,k)=>({pos:k+1, name:t.name, pts:t.pts, me:t.me, codes:t.codes.slice()})),
      me: T[meIdx] ? {pts:T[meIdx].pts, codes:T[meIdx].codes.slice(), starts:T[meIdx].codes.length} : null,
-     heats:done.slice(-6), race:null, coach:null, next:null, push:null
+     heats:done.slice(-6), race:null, coach:null, next:null, push:null,
+     mevent:null, itw:null,
+     /* SPRINT 4: warsztat live — ten sam boks co w meczu drużynowym */
+     weather: live.weather||null, mechWx: live.mechWx||null,
+     setup:{jet:live.jet, carb:live.carb, len:live.len, ign:live.ign,
+            verdict: liveSetupVerdict(liveSetupEval(live)),
+            risk: liveSetupRisk(live), dirty:!!live.setupDirty,
+            done:!!live.setupDone, changes:live.setupChanges||0},
+     voices: live.voices||null
    }, extra||{});
    return {ui:'live'};
  };
@@ -197,10 +241,13 @@ function* liveInd20Gen(field, meIdx, ctx, live, meta){
    done.push({label:done.length+1, res:h.map(i=>({name:field[i].name, pts:H.pts[i], me:i===meIdx,
      out:(H.res.find(x=>x.i===i)||{}).out||null}))});
  };
+ const sayT=(x)=>{ live.msgs.push(x); live.story.push(x); };
+ yield* liveSideGen(live, snap, sayT, 'pre', 0);      // SPRINT 4: wywiad przed turniejem
  let k=0;
  while(k<20){
    const mine = draw[k].includes(meIdx) && !live.outOfMeeting;
    if(!mine){
+     yield* liveSideGen(live, snap, sayT, 'mid', k+1); // SPRINT 4: zdarzenie / wywiad
      while(true){
        const act = yield snap('between', {next:{label:k+1, mine:false}});
        if((act&&act.a)==='go') break;
@@ -211,6 +258,11 @@ function* liveInd20Gen(field, meIdx, ctx, live, meta){
    }
    const H = yield* liveIndHeatGen(draw[k], field, meIdx, ctx, live, k+1, snap);
    if(H) apply(draw[k], live.outOfMeeting ? liveDropExcluded(H, draw[k], meIdx) : H);
+   else if(live.lateHeat){
+     /* SPRINT 4: nie zdążyłeś pod taśmę — bieg jedzie bez ciebie, tobie „w". */
+     live.lateHeat=false;
+     apply(draw[k], liveDropExcluded(oneHeat(draw[k], field, -1, null), draw[k], meIdx));
+   }
    else  runHeat(draw[k]);        // wyjechałeś z parku maszyn — bieg jedzie bez ciebie
    k++;
  }
@@ -265,7 +317,8 @@ function* liveGpRoundGen(field, meIdx, ctx, title, meta){
    me={chartPts: row?row.pts:0, chartPos: chart.indexOf(meIdx)+1, codes,
        pos: cls.indexOf(meIdx)+1, lcq, inFinal:inF};
  }
- liveWrapUp(live, title);
+ yield* liveSideGen(live, snap, (x)=>{ live.msgs.push(x); live.story.push(x); }, 'post', 23);
+ liveWrapUp(live, title, me);
  return {title, T, chart, chartPts, cls, L1, L2, F, me, live:true,
    rows: cls.map((ix,k)=>({pos:k+1, name:field[ix].name, ctry:field[ix].ctry||'POL',
      chart:chartPts[ix]||0, gp:SGP.pts[k]||0, me:ix===meIdx}))};
@@ -293,19 +346,34 @@ function* liveImpFinalGen(field, meIdx, ctx, meta){
    if(finIdx.includes(meIdx)){ const o=fin.res.find(x=>x.i===meIdx)||{};
      meFin = o.out || String(fin.pts[meIdx]); meCodes.push('F:'+(o.out||String(fin.pts[meIdx]))); }
  }
- liveWrapUp(live, meta.title);
+ yield* liveSideGen(live, snap, (x)=>{ live.msgs.push(x); live.story.push(x); }, 'post', 23);
+ liveWrapUp(live, meta.title, {chartPts:meRow?meRow.pts:0});
  return {T, cls, score, semiOrder, finOrder, meCodes, meSemi, meFin, live:true,
    mePts: meRow? score[meIdx] : 0, mainPts: meRow? meRow.pts : 0};
 }
 /* Skutki pozasportowe turnieju jechanego ręcznie — do raportu sezonu. */
-function liveWrapUp(live, title){
+function liveWrapUp(live, title, me){
  const note=[];
  if(live.yellow) note.push(live.yellow+'× żółta kartka ('+zl(live.yellow*BIGM.yellowCost)+')');
  if(live.red) note.push('czerwona kartka');
  if(live.outOfMeeting && !live.red) note.push('opuszczony park maszyn');
  if(live.crashed) note.push(live.crashed+'× kraksa');
  if(live.hurt) note.push('-'+live.hurt+' OVR po upadku');
+ /* Sprint 4 */
+ if(live.lateCount)  note.push(live.lateCount+'× wykluczenie za limit dwóch minut');
+ if(live.setupChanges) note.push(live.setupChanges+'× zmiana ustawień motocykla');
+ if(live.ajsOk)      note.push(live.ajsOk+'× UDANY AJS SPIDŁEJ');
+ if(live.ajsFail)    note.push(live.ajsFail+'× nieudany AJS SPIDŁEJ');
+ if(live.nozyceOk)   note.push(live.nozyceOk+'× udane nożyce');
+ if(live.evDone)     note.push(live.evDone+'× zdarzenie w parku maszyn');
+ if(live.itwGiven)   note.push('wywiady: '+live.itwGiven+' odpowiedzi');
+ if(live.itwRefused) note.push(live.itwRefused+'× odmowa wywiadu');
  if(note.length) (G.S.notesBig=G.S.notesBig||[]).push('WIELKI TURNIEJ ('+title+'): '+note.join(', ')+'.');
- (G.S.bigLog=G.S.bigLog||[]).push({title, ind:true, story:live.story.slice()});
+ /* SPRINT 4: pato-komentarze po turnieju — bez wyniku drużynowego, więc
+    głosy mówią wyłącznie o tobie i o tym, co narobiłeś na torze. */
+ live.voices = bigMatchVoices({ind:true, live,
+   me:{starts:(live.codes||[]).length, pts: me&&me.chartPts!=null ? me.chartPts : 0, bon:0,
+       codes:(live.codes||[]).slice()}});
+ (G.S.bigLog=G.S.bigLog||[]).push({title, ind:true, voices:live.voices, story:live.story.slice()});
  G.live=null; G.liveSnap=null;
 }

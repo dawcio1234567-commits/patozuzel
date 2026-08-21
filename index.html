@@ -33,6 +33,21 @@ body{background:#050505;background-image:repeating-linear-gradient(0deg,rgba(255
 .glow{text-shadow:0 0 12px rgba(249,115,22,.55)}
 .blink{animation:bl 1.1s steps(2,start) infinite}
 @keyframes bl{to{visibility:hidden}}
+
+/* ---- WARSZTAT LIVE (Sprint 4) ----
+   Boks "TOR I MOTOCYKL" w trakcie meczu ma MOCNO pulsować: to jedyne
+   miejsce na ekranie jazdy, w którym gracz realnie ustawia sprzęt, a przez
+   dwa sprinty ginęło pod tabelą punktową. Pulsuje tylko wtedy, gdy da się
+   coś zmienić (klasa dokładana warunkowo w ui/09c-warsztat-live.js) —
+   pulsujący boks, którego nie można kliknąć, byłby zwykłym hałasem. */
+.pulse-hot{animation:ph 1.05s ease-in-out infinite}
+@keyframes ph{
+  0%,100%{box-shadow:0 0 0 0 rgba(249,115,22,0);border-color:#f97316}
+  50%    {box-shadow:0 0 22px 3px rgba(249,115,22,.55);border-color:#fdba74}
+}
+.pulse-txt{animation:pt 1.05s ease-in-out infinite}
+@keyframes pt{0%,100%{color:#fb923c}50%{color:#fff7ed;text-shadow:0 0 10px rgba(249,115,22,.9)}}
+@media (prefers-reduced-motion:reduce){.pulse-hot,.pulse-txt{animation:none}}
 .bar{height:9px;background:#27272a;border:1px solid #71717a;position:relative;overflow:hidden}
 .bar>i{display:block;height:100%;background:#f97316}
 table{border-collapse:collapse}
@@ -123,6 +138,8 @@ select:focus,input:focus{border-color:#fb923c;box-shadow:0 0 0 2px rgba(251,146,
 <script src="data/62-glosy-klub.js"></script>
 <script src="data/63-glosy-index.js"></script>
 <script src="data/70-wielki-mecz.js"></script>
+<script src="data/71-mecz-zdarzenia.js"></script>
+<script src="data/72-glosy-pomeczowe.js"></script>
 <script src="engine/00-narzedzia.js"></script>
 <script src="engine/01-kariera-koszty.js"></script>
 <script src="engine/02-ovr-i-balans.js"></script>
@@ -153,9 +170,11 @@ select:focus,input:focus{border-color:#fb923c;box-shadow:0 0 0 2px rgba(251,146,
 <script src="engine/26-rynek-wartosc.js"></script>
 <script src="engine/27-rynek-oferty.js"></script>
 <script src="engine/28-wielki-mecz.js"></script>
+<script src="engine/28b-sprzet-live.js"></script>
 <script src="engine/29-live-bieg.js"></script>
 <script src="engine/29b-live-kolizje.js"></script>
 <script src="engine/30-live-park-maszyn.js"></script>
+<script src="engine/30b-live-zdarzenia.js"></script>
 <script src="engine/31-live-mecz.js"></script>
 <script src="engine/32-live-turniej.js"></script>
 <script src="engine/33-imsj2-eliminacje.js"></script>
@@ -170,6 +189,7 @@ select:focus,input:focus{border-color:#fb923c;box-shadow:0 0 0 2px rgba(251,146,
 <script src="ui/08-ekran-wielki-mecz.js"></script>
 <script src="ui/09-ekran-live.js"></script>
 <script src="ui/09b-live-trener.js"></script>
+<script src="ui/09c-warsztat-live.js"></script>
 <script src="ui/10-podsumowanie.js"></script>
 <script src="ui/11-podsumowanie-boksy.js"></script>
 <script src="ui/12-podglad-meczu.js"></script>

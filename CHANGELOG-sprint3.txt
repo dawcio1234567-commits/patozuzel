@@ -1,0 +1,71 @@
+GOTOWY WPIS DO data/01-changelog-biezacy.js
+-------------------------------------------
+Nie znam dokładnego kształtu obiektu w tej puli (nie było jej w podesłanych plikach),
+więc niżej jest sama TREŚĆ w takiej formie, w jakiej piszesz changelog. Podmień klucze
+na swoje (`v` / `d` / `items` czy jak tam się u ciebie nazywają) i wklej na górę puli.
+Pamiętaj też o dacie w data/00-meta.js.
+
+{
+ v:'Sprint 3 — TRENERZY',
+ d:'22.08.2026',
+ items:[
+  'POLA STARTOWE. Koniec z kolegami z pary obok siebie pod taśmą. Stawka do każdego biegu ' +
+  'układa się teraz naprzemiennie: gospodarz, gość, gospodarz, gość — w biegach programowych, ' +
+  'po każdym zastępstwie, po rezerwie taktycznej i w biegach nominowanych. Kaski idą za drużyną, ' +
+  'a nie za numerem pola: gospodarz zawsze czerwony i niebieski, gość zawsze biały i żółty.',
+
+  'LOGIKA PAR. Seniorzy (1-5 / 9-13) nie mają prawa stać obok siebie. Jedyne dopuszczone ' +
+  'sąsiedztwo tej samej drużyny to para młodzieżowa 6-7 / 14-15 — i tylko wtedy, gdy przeplot ' +
+  'jest fizycznie niemożliwy.',
+
+  'KAŻDY KLUB MA TRENERA. Sześć typów: Belfer, Słup ogłoszeniowy, Rachmistrz, Wychowawca ' +
+  'młodzieży, Ziomek z szatni i Dyktator. Każdy ma warsztat, autorytet, nerwy i własne sympatie: ' +
+  'jeden ceni profesjonalizm, drugi to, o czym napiszą portale, trzeci wyłącznie średnią biegową.',
+
+  'TWÓJ STATUS W ZESPOLE. Trener wylicza opinię o tobie od -100 do +100 i nadaje jej nazwę: ' +
+  'Legenda, Gwiazda, Filar składu, Numer w programie, Rubryka do wypełnienia albo Wkład do kevlaru. ' +
+  'Widać ją w raporcie sezonu razem z pełną rozpiską: co konkretnie trener w tobie lubi, a czego nie.',
+
+  'ODSTAJESZ — TRENER CIĘ NIE LUBI. W dół i w GÓRĘ. Za słaby: nie ma na ciebie pomysłu. ' +
+  'Za dobry: przestaje być najważniejszą osobą w klubie i zaczyna liczyć dni do końca kontraktu. ' +
+  'Zawodnik pasujący do poziomu drużyny jedzie najwięcej. To wpływa na numery w programie.',
+
+  'ROZWÓJ POD TRENEREM. Warsztat szkoleniowca i jego sympatia decydują, jak szybko rośnie ' +
+  'twój OVR — i jak szybko się sypie po trzydziestce. Dobry trener realnie przedłuża karierę, ' +
+  'słup ogłoszeniowy realnie ją skraca. Rozliczenie roku widać w raporcie sezonu.',
+
+  'REZERWY WEDŁUG REGULAMINU. Młodzieżowiec: dwa starty z rezerwy zwykłej i jeden z taktycznej. ' +
+  'Trener AI sięga po rezerwę taktyczną przy stracie 6 punktów i wybiera przez własne sympatie — ' +
+  'a pod presją wyników sięga szybciej. Młodzieżowca NIE WOLNO zdjąć na rzecz seniora.',
+
+  'BIEGI XIV i XV TYLKO DLA SENIORÓW. Junior może w nich wystąpić wyłącznie jako rezerwa — ' +
+  'dopiero wtedy, gdy drużyna nie ma dwóch seniorów z wolnym startem.',
+
+  'TY TO CHYBA REGULAMINU W BURDELU SIĘ UCZYŁEŚ. Poproś trenera o wpuszczenie z rezerwy ' +
+  'wbrew regulaminowi, a usłyszysz dokładnie to zdanie. Bez rzutu kością, za to z paragrafem ' +
+  'pod spodem, żeby było wiadomo, o co poszło.',
+
+  'ZWALNIANIE TRENERA PRZEZ GWIAZDĘ. Trener, który cię nie znosi, obniża szansę na przedłużenie ' +
+  'kontraktu. CHYBA ŻE twoja pozycja — OVR plus medialność — przewyższa jego autorytet. ' +
+  'Wtedy zarząd wybiera ciebie: ty podpisujesz, a on pakuje kożuch. Karuzela trenerska ' +
+  'w całej lidze widoczna w raporcie po sezonie.'
+ ]
+}
+
+
+DOPISKA — SPRINT 3b (domknięcie długu, ten sam patch)
+-----------------------------------------------------
+Trzy dodatkowe punkty do tej samej listy `items`:
+
+  'ROZWÓJ POD TRENEREM W ROZPISCE. Wpływ szkoleniowca na twój OVR nie jest już osobną ' +
+  'rubryką przy przejściu roku — siedzi wprost w rozpisce rozwoju po sezonie, obok wieku, ' +
+  'profesjonalizmu, atmosfery i budżetu klubu. Widać dokładnie, ile punktów dał albo zabrał.',
+
+  'SZANSA NA SKŁAD MÓWI PRAWDĘ. Procent pokazywany przy ofercie i przed każdą kolejką ' +
+  'liczy teraz to samo, co realny mecz — razem z sympatią trenera. Skłócony z trenerem ' +
+  'nie dostanie już obietnicy 80% miejsca w składzie, którego nigdy nie zobaczy.',
+
+  'WIDZISZ, KTO CIĘ POPROWADZI. Przy każdej ofercie (także przy pierwszym kontrakcie) ' +
+  'jest boks trenera: nazwisko, typ, warsztat, autorytet, twój status w jego oczach ' +
+  'i to, czy pod nim przyspieszysz, czy staniesz w miejscu. Dwa kluby z tym samym ' +
+  'budżetem to nie to samo, jeżeli w jednym siedzi wychowawca, a w drugim słup ogłoszeniowy.'

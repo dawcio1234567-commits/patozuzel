@@ -20,6 +20,16 @@ function newGame(){
      pause  — na co czeka zatrzymana symulacja sezonu (patrz seasonStep),
      live   — stan spotkania jechanego ręcznie, czytany przez scLive() w UI. */
   pause:null, live:null, liveSnap:null,
+  /* --- USTAWIENIA KARIERY (Sprint 5, patch 24.08.2026) ---
+     Wybierane RAZ, na ekranie tworzenia zawodnika, i obowiązujące przez
+     całą karierę:
+       liveMatches — czy gra ma w ogóle proponować JAZDĘ NA ŻYWO w wielkim
+                     meczu. `false` = ekran „przesymuluj / jadę / rozpłacz się"
+                     nigdy się nie pokazuje, a wszystkie spotkania liczy silnik.
+                     Sprawdza to bigMatchAsk() w engine/28-wielki-mecz.js.
+     Stare zapisy (sprzed patcha) nie mają tego pola — dlatego wszędzie
+     czytamy je przez gameOpt('liveMatches'), które domyśla się `true`. */
+  opts:{liveMatches:true},
   /* --- SPONSORZY TYTULARNI ---
      bannedSponsors: firmy z Grupy B, które już raz uciekły z kasą — znikają z gry na zawsze.
      sponsorRenames: zmiany nazw klubów czekające na wejście w nowym roku (do raportu w UI). */
@@ -74,4 +84,22 @@ function newPlayer(name,clsId){
   career:{seasons:0,matches:0,heats:0,pts:0,bon:0,def:0,exc:0,earned:0,titles:0,best:'—',bestAvg:0,
           living:0, service:0, renewals:0, coachesFired:0}
  };
+}
+
+/* ------------------------------------------------------------
+   USTAWIENIA KARIERY — jedno wejście, odporne na stare zapisy.
+   Rozgrywka zaczęta przed Sprintem 5 nie ma `G.opts`, więc brak pola
+   znaczy „tak jak było do tej pory": wielki mecz PYTA o jazdę na żywo.
+   ------------------------------------------------------------ */
+function gameOpt(k, dflt){
+ const d = dflt===undefined ? true : dflt;
+ if(!G) return d;
+ if(!G.opts) G.opts={};
+ return G.opts[k]===undefined ? d : G.opts[k];
+}
+function setGameOpt(k, v){
+ if(!G) return v;
+ if(!G.opts) G.opts={};
+ G.opts[k]=v;
+ return v;
 }

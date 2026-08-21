@@ -3,7 +3,10 @@
    Pasek relacji z trenerem, kask przy nazwisku i alert regulaminowy
    ------------------------------------------------------------
    Wydzielone z ui/09-ekran-live.js (patch 22.08.2026, Sprint 3),
-   bo 09 dobił do 28 KB. Same funkcje rysujące — dane przychodzą
+   bo 09 dobił do 28 KB. Sprint 5 (24.08.2026) schował tu drugorzędne
+   liczby (typ trenera, warsztat, autorytet, cytat, paragraf) pod klasę
+   `.hint` — na pasku zostaje nazwisko, twój status i presja, czyli to,
+   co realnie zmienia decyzje trenera w tym meczu. Same funkcje rysujące — dane przychodzą
    gotowe z engine/31-live-mecz.js (L.coachInfo, L.refuse).
    ------------------------------------------------------------
    W index.html wpisz go PRZED 09 (albo zaraz za nim — kolejność nie ma
@@ -29,13 +32,13 @@ function liveCoachBar(L){
    <div class="text-[11px]">
      <span class="text-zinc-500 tracking-widest">TRENER</span>
      <b class="text-zinc-200 ml-1">${esc(C.name)}</b>
-     <span class="text-zinc-500">· ${esc(C.type)} · warsztat ${C.skill} · autorytet ${C.auth}</span>
+     <span class="hint text-zinc-500">· ${esc(C.type)} · warsztat ${C.skill} · autorytet ${C.auth}</span>
    </div>
    <div class="text-[11px]">
      <span class="text-zinc-500 tracking-widest">TWÓJ STATUS</span>
      <b class="ml-1" style="color:${C.statusCol||relCol}">${esc(C.status)}</b>
      <span class="ml-1" style="color:${relCol}">(${C.rel>0?'+':''}${C.rel})</span>
-     ${C.gap?`<span class="text-zinc-600"> · ${C.gap>0?'+':''}${C.gap} OVR wzgl. drużyny</span>`:''}
+     ${C.gap?`<span class="hint text-zinc-600"> · ${C.gap>0?'+':''}${C.gap} OVR wzgl. drużyny</span>`:''}
    </div>
    <div class="text-[11px]">
      <span class="text-zinc-500 tracking-widest">PRESJA NA TRENERZE</span>
@@ -47,7 +50,7 @@ function liveCoachBar(L){
      zwykła <b class="text-zinc-200">${res.plain}/${res.plainMax}</b> ·
      taktyczna <b class="text-zinc-200">${res.tactic}/${res.tacticMax}</b></div>`:''}
   </div>
-  <div class="px-3 pb-2 text-[11px] text-zinc-400 italic border-l-2 border-zinc-700 ml-3">„${esc(C.quote||'')}"</div>
+  <div class="hint px-3 pb-2 text-[11px] text-zinc-400 italic border-l-2 border-zinc-700 ml-3">„${esc(C.quote||'')}"</div>
  </div>`;
 }
 /* ============================================================
@@ -67,7 +70,7 @@ function liveRefuseBox(L){
   <div class="p-3">
    <div class="text-[15px] font-extrabold blink mb-1" style="color:#f87171">„${esc(F.txt)}"</div>
    <div class="text-[11.5px] text-zinc-300">${esc(F.why||'')}</div>
-   <div class="text-[10.5px] text-zinc-500 mt-1">Art. 719 — rezerwa zwykła i taktyczna. Sędzia nie wpisze tego do programu,
+   <div class="hint text-[10.5px] text-zinc-500 mt-1">Art. 719 — rezerwa zwykła i taktyczna. Sędzia nie wpisze tego do programu,
      a trener nie będzie się o to kłócił z komisją.</div>
   </div>
  </div>`;

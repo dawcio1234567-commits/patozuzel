@@ -16,6 +16,16 @@
      Wolno ruszać: live.formBonus (siła w kolejnych biegach), live.gearJam
      (blokada zmiany zębatki), live.setupDirty, G.p.*, G.S.*.
      Zwracasz string albo tablicę stringów — to trafia do logu zawodów.
+
+   SPRINT 5 (24.08.2026) — FLAGA `team:true`:
+     Turniej indywidualny NIE MA DRUŻYNY: nie ma trenera, kierownika drużyny,
+     kolegi z pary ani „naszego" prezesa. Wszystko, co ich zakłada, dostaje
+     `team:true` i engine/30b-live-zdarzenia.js wycina to z puli, kiedy
+     `live.ind` jest zapalone (ustawia je engine/32-live-turniej.js).
+     Flagę można postawić na TRZECH poziomach:
+       · całe zdarzenie w LIVE_EVENTS  → nigdy nie wypadnie w indywidualnych,
+       · pojedyncza opcja zdarzenia    → zniknie z listy wyborów,
+       · pojedyncze pytanie w LIVE_ITW → nie wejdzie do puli wywiadu.
    ============================================================ */
 
 /* --- pomocniki skutków --- */
@@ -66,9 +76,9 @@ const LIVE_EVENTS = [
  {id:'esemes', t:'SMS OD NIEZNANEGO NUMERU: „POJEDŹ WOLNIEJ W SWOIM NASTĘPNYM BIEGU"',
   d:'Do wiadomości dopięte zdjęcie twojego busa na parkingu i kwota, która wygląda jak dwie twoje wypłaty.',
   opts:[
-   {id:'zgloc', l:'POKAŻ TO KIEROWNIKOWI DRUŻYNY',
+   {id:'zgloc', l:'ZANIEŚ TELEFON DO WIEŻY, DO SĘDZIEGO ZAWODÓW',
     d:'Papier idzie do PZM, ty jedziesz swoje.',
-    f:(live,c)=>{ fxLiveProf(c.p,4); return 'Kierownik robi zdjęcie ekranu i dzwoni gdzie trzeba. Profesjonalizm +4, a ty masz przez resztę zawodów spokój w głowie.'; }},
+    f:(live,c)=>{ fxLiveProf(c.p,4); return 'Sędzia robi zdjęcie ekranu i dzwoni gdzie trzeba. Profesjonalizm +4, a ty masz przez resztę zawodów spokój w głowie.'; }},
    {id:'skasuj', l:'SKASUJ I NIE MYŚL O TYM',
     d:'Tylko że już o tym myślisz.',
     f:(live,c)=>{ fxLiveForm(live,-1.6); return 'Kasujesz. I przez cały następny bieg zastanawiasz się, kto ma zdjęcie twojego busa. Głowa nie tam, gdzie tor.'; }},
@@ -113,7 +123,7 @@ const LIVE_EVENTS = [
       return o; }}
   ]},
 
- {id:'kolega', t:'KOLEGA Z PARY PROSI CIĘ O SILNIK',
+ {id:'kolega', team:true, t:'KOLEGA Z PARY PROSI CIĘ O SILNIK',
   d:'Zatarł drugi w tych zawodach. Ma jeszcze dwa biegi i nie ma czym jechać. Ty masz zapasowy.',
   opts:[
    {id:'daj', l:'DAJ MU SWÓJ ZAPASOWY',
@@ -130,7 +140,7 @@ const LIVE_EVENTS = [
       return 'Przybiliście piątkę przy busie. '+zl(k)+' do kieszeni, atmosfera -16, profesjonalizm -4, a on opowie o tym całej lidze.'; }}
   ]},
 
- {id:'prezes', t:'PREZES SCHODZI DO PARKU MASZYN',
+ {id:'prezes', team:true, t:'PREZES SCHODZI DO PARKU MASZYN',
   d:'Nigdy tego nie robi w trakcie zawodów. Idzie prosto na ciebie i ma minę człowieka, który właśnie rozmawiał z księgową.',
   opts:[
    {id:'sluch', l:'WYSŁUCHAJ',
@@ -178,7 +188,7 @@ const LIVE_EVENTS = [
    {id:'tasma', l:'OWIŃ TAŚMĄ IZOLACYJNĄ',
     d:'Klasyka polskiego żużla.',
     f:(live,c)=>{ fxLiveForm(live,-0.7); return 'Trzy zwoje czarnej taśmy i jedziemy. Trzyma. Chyba trzyma.'; }},
-   {id:'pozycz', l:'POŻYCZ BUTY OD JUNIORA',
+   {id:'pozycz', team:true, l:'POŻYCZ BUTY OD JUNIORA',
     d:'Ma czterdziesty drugi. Ty czterdziesty piąty.',
     f:(live,c)=>{ fxLiveForm(live,-2.4); fxLiveAtm(c.S,3);
       return 'Wcisnąłeś stopę w but o trzy numery za mały. Junior patrzy z podziwem, twoje palce nie.'; }},
@@ -195,6 +205,11 @@ const LIVE_EVENTS = [
    `when`: 'pre' (przed zawodami), 'mid' (w trakcie), 'post' (po).
    Każdy wywiad to TRZY pytania losowane z puli danego momentu.
    Odpowiedź: {l, prof, med, form, txt}.
+
+   SPRINT 5: NA JEDNE ZAWODY PRZYPADA MAKSYMALNIE JEDEN WYWIAD (SIDE.itwCap).
+   Licznik podbija samo WYLOSOWANIE — także wtedy, gdy odmówisz. Jak raz
+   powiedziałeś „nie teraz", to nikt cię tego wieczoru drugi raz nie zaczepi.
+   Pytania z `team:true` nie wchodzą do puli w turnieju indywidualnym.
    ============================================================ */
 const LIVE_ITW = {
  who:{
@@ -222,14 +237,14 @@ const LIVE_ITW = {
   {q:'„Kibice pytają, dlaczego nie ma pan konta na portalach społecznościowych."', a:[
    {l:'„Bo bym tam napisał, co myślę."',      prof:-1,med:6, form:0, txt:'To zdanie żyło w internecie dłużej niż całe zawody.'},
    {l:'„Mam. Prowadzi je moja siostra."',      prof:1, med:2, form:0, txt:'Siostra dowiedziała się o tym z transmisji.'},
-   {l:'„Nie interesuje mnie to. Interesuje mnie tor."', prof:4, med:-4,form:0, txt:'Trener kiwnął głową zza pleców reportera.'}
+   {l:'„Nie interesuje mnie to. Interesuje mnie tor."', prof:4, med:-4,form:0, txt:'Mechanik kiwnął głową zza pleców reportera.'}
   ]},
   {q:'„Czy zawodnik żużlowy powinien mieć drugi zawód?"', a:[
    {l:'„Powinien mieć drugi zawód, trzeci kredyt i czwartą pracę."', prof:0, med:5, form:0, txt:'Śmiech w parku maszyn, cisza w gabinecie prezesa.'},
    {l:'„To jest sport zawodowy. Punkt."',      prof:3, med:0, form:0, txt:'Krótko, po zawodowemu, bez nagłówka.'},
    {l:'„Ja mam. Wożę palety w zimie."',        prof:2, med:4, form:0, txt:'Redaktor zrobił z tego materiał o prawdziwym obliczu ligi.'}
   ]},
-  {q:'„Jak pan skomentuje wypowiedź prezesa rywali, że pana klub «nie ma czym jeździć»?"', a:[
+  {team:true, q:'„Jak pan skomentuje wypowiedź prezesa rywali, że pana klub «nie ma czym jeździć»?"', a:[
    {l:'„Zobaczymy po zawodach."',              prof:3, med:0,  form:1.0, txt:'Spokojnie. Zapamiętałeś to zdanie i wsiadasz z nim na motocykl.'},
    {l:'„Niech najpierw zapłaci swoim zawodnikom."', prof:-2, med:8, form:0, txt:'Awantura gotowa. Dwa portale, jedno sprostowanie i jeden telefon od prezesa.'},
    {l:'„Nie czytam takich rzeczy."',           prof:1, med:-2, form:0, txt:'Skłamałeś i obaj o tym wiecie.'}
@@ -241,7 +256,7 @@ const LIVE_ITW = {
    {l:'„Skupienie. Nic więcej."',            prof:3, med:-2,form:1.2, txt:'Wróciłeś do sprzętu z głową na miejscu.'},
    {l:'„Zimno mi w ręce."',                  prof:0, med:3, form:0, txt:'Cała Polska dowiedziała się, że w Polsce jest zimno.'}
   ]},
-  {q:'„Sędzia dziś wyraźnie faworyzuje gospodarzy. Zgadza się pan?"', a:[
+  {team:true, q:'„Sędzia dziś wyraźnie faworyzuje gospodarzy. Zgadza się pan?"', a:[
    {l:'„Tak. I wszyscy to widzą."',           prof:-3,med:7, form:0, txt:'Sędzia obejrzał to w przerwie. Sędzia ma dobrą pamięć.'},
    {l:'„Nie oceniam sędziów w trakcie zawodów."', prof:4, med:-1,form:0, txt:'Podręcznikowo. Kierownik drużyny odetchnął.'},
    {l:'„Sędzia jest z Leszna. Więcej nie powiem."', prof:-1,med:9, form:0, txt:'Powiedziałeś dokładnie tyle, żeby wszyscy zrozumieli.'}
@@ -265,10 +280,10 @@ const LIVE_ITW = {
  post:[
   {q:'„Czy po takich zawodach da się spać?"', a:[
    {l:'„Da się. Gorzej z wstawaniem."',       prof:0, med:5, form:0, txt:'Cytat zamknął relację z zawodów.'},
-   {l:'„Analizuję, wyciągam wnioski, jadę dalej."', prof:4, med:-2,form:0, txt:'Zawodowo. Trener przeczytał i był zadowolony.'},
+   {l:'„Analizuję, wyciągam wnioski, jadę dalej."', prof:4, med:-2,form:0, txt:'Zawodowo, sucho, bez nagłówka. Dokładnie tak, jak uczą na szkoleniach medialnych.'},
    {l:'„Nie pana sprawa."',                   prof:-2,med:3, form:0, txt:'Redaktor napisał o tobie akapit, którego nie chciałeś przeczytać.'}
   ]},
-  {q:'„Kto jest winny temu, co się dziś działo?"', a:[
+  {team:true, q:'„Kto jest winny temu, co się dziś działo?"', a:[
    {l:'„Ja. Zawodnik odpowiada za swoje punkty."', prof:5, med:1, form:0, txt:'Szatnia to usłyszała. To się liczy bardziej niż tekst.'},
    {l:'„Tor. Ten tor to jest przestępstwo."', prof:-2,med:7, form:0, txt:'Kierownik toru czyta portale. Kierownik toru ma pamięć.'},
    {l:'„Trener. Nie umiem tego inaczej powiedzieć."', prof:-4,med:10,form:0, txt:'Bomba. W poniedziałek będzie o tym mówić cała liga.'}

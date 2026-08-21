@@ -14,33 +14,42 @@
    Ekran końcowego wyniku wielkiego meczu. Ten sam pomysł co głosy
    po sezonie (data/60-62), tylko o JEDNYM spotkaniu i wprost po nim.
    Klucze dobiera bigMatchVoices() w engine/30b-live-zdarzenia.js.
+   ------------------------------------------------------------
+   SPRINT 5 (24.08.2026) — DWIE NOWE RZECZY W KAŻDYM BOKSIE:
+     · `team:true` — głos MA SENS TYLKO PO MECZU DRUŻYNOWYM (spiker mówiący
+       o wyniku 45:45, kolega z pary, kierownik drużyny). W turnieju
+       indywidualnym bigMatchVoices() go pomija — także przy dobijaniu
+       listy do SIDE.voices, bo wcześniej potrafił tam wpaść spiker
+       gratulujący „łomotu", którego nikomu nie sprawiono.
+     · `ind:{who, lines}` — WARIANT BEZ DRUŻYNY. Ten sam powód komentarza,
+       ale mówi go ktoś, kto naprawdę stoi w tym parku maszyn.
    ============================================================ */
 const LIVE_TALK = {
  /* --- wynik drużyny --- */
- winBig:{who:'SPIKER ZAWODÓW', lines:[
+ winBig:{team:true, who:'SPIKER ZAWODÓW', lines:[
   '„PANIE I PANOWIE, TO SIĘ NAZYWA ŁOMOT! Proszę nie chować szalików, proszę je machać!"',
   '„Goście przyjechali autokarem, wyjeżdżają pieszo. Metaforycznie. Chyba metaforycznie."',
   '„Takiego wyniku nie było tu od czasu, gdy bufet miał jeszcze dwa okienka."',
   '„Prezes tańczy przy bandzie. Panie prezesie, są kamery. Panie prezesie."'
  ]},
- win:{who:'SPIKER ZAWODÓW', lines:[
+ win:{team:true, who:'SPIKER ZAWODÓW', lines:[
   '„Wygrana to wygrana. W tej lidze nikt nie pyta, o ile."',
   '„Dwa punkty do tabeli i cały tydzień spokoju w szatni. Bezcenne."',
   '„Kierownik drużyny po raz pierwszy dziś usiadł."',
   '„Kibice wychodzą zadowoleni, a to się w tym mieście zdarza raz na kwartał."'
  ]},
- draw:{who:'SPIKER ZAWODÓW', lines:[
+ draw:{team:true, who:'SPIKER ZAWODÓW', lines:[
   '„Remis. Czyli wszyscy są niezadowoleni po równo. Sprawiedliwie."',
   '„Punkt. Jeden. Podzielony na siedmiu. Proszę policzyć samemu."',
   '„Remis w żużlu jest jak parówka bez bułki: technicznie jedzenie."'
  ]},
- lose:{who:'SPIKER ZAWODÓW', lines:[
+ lose:{team:true, who:'SPIKER ZAWODÓW', lines:[
   '„Przegrana u siebie. Proszę wychodzić spokojnie i nie patrzeć na park maszyn."',
   '„W szatni będzie cicho. Bardzo cicho. Ja bym tam teraz nie wchodził."',
   '„Prezes wyszedł po dwunastym biegu. Nie wrócił."',
   '„Tabela nie kłamie, a dziś wyjątkowo nie miała litości."'
  ]},
- loseBig:{who:'SPIKER ZAWODÓW', lines:[
+ loseBig:{team:true, who:'SPIKER ZAWODÓW', lines:[
   '„To nie był mecz, to była zbiórka publiczna na rzecz gości."',
   '„Proszę państwa, ja już nawet nie wiem, co powiedzieć, a mówię zawodowo od osiemnastu lat."',
   '„Sektor B śpiewa piosenkę, której nie mogę powtórzyć, ale rozumiem intencję."',
@@ -57,7 +66,12 @@ const LIVE_TALK = {
   '„Dowiozłeś. Nie wszyscy dowieźli. Zapamiętam to."',
   '„Jak jedziemy razem, to ja mam mniej roboty. Doceniam."',
   '„Solidnie. W tej lidze «solidnie» to jest komplement, nie wymówka."'
- ]},
+ ],
+ ind:{who:'RYWAL Z SĄSIEDNIEGO BOKSU', lines:[
+  '„Dowiozłeś swoje. Nie każdy tu dzisiaj dowiózł."',
+  '„Nie przeszkadzałeś, nie pomagałeś, punkty masz. Zawodowo."',
+  '„Solidny turniej. Bez fajerwerków, ale solidny. Ja bym się podpisał."'
+ ]}},
  meMeh:{who:'MECHANIK', lines:[
   '„No było. Nie było źle. Nie było też po co jechać tak daleko."',
   '„Sprzęt zrobił swoje. Reszta to już nie moja działka."',
@@ -104,17 +118,44 @@ const LIVE_TALK = {
   '„Dwie minuty. DWIE MINUTY, chłopie. Tyle trwa zagotowanie wody."',
   '„Ustawiaj sprzęt przed zawodami, nie w trakcie. To nie jest skomplikowana myśl."',
   '„Sędzia nie czeka. Sędzia nigdy nie czeka. Zapisz to sobie na kasku."'
- ]},
+ ],
+ ind:{who:'SĘDZIA ZAWODÓW', lines:[
+  '„Dwie minuty to jest dwie minuty. Regulamin ma to napisane dużymi literami."',
+  '„Trzeci raz odliczałem pana pod taśmą. Trzeci raz w jednych zawodach."',
+  '„Ja rozumiem, że sprzęt. Ja tylko nie rozumiem, czemu akurat teraz."'
+ ]}},
  itw:{who:'RZECZNIK KLUBU', lines:[
   '„Prosiłem o jedno zdanie. Jedno. Pan dał im materiał na trzy dni."',
   '„W przyszłym tygodniu mamy szkolenie medialne. Pan ma je obowiązkowo."',
   '„Portale już to mają w tytułach. Wszystkie. Z pana nazwiskiem."'
- ]},
+ ],
+ ind:{who:'MENEDŻER, KTÓRY SAM SIĘ WPROSIŁ', lines:[
+  '„Gadałeś jak z taśmy. Za darmo. Wiesz, ile bierze się za taki materiał?"',
+  '„Trzy portale mają cię w tytule. Ani jeden nie zapłacił."',
+  '„Następnym razem dzwoń do mnie PRZED mikrofonem, nie po."'
+ ]}},
  quiet:{who:'RZECZNIK KLUBU', lines:[
   '„Ani jednego cytatu. Wie pan, jak trudno jest zrobić z tego komunikat prasowy?"',
   '„Dziennikarze wyszli z pustymi dyktafonami. Będą się mścić w poniedziałek."',
   '„Cisza też jest strategią. Kiepską, ale strategią."'
- ]},
+ ],
+ ind:{who:'REDAKTOR Z LOKALNEJ GAZETY', lines:[
+  '„Przeszedł pan obok mikrofonu. Napiszę o tym jedno zdanie i będzie ono najgorsze."',
+  '„Nie ma cytatu — jest opis. Opisy wychodzą mi gorzej dla bohatera."',
+  '„Cisza to też wypowiedź. Tylko że to ja ją przetłumaczę czytelnikom."'
+ ]}},
+ /* --- SPRINT 5: oddałeś ustawienia mechanikowi („Jestem Niedźwiedziakiem") --- */
+ auto:{who:'MECHANIK', lines:[
+  '„I widzisz? Nie spaliło się, nie urwało, dojechało. Trzeba było od razu."',
+  '„Przez pół sezonu kręciłeś to sam i przez pół sezonu było źle. Dziś nie było."',
+  '„Ustawiłem, jak umiem. Umiem tyle, ile mi płacisz — ale przynajmniej wiem, gdzie jest klucz."',
+  '„Jeden zawodnik w tej lidze ufa mechanikowi. Jeden. I to akurat ty."'
+ ],
+ ind:{who:'MECHANIK', lines:[
+  '„Turniej z oddanym sprzętem. Wiesz, ilu zawodników mi na to pozwala? Zero."',
+  '„Ty jechałeś, ja kręciłem. Tak to kiedyś wyglądało w tym sporcie."',
+  '„Nie pytaj, co zmieniłem. I tak byś nie zrozumiał, a jechało."'
+ ]}},
  /* --- zawsze na koniec, niezależnie od wszystkiego --- */
  always:{who:'GŁOS Z PARKINGU', lines:[
   '„Bus nie odpala. Ktoś ma kable?"',

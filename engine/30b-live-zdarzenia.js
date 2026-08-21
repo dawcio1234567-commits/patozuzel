@@ -1,8 +1,9 @@
 /* ============================================================
    PATO-ŻUŻEL :: SILNIK :: ZDARZENIA W TRAKCIE ZAWODÓW, WYWIADY, GŁOSY PO MECZU
-   Sprint 4 (23.08.2026). Ładuje się MIĘDZY 30 a 31:
+   Sprint 4 (23.08.2026), poprawiony w Sprincie 5 (24.08.2026).
+   Ładuje się MIĘDZY 30 a 31:
        <script src="engine/30-live-park-maszyn.js"></script>
-       <script src="engine/30b-live-zdarzenia.js"></script>   ← TO DOPISZ
+       <script src="engine/30b-live-zdarzenia.js"></script>
        <script src="engine/31-live-mecz.js"></script>
    ------------------------------------------------------------
    Trzy rzeczy, wszystkie czytające dane z data/71-mecz-zdarzenia.js:
@@ -10,20 +11,30 @@
      1. ZDARZENIA MIĘDZY BIEGAMI. Losowane w parku maszyn, ze skutkami
         NA TE ZAWODY: dyspozycja w kolejnych biegach (live.formBonus),
         stan toru, ryzyko dwóch minut, kartki, kasa, atmosfera.
-        Odpowiednik zdarzeń sezonowych, tylko że skutek widać od razu.
 
-     2. WYWIADY. Przed zawodami, w trakcie i po. Możesz odmówić albo
-        wziąć udział — wtedy trzy pytania kompletnie z dupy i trzy
-        odpowiedzi, z których każda coś rusza w profesjonalizmie,
-        medialności albo w twojej głowie na kolejny bieg.
+     2. WYWIADY. Przed zawodami, w trakcie i po.
 
-     3. PATO-KOMENTARZE POMECZOWE — bigMatchVoices(). Zestaw głosów
-        o TWOIM występie i o wyniku drużyny, w stylu głosów z końca sezonu.
-        Renderuje je ui/09 (ekran końca meczu) i ui/12 (raport sezonu).
+     3. PATO-KOMENTARZE POMECZOWE — bigMatchVoices().
 
-   WSPÓLNE DLA OBU GENERATORÓW. liveSideGen() jest generatorem, więc
-   wołasz go przez `yield*` — i mecz drużynowy (engine/31), i turniej
-   indywidualny (engine/32) używają dokładnie tego samego kodu.
+   ------------------------------------------------------------
+   CO ZMIENIŁ SPRINT 5
+
+   A. MAKSYMALNIE JEDEN WYWIAD NA ZAWODY. Do tej pory limity były trzy
+      osobne (`itw_pre`, `itwMid`, `itw_post`), więc w jednym meczu dało się
+      zaliczyć wywiad przed, w trakcie i po — a odmowa nie zamykała tematu,
+      bo licznik i tak stał na swoim. Teraz jest JEDEN twardy licznik
+      `live.itwCount` z limitem `SIDE.itwCap` (domyślnie 1) i podbija go
+      SAMO WYLOSOWANIE wywiadu — niezależnie od tego, czy weźmiesz w nim
+      udział, czy odmówisz.
+
+   B. TURNIEJ INDYWIDUALNY NIE MA DRUŻYNY. `live.ind` (ustawiane przez
+      engine/32-live-turniej.js) wycina wszystko, co zakłada istnienie
+      trenera, kierownika drużyny, kolegi z pary i prezesa klubu:
+        · zdarzenia oznaczone `team:true` w LIVE_EVENTS nie są losowane,
+        · opcje zdarzeń oznaczone `team:true` nie są pokazywane,
+        · pytania wywiadu oznaczone `team:true` nie wchodzą do puli,
+        · głosy pomeczowe `team:true` (wynik drużyny) nie wypadają,
+          a te, które mają wariant `ind`, mówione są przez kogoś innego.
    ============================================================ */
 
 /* Wszystkie gałki w jednym miejscu; `BIGM.side` z data/70 nadpisuje. */
@@ -35,9 +46,13 @@ const SIDE = Object.assign({
   itwMid     : 22,   // % szans na wywiad W TRAKCIE (przy wejściu do parku)
   itwPost    : 60,   // % szans na wywiad PO zawodach
   itwMidCap  : 1,    // ile razy w trakcie zawodów maks.
+  itwCap     : 1,    // SPRINT 5: ILE WYWIADÓW NA CAŁE ZAWODY (odmowa też się liczy)
   itwMedK    : 0.35, // ile medialność Gracza podnosi szanse na wywiad
   voices     : 6     // ile pato-komentarzy pokazujemy po meczu
 }, (typeof BIGM!=='undefined' && BIGM.side) || {});
+
+/* Czy to zawody BEZ drużyny (turniej indywidualny). */
+function liveIsInd(live){ return !!(live && (live.ind || live.kind==='ind')); }
 
 /* ------------------------------------------------------------
    1. ZDARZENIA MIĘDZY BIEGAMI
@@ -48,8 +63,12 @@ function liveEventRoll(live, heatNo){
  if((live.evDone||0) >= SIDE.evCap) return null;
  if(live.evLast!=null && (heatNo||0) - live.evLast < SIDE.evCool) return null;
  if(!chance(SIDE.evChance)) return null;
+ const ind=liveIsInd(live);
  const used=live.evUsed||(live.evUsed=[]);
- const pool=LIVE_EVENTS.filter(e=>!used.includes(e.id));
+ /* SPRINT 5: w turnieju indywidualnym nie ma trenera, kierownika drużyny,
+    prezesa „naszego" klubu ani kolegi z pary — te zdarzenia po prostu
+    nie mają w kim się odbyć, więc wypadają z puli. */
+ const pool=LIVE_EVENTS.filter(e=>!used.includes(e.id) && !(ind && e.team));
  if(!pool.length) return null;
  const ev=pick(pool);
  used.push(ev.id);
@@ -58,14 +77,17 @@ function liveEventRoll(live, heatNo){
  return ev;
 }
 /* Kształt zdarzenia dla interfejsu (bez funkcji — te zostają w silniku). */
-function liveEventView(ev){
+function liveEventView(ev, live){
+ const ind=liveIsInd(live);
  return {id:ev.id, t:ev.t, d:ev.d,
-   opts:ev.opts.map(o=>({id:o.id, l:o.l, d:o.d||''}))};
+   opts:ev.opts.filter(o=>!(ind && o.team)).map(o=>({id:o.id, l:o.l, d:o.d||''}))};
 }
 function liveEventApply(live, ev, optId, out){
  out=out||[];
  if(!ev) return out;
- const o = ev.opts.find(x=>x.id===optId) || ev.opts[0];
+ const ind=liveIsInd(live);
+ const pool=ev.opts.filter(o=>!(ind && o.team));
+ const o = pool.find(x=>x.id===optId) || pool[0] || ev.opts[0];
  out.push('ZDARZENIE — '+ev.t);
  let r=null;
  try{ r = o.f ? o.f(live, {p:G.p, S:G.S, live}) : null; }
@@ -76,23 +98,34 @@ function liveEventApply(live, ev, optId, out){
 }
 
 /* ------------------------------------------------------------
-   2. WYWIADY
+   2. WYWIADY — MAKSYMALNIE JEDEN NA ZAWODY (Sprint 5)
    ------------------------------------------------------------ */
 function liveItwChance(when){
  const med = (G&&G.p)?G.p.med:40;
  const base = when==='pre'?SIDE.itwPre : when==='mid'?SIDE.itwMid : SIDE.itwPost;
  return Math.round(cl(base + (med-40)*SIDE.itwMedK, 4, 95));
 }
+/* Czy w tych zawodach zostało jeszcze miejsce na wywiad. */
+function liveItwLeft(live){
+ return !!live && (live.itwCount||0) < (SIDE.itwCap==null?1:SIDE.itwCap);
+}
 function liveItwRoll(live, when){
  if(!live) return null;
+ /* TWARDY LIMIT NA CAŁE ZAWODY. Liczy się KAŻDY wywiad, który się pojawił —
+    także ten, z którego się wywinąłeś. „Odmówił" to też materiał. */
+ if(!liveItwLeft(live)) return null;
  if(when==='mid' && (live.itwMid||0) >= SIDE.itwMidCap) return null;
  if(live['itw_'+when]) return null;
  if(!chance(liveItwChance(when))) return null;
+ const ind=liveIsInd(live);
+ /* trzy pytania z puli danego momentu, bez powtórek;
+    w turnieju indywidualnym bez pytań o trenera, drużynę i gospodarzy */
+ const pool=(LIVE_ITW.q[when]||[]).filter(q=>!(ind && q.team));
+ if(pool.length<1) return null;
+ const bag=pool.slice(), q=[];
+ while(q.length<3 && bag.length) q.push(bag.splice(R(0,bag.length-1),1)[0]);
+ live.itwCount=(live.itwCount||0)+1;
  if(when==='mid') live.itwMid=(live.itwMid||0)+1; else live['itw_'+when]=true;
- /* trzy pytania z puli danego momentu, bez powtórek */
- const pool=(LIVE_ITW.q[when]||[]).slice();
- const q=[];
- while(q.length<3 && pool.length) q.push(pool.splice(R(0,pool.length-1),1)[0]);
  return {when, who:pick(LIVE_ITW.who[when]||['DZIENNIKARZ']),
    intro:LIVE_ITW.intro[when]||'', q};
 }
@@ -126,14 +159,13 @@ function liveItwRefuse(live, it, out){
  if(r.med ){ p.med =cl(p.med +r.med ,0,99); if(S) S.bigMed =(S.bigMed ||0)+r.med;  }
  if(r.form){ live.formBonus=(live.formBonus||0)+r.form; }
  live.itwRefused=(live.itwRefused||0)+1;
- out.push('ODMAWIASZ WYWIADU. '+(r.txt||''));
+ out.push('ODMAWIASZ WYWIADU. '+(r.txt||''),
+   'Na dziś temat zamknięty — więcej mikrofonów w tych zawodach już nie będzie.');
  return out;
 }
 
 /* ------------------------------------------------------------
    WSPÓLNY KROK „POZA TOREM" — zdarzenie + wywiad.
-   Generator: woła się przez `yield*`. `snap` i `say` podaje generator
-   meczu albo turnieju, więc ten sam kod obsługuje oba tryby.
    ------------------------------------------------------------ */
 function* liveSideGen(live, snap, say, when, heatNo){
  if(!live || live.abandoned) return;
@@ -141,7 +173,7 @@ function* liveSideGen(live, snap, say, when, heatNo){
  if(when!=='post'){
    const ev=liveEventRoll(live, heatNo);
    if(ev){
-     const act = yield snap('mevent', {mevent:liveEventView(ev)});
+     const act = yield snap('mevent', {mevent:liveEventView(ev, live)});
      liveEventApply(live, ev, (act&&act.v)||null, []).forEach(x=>say(x));
    }
  }
@@ -149,7 +181,8 @@ function* liveSideGen(live, snap, say, when, heatNo){
  const it=liveItwRoll(live, when);
  if(!it) return;
  const ask = yield snap('itw', {itw:{stage:'ask', when:it.when, who:it.who,
-   intro:it.intro, n:it.q.length, chance:liveItwChance(it.when)}});
+   intro:it.intro, n:it.q.length, chance:liveItwChance(it.when),
+   only:true}});
  if((ask&&ask.a)==='itwno'){ liveItwRefuse(live, it, []).forEach(x=>say(x)); return; }
  for(let i=0;i<it.q.length;i++){
    const act = yield snap('itw', {itw:Object.assign({stage:'q'}, liveItwQView(it,i))});
@@ -163,21 +196,30 @@ function* liveSideGen(live, snap, say, when, heatNo){
    ------------------------------------------------------------
    Wejście: {mine, theirs, ind, me:{starts,pts,bon,codes}, live:{...}}.
    Wyjście: tablica {who, txt} — gotowa do wyrenderowania.
+
+   SPRINT 5: w turnieju indywidualnym głosy oznaczone `team:true`
+   (wynik drużyny) nie wypadają w ogóle, a te, które mają wariant `ind`,
+   mówi ktoś, kto naprawdę tam jest — bo kolegi z pary i kierownika
+   drużyny na turnieju indywidualnym po prostu nie ma.
    ------------------------------------------------------------ */
 function bigMatchVoices(info){
  const V=[], used={};
+ const ind=!!info.ind;
  const add=(key)=>{
    const box=LIVE_TALK[key];
-   if(!box || !box.lines || !box.lines.length) return;
+   if(!box) return;
    if(used[key]) return;
+   if(ind && box.team) return;                       // wynik drużyny — nie w indywidualnych
+   const src = (ind && box.ind) ? box.ind : box;     // wariant „bez drużyny"
+   if(!src.lines || !src.lines.length) return;
    used[key]=true;
-   V.push({who:box.who, txt:pick(box.lines)});
+   V.push({who:src.who||box.who, txt:pick(src.lines)});
  };
  const me=info.me||{}, L=info.live||{};
  const st=me.starts||0, pts=(me.pts||0)+(me.bon||0);
  const avg=st?pts/st:0;
  /* wynik drużyny (mecz drużynowy) */
- if(!info.ind && info.mine!=null && info.theirs!=null){
+ if(!ind && info.mine!=null && info.theirs!=null){
    const d=info.mine-info.theirs;
    add(d>=14?'winBig' : d>0?'win' : d===0?'draw' : d<=-14?'loseBig':'lose');
  }
@@ -194,11 +236,12 @@ function bigMatchVoices(info){
  if(L.crashed)   add('crash');
  if((L.yellow||0)||L.red) add('cards');
  if(L.lateCount) add('late');
+ if(L.mechAuto)  add('auto');
  if((L.itwGiven||0)>=3)   add('itw');
  else if(L.itwRefused)    add('quiet');
  add('always');
- /* dobijamy do SIDE.voices, jeżeli jest z czego */
- const rest=Object.keys(LIVE_TALK).filter(k=>!used[k]);
+ /* dobijamy do SIDE.voices, jeżeli jest z czego (bez głosów drużynowych) */
+ const rest=Object.keys(LIVE_TALK).filter(k=>!used[k] && !(ind && LIVE_TALK[k].team));
  while(V.length<SIDE.voices && rest.length){
    add(rest.splice(R(0,rest.length-1),1)[0]);
  }

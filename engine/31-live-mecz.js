@@ -78,9 +78,19 @@ function* liveMeetingGen(homeName, awayName, ctx, meId, meta){
       wywiady i dyspozycja doklejana przez to wszystko (formBonus). */
    jet:null, carb:null, len:null, ign:null, weather:null, mechWx:null,
    setupDone:false, setupDirty:false, setupChanges:0, formBonus:0,
-   evUsed:[], evDone:0, evLast:null, voices:null
+   evUsed:[], evDone:0, evLast:null, voices:null,
+   /* --- SPRINT 5 ---
+      mechAuto : „Jestem Niedźwiedziakiem i zostawiam ustawienia staremu" —
+                 sprzęt oddany mechanikowi na całe zawody;
+      itwCount : twardy licznik wywiadów (max SIDE.itwCap na zawody). */
+   mechAuto:false, itwCount:0
  };
  liveSetupInit(live);        // pogoda losuje się RAZ na zawody
+ /* SPRINT 5: tor, idealna zębatka i PODPOWIEDZI MECHANIKA są znane JUŻ TERAZ,
+    zanim padnie pierwsza taśma. Bez tego `live.grip` zostawał null aż do
+    pierwszego własnego biegu, a ui/09c nie rysowało wtedy ani boksu
+    „TOR I MOTOCYKL", ani jednego słowa mechanika. */
+ liveTrackInit(live);
  /* Pozostałe biegi Gracza (program 1-13, limit 5 startów wg art. 719).
     skipCurrent = bieg właśnie jechany już się liczy (kraksa w jego trakcie). */
  let curH=0;
@@ -123,7 +133,9 @@ function* liveMeetingGen(homeName, awayName, ctx, meId, meta){
      setup:{jet:live.jet, carb:live.carb, len:live.len, ign:live.ign,
             verdict: liveSetupVerdict(liveSetupEval(live)),
             risk: liveSetupRisk(live), dirty:!!live.setupDirty,
-            done:!!live.setupDone, changes:live.setupChanges||0},
+            done:!!live.setupDone, changes:live.setupChanges||0,
+            auto:!!live.mechAuto},
+     mechAuto: !!live.mechAuto,        // SPRINT 5: sprzęt oddany mechanikowi
      voices: live.voices||null,
      /* SPRINT 3: kim jest trener, co o tobie myśli i czy właśnie ci odmówił */
      coachInfo: coachSnap(), refuse: live.refuse||null,
@@ -340,6 +352,7 @@ function* liveMeetingGen(homeName, awayName, ctx, meId, meta){
    clearMsg();
    live.refuse=null;                 // każda nowa akcja kasuje poprzednią odmowę
    if(a==='gear'){
+     if(live.mechAuto){ say(liveMechAutoBlock()); return false; }   // SPRINT 5
      const v=cl(Number(act.v)||0,0,5);
      if(v===live.gear) say('Mechanik patrzy na ciebie, potem na zębatkę, potem znowu na ciebie. Zostaje jak było.');
      else {
@@ -359,7 +372,21 @@ function* liveMeetingGen(homeName, awayName, ctx, meId, meta){
       ------------------------------------------------------------ */
    if(a==='setup'){
      const parts=String((act&&act.v)||'').split(':');
-     const k=parts[0], max={jet:5, carb:3, len:3, ign:3}[k];
+     const k=parts[0];
+     /* ------------------------------------------------------------
+        SPRINT 5: „JESTEM NIEDŹWIEDZIAKIEM I ZOSTAWIAM USTAWIENIA STAREMU".
+        Jedziemy tym samym kanałem co reszta warsztatu (`setup`), więc nie
+        trzeba ruszać białej listy akcji w liveAct() — wystarczy wartość
+        'auto:1'. Decyzja jest NIEODWRACALNA w tych zawodach.
+        ------------------------------------------------------------ */
+     if(k==='auto'){
+       if(live.mechAuto){ say('Już oddałeś sprzęt. Drugi raz nie da się tego oddać.'); return false; }
+       liveMechAutoOn(live, []).forEach(x=>say(x));
+       liveMechAutoSet(live, []).forEach(x=>say(x));
+       return false;
+     }
+     if(live.mechAuto){ say(liveMechAutoBlock()); return false; }
+     const max={jet:5, carb:3, len:3, ign:3}[k];
      if(max==null) return false;
      const v=cl(Number(parts[1])||0, 0, max);
      const nm={jet:'DYSZA', carb:'GAŹNIK (igła)', len:'DŁUGOŚĆ MOTOCYKLA', ign:'ZAPŁON'}[k];
@@ -481,6 +508,9 @@ function* liveMeetingGen(homeName, awayName, ctx, meId, meta){
 
  /* --- EKRAN „MIĘDZY BIEGAMI" --- */
  const between=function*(nextHeat, nums){
+   /* SPRINT 5: mechanik ma zdanie także wtedy, gdy stoisz i czekasz —
+      bez tego boks warsztatu w parku maszyn był niemy do pierwszego startu. */
+   liveMechRefresh(live);
    /* SPRINT 4: zanim pokażemy park maszyn — zdarzenie i/albo wywiad. */
    yield* liveSideGen(live, snap, say, 'mid', nextHeat);
    if(live.abandoned) return;
@@ -513,8 +543,11 @@ function* liveMeetingGen(homeName, awayName, ctx, meId, meta){
    live.ideal=liveIdeal(live.grip);
    live.spyKnown=false; live.spyDone=false;
    live.mech=liveMech(live.ideal, live.gear);
-   live.mechWx=liveMechWeather(live);          // SPRINT 4: typ mechanika na dyszę i gaźnik
+   live.mechWx=liveMechWeather(live);          // SPRINT 4/5: typ mechanika na WSZYSTKIE ustawienia
    clearMsg(); live.refuse=null;
+   /* SPRINT 5: sprzęt oddany „staremu" — mechanik ustawia motocykl SAM,
+      przed każdym twoim biegiem, z ryzykiem dwóch minut w komplecie. */
+   liveMechAutoSet(live, []).forEach(x=>say(x));
    yield* liveSideGen(live, snap, say, 'mid', label);   // SPRINT 4: zdarzenie / wywiad
    if(live.abandoned) return;
    /* PARK MASZYN */
@@ -798,6 +831,7 @@ function* liveMeetingGen(homeName, awayName, ctx, meId, meta){
    /* Sprint 4 */
    if(live.lateCount)  note.push(live.lateCount+'× wykluczenie za limit dwóch minut (grzebanie w sprzęcie)');
    if(live.setupChanges) note.push(live.setupChanges+'× zmiana ustawień motocykla w trakcie zawodów');
+   if(live.mechAuto)   note.push('ustawienia oddane mechanikowi („Jestem Niedźwiedziakiem") — profesjonalizm -'+AUTO_PROF);
    if(live.ajsOk)      note.push(live.ajsOk+'× UDANY AJS SPIDŁEJ');
    if(live.ajsFail)    note.push(live.ajsFail+'× nieudany AJS SPIDŁEJ');
    if(live.nozyceOk)   note.push(live.nozyceOk+'× udane nożyce');

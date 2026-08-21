@@ -61,6 +61,11 @@ const BIGM = {
  argueBase   : 46,        // % szans, że kłótnia z trenerem coś da
  insultBase  : 62,        // wyzwiska działają częściej, kosztują nieporównanie więcej
  pushBase    : 40,        // presja, żeby wpuścił cię za kolegę
+ /* --- SPRINT 5: „JESTEM NIEDŹWIEDZIAKIEM I ZOSTAWIAM USTAWIENIA STAREMU" ---
+    Ile PUNKTÓW PROCENTOWYCH profesjonalizmu kosztuje oddanie sprzętu
+    mechanikowi na całe zawody. Zawodowiec ustawia motocykl sam i cała
+    liga o tym wie. Czyta to engine/28b-sprzet-live.js (AUTO_PROF). */
+ autoProf    : 5,
  /* --- START --- */
  starts:[
   {id:'tape', l:'ATAK NA TAŚMĘ', d:'Koło na taśmie, sprzęgło w połowie. Albo wyjeżdżasz pierwszy, albo sędzia zapala czerwoną i wykluczają cię z biegu.'},
@@ -87,10 +92,13 @@ const BIGM = {
  phases:['START','1. OKRĄŻENIE — ŁUK 1 i 2','2-3. OKRĄŻENIE — WALKA','OSTATNI ŁUK'],
  /* --- SPRINT 4: ZDARZENIA W TRAKCIE ZAWODÓW I WYWIADY ---
     Nadpisuje wartości domyślne stałej SIDE z engine/30b-live-zdarzenia.js.
-    Zostawione jawnie, żeby dało się to kręcić bez ruszania silnika. */
+    Zostawione jawnie, żeby dało się to kręcić bez ruszania silnika.
+    SPRINT 5: `itwCap` to TWARDY LIMIT WYWIADÓW NA JEDNE ZAWODY — liczy się
+    każdy wywiad, który się pojawił, także ten, z którego się wywinąłeś.
+    Chcesz z powrotem trzy wywiady na mecz? Podnieś tę jedną liczbę. */
  side:{
   evChance:26, evCap:3, evCool:2,
-  itwPre:45, itwMid:22, itwPost:60, itwMidCap:1, itwMedK:0.35,
+  itwPre:45, itwMid:22, itwPost:60, itwMidCap:1, itwCap:1, itwMedK:0.35,
   voices:6
  },
  /* --- KOMENTARZ SPIKERA (do smaku, losowany) --- */

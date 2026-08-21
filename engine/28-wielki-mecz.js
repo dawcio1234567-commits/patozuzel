@@ -110,6 +110,18 @@ function bigCry(){
 function* bigMatchAsk(info, ctx){
  const S=G.S;
  if(!S || S.cried) return 'sim';
+ /* ------------------------------------------------------------
+    SPRINT 5: WYBÓR Z EKRANU TWORZENIA KARIERY.
+    Gracz, który przy zakładaniu postaci powiedział, że NIE CHCE jeździć
+    meczów sam, nie ma nawet oglądać tego ekranu. Gra wraca wtedy do
+    zasady „jedno kliknięcie = jeden sezon", a wszystkie spotkania —
+    łącznie z finałem — liczy silnik.
+    Warunek stoi TU, a nie w UI, bo bigMatchAsk() jest jedynym miejscem,
+    przez które przechodzą wszystkie trzy drogi (mecz klubowy, dwumecz
+    i turniej indywidualny). Stare zapisy nie mają G.opts — gameOpt()
+    domyśla się `true`, więc dla nich nic się nie zmienia.
+    ------------------------------------------------------------ */
+ if(typeof gameOpt==='function' && !gameOpt('liveMatches', true)) return 'sim';
  /* TWARDY WARUNEK (Sprint 1): mecz klubowy wymaga klubu i ważnej umowy,
     a przymusowo zamknięty sezon nie pozwala nawet na turniej indywidualny. */
  if(S.forcedEnd) return 'sim';

@@ -8,6 +8,12 @@
    EKRAN: WIELKI MECZ — DECYZJA (patch 22.08.2026)
    ------------------------------------------------------------
    Trzy drogi. Dwie sportowe i jedna, po której nie ma już powrotu.
+   ------------------------------------------------------------
+   SPRINT 5 (24.08.2026): tego ekranu w ogóle nie zobaczy gracz, który przy
+   tworzeniu kariery wybrał „NIE, PRZESYMULUJ MI WSZYSTKO" — bramka stoi
+   w bigMatchAsk() (engine/28-wielki-mecz.js), więc żadna ścieżka sezonu
+   nie potrafi go tu wepchnąć. Opisy trzech dróg mają klasę `.hint`
+   i chowają się razem z resztą opisów w grze.
    ============================================================ */
 function scBig(){
  const B=(G.pause&&G.pause.big)||{};
@@ -30,18 +36,18 @@ function scBig(){
    <div class="space-y-2">
     <button onclick="bigChoose('sim')" class="btn w-full text-left px-4 py-3 text-[12px]">
       <span class="text-orange-600 font-bold mr-2">1.</span><b>PRZESYMULUJ TO SPOTKANIE</b>
-      <div class="text-[11px] text-zinc-400 mt-1 ml-6">Tak jak zawsze. Komputer liczy wszystko według silnika, ty czytasz wynik w raporcie.
+      <div class="hint text-[11px] text-zinc-400 mt-1 ml-6">Tak jak zawsze. Komputer liczy wszystko według silnika, ty czytasz wynik w raporcie.
       Bez ryzyka, bez zębatki, bez kartek. Twój OVR i forma robią swoje.</div></button>
 
     <button onclick="bigChoose('ride')" class="btn w-full text-left px-4 py-3 text-[12px]" style="border-color:#f97316">
       <span class="text-orange-600 font-bold mr-2">2.</span><b class="text-orange-400">JADĘ TO SPOTKANIE</b>
-      <div class="text-[11px] text-zinc-400 mt-1 ml-6">${esc(rideTxt)}
+      <div class="hint text-[11px] text-zinc-400 mt-1 ml-6">${esc(rideTxt)}
       Wszystko, co robisz na torze, liczy się tym samym silnikiem co reszta sezonu — decyzje przesuwają cię o kilka punktów,
       nie zamieniają cię w innego zawodnika. Kraksa boli naprawdę: sprzęt, czasem OVR.</div></button>
 
     <button onclick="bigChoose('cry')" class="btn-d w-full text-left px-4 py-3 text-[12px]">
       <span class="font-bold mr-2">3.</span><b>ROZPŁAKAĆ SIĘ I NIE PRZEPROSIĆ OJCA</b>
-      <div class="text-[11px] mt-1 ml-6" style="color:#fca5a5">Siadasz na kanapie w parku maszyn i już nie wstajesz.
+      <div class="hint text-[11px] mt-1 ml-6" style="color:#fca5a5">Siadasz na kanapie w parku maszyn i już nie wstajesz.
       Nie dojeżdżasz sezonu do końca. Klub rozwiązuje umowę. Kara ${zl(BIGM.cryFine)}, profesjonalizm −${BIGM.cryProf},
       lojalność i atmosfera w gruzach. Materiał obejrzy dwa miliony ludzi.
       <b>Tej decyzji nie da się cofnąć.</b></div></button>

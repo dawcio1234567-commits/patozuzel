@@ -19,13 +19,26 @@ function liveNewState(){
     więc kod „w" wpada do tabeli dokładnie wtedy, kiedy bieg się odbywa. */
  /* SPRINT 4: turniej dostaje ten sam warsztat live co mecz drużynowy —
     pogodę, dyszę, gaźnik, długość, zapłon, ryzyko dwóch minut, zdarzenia
-    w parku maszyn i wywiady. Trenera dalej nie ma, bo to turniej indywidualny. */
- const L = {grip:null, ideal:null, gear:2, mech:null, mechWx:null, spyKnown:false, spyDone:false,
+    w parku maszyn i wywiady. Trenera dalej nie ma, bo to turniej indywidualny.
+    ------------------------------------------------------------
+    SPRINT 5 (24.08.2026): `ind:true`.
+    To jest TA jedna flaga, po której engine/30b-live-zdarzenia.js poznaje,
+    że w tych zawodach NIE MA DRUŻYNY — i wycina wszystko, co jej wymaga:
+    zdarzenia z kolegą z pary i prezesem klubu, opcje typu „pokaż to
+    kierownikowi drużyny", pytania o trenera i gospodarzy, a po zawodach
+    głosy spikera o wyniku drużyny i komentarz kolegi z pary.
+    Do tego `mechAuto` (oddanie sprzętu mechanikowi) i `itwCount`
+    (maksymalnie jeden wywiad na zawody). */
+ const L = {ind:true, grip:null, ideal:null, gear:2, mech:null, mechWx:null, spyKnown:false, spyDone:false,
    yellow:0, red:false, outOfMeeting:false, noFill:true, crashed:0, hurt:0, msgs:[], story:[],
    jet:null, carb:null, len:null, ign:null, weather:null,
    setupDone:false, setupDirty:false, setupChanges:0, formBonus:0,
+   mechAuto:false, itwCount:0,
    evUsed:[], evDone:0, evLast:null, voices:null};
  liveSetupInit(L);
+ /* SPRINT 5: tor i mechanik znani PRZED pierwszym biegiem — inaczej boks
+    „TOR I MOTOCYKL" nie renderuje się w parku maszyn przed turniejem. */
+ liveTrackInit(L);
  return L;
 }
 /* ============================================================
@@ -58,6 +71,7 @@ function liveIndPit(act, live){
  live.msgs=[];
  const say=(...xs)=>xs.filter(Boolean).forEach(x=>{ live.msgs.push(x); live.story.push(x); });
  if(a==='gear'){
+   if(live.mechAuto){ say(liveMechAutoBlock()); return false; }   // SPRINT 5
    const v=cl(Number(act.v)||0,0,5);
    if(v===live.gear) say('Mechanik nawet nie sięga po klucz. Zostaje jak było.');
    else {
@@ -71,7 +85,18 @@ function liveIndPit(act, live){
     co w meczu drużynowym (engine/31), łącznie z ryzykiem dwóch minut. */
  if(a==='setup'){
    const parts=String((act&&act.v)||'').split(':');
-   const k=parts[0], max={jet:5, carb:3, len:3, ign:3}[k];
+   const k=parts[0];
+   /* SPRINT 5: „JESTEM NIEDŹWIEDZIAKIEM I ZOSTAWIAM USTAWIENIA STAREMU" —
+      ta sama mechanika co w meczu drużynowym (engine/31), ten sam kanał
+      akcji ('setup' z wartością 'auto:1'), ta sama cena w profesjonalizmie. */
+   if(k==='auto'){
+     if(live.mechAuto){ say('Już oddałeś sprzęt. Drugi raz nie da się tego oddać.'); return false; }
+     liveMechAutoOn(live, []).forEach(x=>say(x));
+     liveMechAutoSet(live, []).forEach(x=>say(x));
+     return false;
+   }
+   if(live.mechAuto){ say(liveMechAutoBlock()); return false; }
+   const max={jet:5, carb:3, len:3, ign:3}[k];
    if(max==null) return false;
    const v=cl(Number(parts[1])||0, 0, max);
    const nm={jet:'DYSZA', carb:'GAŹNIK (igła)', len:'DŁUGOŚĆ MOTOCYKLA', ign:'ZAPŁON'}[k];
@@ -130,6 +155,8 @@ function* liveIndHeatGen(idxs, field, meIdx, ctx, live, label, snap){
  live.mechWx=liveMechWeather(live);
  live.msgs=[];
  const say0=(x)=>{ live.msgs.push(x); live.story.push(x); };
+ /* SPRINT 5: sprzęt oddany „staremu" — mechanik ustawia motocykl SAM. */
+ liveMechAutoSet(live, []).forEach(x=>say0(x));
  yield* liveSideGen(live, snap, say0, 'mid', label);   // SPRINT 4
  while(true){
    const act = yield snap('pit', {next:{label, mine:true},
@@ -217,7 +244,9 @@ function* liveInd20Gen(field, meIdx, ctx, live, meta){
      setup:{jet:live.jet, carb:live.carb, len:live.len, ign:live.ign,
             verdict: liveSetupVerdict(liveSetupEval(live)),
             risk: liveSetupRisk(live), dirty:!!live.setupDirty,
-            done:!!live.setupDone, changes:live.setupChanges||0},
+            done:!!live.setupDone, changes:live.setupChanges||0,
+            auto:!!live.mechAuto},
+     mechAuto: !!live.mechAuto,        // SPRINT 5: sprzęt oddany mechanikowi
      voices: live.voices||null
    }, extra||{});
    return {ui:'live'};
@@ -247,6 +276,7 @@ function* liveInd20Gen(field, meIdx, ctx, live, meta){
  while(k<20){
    const mine = draw[k].includes(meIdx) && !live.outOfMeeting;
    if(!mine){
+     liveMechRefresh(live);                            // SPRINT 5: mechanik mówi też w oczekiwaniu
      yield* liveSideGen(live, snap, sayT, 'mid', k+1); // SPRINT 4: zdarzenie / wywiad
      while(true){
        const act = yield snap('between', {next:{label:k+1, mine:false}});
@@ -362,6 +392,7 @@ function liveWrapUp(live, title, me){
  /* Sprint 4 */
  if(live.lateCount)  note.push(live.lateCount+'× wykluczenie za limit dwóch minut');
  if(live.setupChanges) note.push(live.setupChanges+'× zmiana ustawień motocykla');
+ if(live.mechAuto)   note.push('ustawienia oddane mechanikowi („Jestem Niedźwiedziakiem") — profesjonalizm -'+AUTO_PROF);
  if(live.ajsOk)      note.push(live.ajsOk+'× UDANY AJS SPIDŁEJ');
  if(live.ajsFail)    note.push(live.ajsFail+'× nieudany AJS SPIDŁEJ');
  if(live.nozyceOk)   note.push(live.nozyceOk+'× udane nożyce');

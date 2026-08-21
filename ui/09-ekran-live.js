@@ -6,6 +6,16 @@
    PATCH 22.08.2026 (Sprint 3): pasek trenera (kim jest, co o tobie myśli,
    ile mu się pali pod nogami) i ALERT REGULAMINOWY — jedno zdanie, które
    trener mówi każdemu, kto prosi o coś, czego regulamin nie przewiduje.
+   ------------------------------------------------------------
+   PATCH 24.08.2026 (Sprint 5), dwie rzeczy:
+     · WSZYSTKIE OPISY POD PRZYCISKAMI MAJĄ KLASĘ `.hint` i są domyślnie
+       SCHOWANE (CSS w index.html, przełącznik w nagłówku ui/00-wspolne.js).
+       Na ekranie meczowym zostają nazwy akcji i procenty — czyli to,
+       czego gracz w trakcie zawodów naprawdę szuka wzrokiem.
+     · NOWA AKCJA PARKU MASZYN: „JESTEM NIEDŹWIEDZIAKIEM I ZOSTAWIAM
+       USTAWIENIA STAREMU". Idzie tym samym kanałem co reszta warsztatu —
+       liveAct('setup','auto:1') — więc nie trzeba dopisywać nowej akcji
+       do białej listy w liveAct().
    ============================================================ */
 /* ============================================================
    EKRAN: JAZDA NA ŻYWO
@@ -41,9 +51,35 @@ function liveMsgBox(L){
 /* Wspólne akcje parku maszyn. */
 function livePitActions(L, full){
  const b=[];
+ /* ------------------------------------------------------------
+    SPRINT 5: „JESTEM NIEDŹWIEDZIAKIEM I ZOSTAWIAM USTAWIENIA STAREMU"
+    ------------------------------------------------------------
+    Stoi PIERWSZA na liście, bo to jedyna akcja parku maszyn, która
+    zmienia sposób grania w te zawody, a nie tylko jeden bieg.
+    Jest NIEODWRACALNA — dlatego cena (profesjonalizm) jest widoczna
+    zawsze, także przy schowanych opisach.
+    Kanał: liveAct('setup','auto:1') — ta sama akcja co suwaki warsztatu,
+    więc żadna biała lista w liveAct() nie musi o niej wiedzieć.
+    ------------------------------------------------------------ */
+ if(!L.mechAuto){
+   const cost=(typeof BIGM!=='undefined' && BIGM.autoProf!=null)?BIGM.autoProf:5;
+   b.push(`<button onclick="liveAct('setup','auto:1')" class="btn w-full text-left px-3 py-2 text-[12px]" style="border-color:#38bdf8">
+     <b style="color:#7dd3fc">JESTEM NIEDŹWIEDZIAKIEM I ZOSTAWIAM USTAWIENIA STAREMU</b>
+     <span class="text-zinc-500">— profesjonalizm −${cost} p.p.</span>
+     <div class="hint text-[10.5px] text-zinc-400 mt-0.5">Oddajesz mechanikowi cały motocykl do końca tych zawodów:
+     zębatkę, dyszę, gaźnik, długość i zapłon. Sam nie ruszasz już NICZEGO, a on ustawia wszystko przed każdym twoim biegiem —
+     <b class="text-zinc-200">tak dobrze, jak umie (${G.p.mech}/99)</b>. Sztab jak u mistrza świata trafi prawie zawsze,
+     szwagier Mirek zrobi ci motocykl z innego toru i z innej pogody.
+     <b>Ryzyko „dwóch minut" zostaje w mocy</b> — jak on nie zdąży pod taśmę, wykluczenie dostajesz ty.
+     Tej decyzji nie da się cofnąć w trakcie zawodów.</div></button>`);
+ } else {
+   b.push(`<div class="brut px-3 py-2 mb-2 text-[11.5px]" style="border-color:#38bdf8;color:#7dd3fc">
+     <b>SPRZĘT PROWADZI ${esc((G.p.mechName||'MECHANIK').toUpperCase())}.</b>
+     <span class="text-zinc-400">Ustawienia są poza twoją ręką do końca tych zawodów.</span></div>`);
+ }
  b.push(`<button onclick="liveAct('spy')" class="btn w-full text-left px-3 py-2 text-[12px]">
    <b>PODEJRZYJ SPRZĘT RYWALA</b> <span class="text-zinc-500">— ${BIGM.spyOk}% powodzenia</span>
-   <div class="text-[10.5px] text-zinc-400 mt-0.5">Udane: wiesz, jaka zębatka jedzie dziś na tym torze (i jedziesz odrobinę pewniej).
+   <div class="hint text-[10.5px] text-zinc-400 mt-0.5">Udane: wiesz, jaka zębatka jedzie dziś na tym torze (i jedziesz odrobinę pewniej).
    Nieudane: żółta kartka i ${zl(BIGM.yellowCost)}. <b>Dwie żółte w jednych zawodach robią czerwoną</b>,
    a czerwona to wykluczenie („w") we wszystkich twoich pozostałych biegach.</div></button>`);
  if(full && L.push && L.push.show){
@@ -56,14 +92,14 @@ function livePitActions(L, full){
      <b>PRESJA NA TRENERZE, ŻEBY CIĘ WPUŚCIŁ ZA KOGOŚ</b>
      ${blocked ? `<span style="color:#fca5a5">— REGULAMIN TEGO ZABRANIA</span>`
                : `<span class="text-zinc-500">— ${L.push.chance}% powodzenia${L.push.who?' (za: '+esc(L.push.who)+')':''}</span>`}
-     <div class="text-[10.5px] mt-0.5 ${blocked?'':'text-zinc-400'}" ${blocked?'style="color:#fca5a5"':''}>${
+     <div class="hint text-[10.5px] mt-0.5 ${blocked?'':'text-zinc-400'}" ${blocked?'style="color:#fca5a5"':''}>${
        blocked ? esc(L.push.block||'')+' Możesz spróbować — usłyszysz, co trener o tym myśli.'
                : 'Udane: wjeżdżasz w najbliższy bieg zamiast kolegi z kadry. Nieudane: w najlepszym razie zbywa cię jednym zdaniem, w najgorszym to CIEBIE zdejmie z twojego własnego biegu.'
      }</div></button>`);
  }
  b.push(`<button onclick="liveAct('hit')" class="btn-d w-full text-left px-3 py-2 text-[12px]">
    <b>PRZYJEBAĆ RYWALOWI W PARKU MASZYN</b>
-   <div class="text-[10.5px] mt-0.5" style="color:#fca5a5">Prawie zawsze czerwona kartka: wykluczenie („w") we wszystkich pozostałych biegach,
+   <div class="hint text-[10.5px] mt-0.5" style="color:#fca5a5">Prawie zawsze czerwona kartka: wykluczenie („w") we wszystkich pozostałych biegach,
    ${zl(BIGM.redFine)} kary, profesjonalizm −${BIGM.redProf}, ryzyko zawieszenia i rozmowy z prezesem.
    Medialność rośnie. Medialność zawsze rośnie.</div></button>`);
  /* SPRINT 2: PROTEST NA STAN TORU — tylko między biegami (full), tylko dopóki
@@ -73,14 +109,14 @@ function livePitActions(L, full){
    b.push(`<button onclick="liveAct('protest')" class="btn w-full text-left px-3 py-2 text-[12px]" style="border-color:#eab308">
      <b style="color:#fde047">PROTESTUJ ZE WZGLĘDU NA STAN TORU</b>
      <span class="text-zinc-500">— ${L.protest.yellow}% żółtej kartki${L.protest.count?` · protest nr ${L.protest.count+1}`:''}</span>
-     <div class="text-[10.5px] text-zinc-400 mt-0.5">Idziesz z kolegami z drużyny do wieży i pokazujesz sędziemu koleinę na drugim łuku.
+     <div class="hint text-[10.5px] text-zinc-400 mt-0.5">Idziesz z kolegami z drużyny do wieży i pokazujesz sędziemu koleinę na drugim łuku.
      <b class="text-zinc-200">${L.protest.cancel}% szans, że sędzia odwoła zawody</b> — zawsze mniej niż przy opuszczeniu parku maszyn,
      bo protest to prośba, a nie szantaż. Cena: ryzyko żółtej kartki (druga w jednych zawodach = czerwona),
      atmosfera w szatni −${(typeof ABANDON!=='undefined'?ABANDON.protestAtm:2)} i rosnąca nerwowość sędziego przy każdym kolejnym proteście.</div></button>`);
  }
  b.push(`<button onclick="liveAct('leave')" class="btn-d w-full text-left px-3 py-2 text-[12px]">
    <b>OPUŚĆ PARK MASZYN</b>
-   <div class="text-[10.5px] mt-0.5" style="color:#fca5a5">Zmieniony do końca zawodów. Kara umowna ${zl(BIGM.leaveFine)},
+   <div class="hint text-[10.5px] mt-0.5" style="color:#fca5a5">Zmieniony do końca zawodów. Kara umowna ${zl(BIGM.leaveFine)},
    profesjonalizm −${BIGM.leaveProf}, atmosfera −${BIGM.leaveAtm}, lojalność −${BIGM.leaveLoy},
    ponad połowa szans, że klub rozwiąże kontrakt.
    <b>Do tego ${L.leaveCancel!=null?L.leaveCancel:1}% szans, że sędzia uzna twój wyjazd za powód do ODWOŁANIA ZAWODÓW</b>
@@ -140,7 +176,7 @@ function scLive(){
    <div class="brut mb-3">
     <div class="brut-h px-3 py-1 text-[10px] text-zinc-400 font-bold tracking-widest">PARK MASZYN — CZEKASZ NA SWÓJ BIEG</div>
     <div class="p-3">
-     <div class="text-[12.5px] text-zinc-300 mb-3">Najbliższe biegi jadą bez ciebie. Możesz je przepuścić jednym kliknięciem
+     <div class="hint text-[12.5px] text-zinc-300 mb-3">Najbliższe biegi jadą bez ciebie. Możesz je przepuścić jednym kliknięciem
        — albo zrobić w tym czasie coś, czego regulamin nie przewiduje.</div>
      <button onclick="liveAct('go')" class="btn w-full px-4 py-3 text-[13px] font-extrabold tracking-widest text-orange-500 mb-2">
        PRZESYMULUJ BIEGI DO TWOJEGO STARTU ▸</button>
@@ -174,17 +210,17 @@ function scLive(){
        Kierownik drużyny idzie w twoją stronę z programem w ręku. Do twojego biegu ma wpisać
        <b class="text-zinc-100">${esc(C.who)}</b> (OVR ${C.ovr}) w ramach rezerwy taktycznej.
        Drużyna traci, a ty w tym spotkaniu nie dowozisz.
-       ${C.status?`<div class="text-[11px] text-zinc-400 mt-1">W jego oczach jesteś w tej drużynie:
+       ${C.status?`<div class="hint text-[11px] text-zinc-400 mt-1">W jego oczach jesteś w tej drużynie:
          <b class="text-zinc-200">${esc(C.status)}</b> (sympatia ${C.rel>0?'+':''}${C.rel}). To już policzone w procentach niżej.</div>`:''}</div>
      <div class="space-y-2">
       <button onclick="liveAct('accept')" class="btn w-full text-left px-3 py-2 text-[12px]">
-        <b>ZSIADAM BEZ SŁOWA</b><div class="text-[10.5px] text-zinc-400 mt-0.5">Tracisz start, zyskujesz spokój w szatni.</div></button>
+        <b>ZSIADAM BEZ SŁOWA</b><div class="hint text-[10.5px] text-zinc-400 mt-0.5">Tracisz start, zyskujesz spokój w szatni.</div></button>
       <button onclick="liveAct('argue')" class="btn w-full text-left px-3 py-2 text-[12px]">
         <b>KŁÓCĘ SIĘ</b> <span class="text-zinc-500">— ${C.argue}% szans</span>
-        <div class="text-[10.5px] text-zinc-400 mt-0.5">Udana kłótnia: jedziesz. Nieudana: i tak cię zmienia, a atmosfera siada.</div></button>
+        <div class="hint text-[10.5px] text-zinc-400 mt-0.5">Udana kłótnia: jedziesz. Nieudana: i tak cię zmienia, a atmosfera siada.</div></button>
       <button onclick="liveAct('insult')" class="btn-d w-full text-left px-3 py-2 text-[12px]">
         <b>WYZYWAM TRENERA</b> <span style="color:#fca5a5">— ${C.insult}% szans</span>
-        <div class="text-[10.5px] mt-0.5" style="color:#fca5a5">Działa częściej, kosztuje nieporównanie więcej:
+        <div class="hint text-[10.5px] mt-0.5" style="color:#fca5a5">Działa częściej, kosztuje nieporównanie więcej:
         atmosfera w gruzach, profesjonalizm w dół, spora szansa, że prezes zamknie temat kontraktu.</div></button>
      </div>
     </div></div>`;
@@ -198,27 +234,27 @@ function scLive(){
      <div class="text-[11px] text-zinc-500 mb-2">
        zębatka <b class="text-zinc-300">${RC.gear}</b> · ${esc(RC.fitTxt)} ·
        tor: <b class="text-zinc-300">${esc(BIGM.grip[RC.grip].n)}</b>
-       ${RC.ph===0?'':' · procenty liczone z twojej dyspozycji, profesjonalizmu, zębatki i stanu toru'}</div>
+       ${RC.ph===0?'':'<span class="hint"> · procenty liczone z twojej dyspozycji, profesjonalizmu, zębatki i stanu toru</span>'}</div>
      <div class="space-y-2">
       ${RC.options.map(o=>{
         const hot = (o.id==='plot'||o.id==='ajs');
         return `<button onclick="liveAct('${RC.ph===0?'start':'move'}','${o.id}')"
         class="${hot?'btn-d':'btn'} w-full text-left px-3 py-2 text-[12px]"${o.id==='ajs'?' style="border-color:#f97316"':''}>
         <b${o.id==='ajs'?' class="blink" style="color:#fdba74"':''}>${esc(o.l)}</b>${o.ch!=null?` <span class="${o.ch>=60?'text-emerald-400':o.ch>=35?'text-yellow-400':'text-red-400'}">— ${o.ch}%</span>`:''}
-        <div class="text-[10.5px] ${hot?'':'text-zinc-400'} mt-0.5" ${hot?'style="color:#fca5a5"':''}>${esc(o.d)}</div></button>`;}).join('')}
+        <div class="hint text-[10.5px] ${hot?'':'text-zinc-400'} mt-0.5" ${hot?'style="color:#fca5a5"':''}>${esc(o.d)}</div></button>`;}).join('')}
      </div>
      ${RC.sim&&RC.sim.show?`<div class="mt-3 pt-3" style="border-top:1px solid #3f3f46">
       <div class="text-[10px] text-zinc-500 tracking-[.25em] mb-2">POZA REGULAMINEM</div>
       <div class="space-y-2">
        <button onclick="liveAct('simfall')" class="btn-d w-full text-left px-3 py-2 text-[12px]">
          <b>SYMULUJ UPADEK</b> <span style="color:#fca5a5">— ${RC.sim.fallRed}% czerwonej kartki</span>
-         <div class="text-[10.5px] mt-0.5" style="color:#fca5a5">Kładziesz motocykl sam, żeby sędzia przerwał bieg i kazał go powtórzyć.
+         <div class="hint text-[10.5px] mt-0.5" style="color:#fca5a5">Kładziesz motocykl sam, żeby sędzia przerwał bieg i kazał go powtórzyć.
          ${RC.sim.behind?'<b>Rywale prowadzą</b>, więc cały stadion wie, po co to robisz — sędzia też'
                         :'Prowadzisz, więc trudniej to uzasadnić, ale i trudniej udowodnić'}.
          Uda się: POWTÓRKA W PEŁNYM SKŁADZIE, z tobą. Nie uda się: czerwona kartka, kod „w" we wszystkich pozostałych biegach.</div></button>
        <button onclick="liveAct('simdef')" class="btn-d w-full text-left px-3 py-2 text-[12px]">
          <b>SYMULUJ DEFEKT</b> <span style="color:#fca5a5">— pewne zero, pewna bura</span>
-         <div class="text-[10.5px] mt-0.5" style="color:#fca5a5">Podnosisz rękę i zjeżdżasz pod bandę. Silnikowi nic nie jest.
+         <div class="hint text-[10.5px] mt-0.5" style="color:#fca5a5">Podnosisz rękę i zjeżdżasz pod bandę. Silnikowi nic nie jest.
          Kod „d" w karcie, zero punktów i bura w parku maszyn: od rywala, któremu popsułeś bieg —
          albo od <b>kolegi z pary, jeżeli zabierasz mu punkt bonusowy</b>.</div></button>
       </div></div>`:''}
@@ -242,12 +278,12 @@ function scLive(){
      <div class="space-y-2">
       <button onclick="liveAct('lie')" class="btn-d w-full text-left px-3 py-2 text-[12px]">
         <b>LEŻ</b>
-        <div class="text-[10.5px] mt-0.5" style="color:#fca5a5">Sędzia MUSI przerwać bieg — i MUSI kogoś wskazać.
+        <div class="hint text-[10.5px] mt-0.5" style="color:#fca5a5">Sędzia MUSI przerwać bieg — i MUSI kogoś wskazać.
         Wyklucza ciebie jako sprawcę, wyklucza rywala, który cię dołożył, albo daje ci
         <b>czerwoną kartkę za symulowanie</b>. Do tego szansa, że karetka zabierze cię z toru i skończy ci zawody.</div></button>
       <button onclick="liveAct('getup')" class="btn w-full text-left px-3 py-2 text-[12px]">
         <b>WSTAWAJ I ZBIEGNIJ</b>
-        <div class="text-[10.5px] text-zinc-400 mt-0.5">Motocykl zostaje przy bandzie, ty za bandą. Bieg jedzie dalej bez ciebie:
+        <div class="hint text-[10.5px] text-zinc-400 mt-0.5">Motocykl zostaje przy bandzie, ty za bandą. Bieg jedzie dalej bez ciebie:
         zero punktów i kod „u" w karcie meczowej — ale żadnej kartki, żadnej komisji i żadnego tłumaczenia się.</div></button>
      </div>
     </div></div>`;

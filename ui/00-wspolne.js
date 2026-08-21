@@ -51,6 +51,40 @@ function accLite(title, body, opts={}){
  </details>`;
 }
 
+/* ============================================================
+   OPISY POD PRZYCISKAMI — DOMYŚLNIE SCHOWANE (Sprint 5, 24.08.2026)
+   ------------------------------------------------------------
+   ZGŁOSZENIE: „znowu jest za dużo małego tekstu, zwłaszcza na ekranach
+   meczowych". I było: pod każdym przyciskiem parku maszyn, pod każdym
+   ustawieniem warsztatu i pod każdą opcją wywiadu stał akapit 10,5 px,
+   który za pierwszym razem tłumaczy mechanikę, a za dwudziestym zasłania
+   liczby, po które gracz naprawdę tam przyszedł.
+
+   Rozwiązanie jest jedno i globalne: KAŻDY taki akapit ma klasę `.hint`,
+   a CSS w index.html chowa `.hint` dopóki na <body> nie ma klasy `ui-full`.
+   Nic nie znika bez śladu — w nagłówku (head()) stoi przełącznik
+   „POKAŻ OPISY / UKRYJ OPISY", który działa na CAŁĄ grę i pamięta stan
+   między ekranami. Domyślnie: SCHOWANE.
+
+   Jak dopisujesz nowy ekran: opis mechaniki → `class="hint ..."`,
+   liczba/nazwa/procent → bez klasy. Zasada jest taka: po zwinięciu opisów
+   ekran musi dalej dać się OBSŁUŻYĆ, tylko bez tłumaczenia, co robi.
+   ============================================================ */
+let UI_FULL = false;
+function applyHints(){
+ if(typeof document==='undefined' || !document.body) return;
+ document.body.classList.toggle('ui-full', !!UI_FULL);
+}
+function toggleHints(){
+ UI_FULL = !UI_FULL;
+ applyHints();
+ render();
+}
+/* Opakowanie dla opisu, jeżeli budujesz go w kodzie, a nie w szablonie. */
+function hint(html, cls){
+ return html ? `<div class="hint ${cls||'text-[10.5px] text-zinc-400 mt-0.5'}">${html}</div>` : '';
+}
+
 /* Kod "1*"/"2*" oznacza bieg z bonusem (art. 720). Renderujemy trailing '*'
    jako czytelną gwiazdkę ★ zamiast gołej "*" — na życzenie graczy, którzy
    zgłaszali, że bonus "nie widać" przy wynikach poszczególnych biegów: sam
@@ -71,6 +105,7 @@ function codesHtml(codes){
 const app=()=>document.getElementById('app');
 function render(){
  const s=G.screen;
+ applyHints();          // Sprint 5: stan przełącznika opisów przeżywa każdy render
  app().innerHTML =
    s==='create'  ? scCreate() :
    s==='sign'    ? scSign()   :
@@ -92,9 +127,13 @@ function head(){
  return `<div class="mb-4 border-b border-zinc-700 pb-2 flex items-end justify-between flex-wrap gap-2">
   <div><div class="text-orange-500 font-extrabold tracking-[.3em] text-lg glow">POLSKI ŻUŻLOWIEC SIMULATOR</div>
   <div class="text-[11px] text-zinc-400 tracking-[.25em]">SYMULATOR KARIERY // ROK ${G.year}</div></div>
-  <div class="text-[11px] text-zinc-400 text-right">${(G.screen==='live'||G.screen==='big')
-    ? '<span class="text-orange-500 font-bold">tego meczu nikt za ciebie nie przejedzie</span>'
-    : 'jedno kliknięcie = jeden sezon'}</div></div>`;
+  <div class="text-[11px] text-zinc-400 text-right flex items-center gap-3 justify-end flex-wrap">
+    <span>${(G.screen==='live'||G.screen==='big')
+      ? '<span class="text-orange-500 font-bold">tego meczu nikt za ciebie nie przejedzie</span>'
+      : 'jedno kliknięcie = jeden sezon'}</span>
+    <button onclick="toggleHints()" class="btn px-2 py-1 text-[10px] tracking-widest whitespace-nowrap"
+      title="Pokazuje albo chowa wszystkie opisy pod przyciskami">${UI_FULL?'▾ UKRYJ OPISY':'▸ POKAŻ OPISY'}</button>
+  </div></div>`;
 }
 function statBar(l,v,col='#f97316'){
  return `<div class="mb-1.5"><div class="flex justify-between text-[11px] text-zinc-300 tracking-wider"><span>${l}</span><span class="text-zinc-200">${v}</span></div>

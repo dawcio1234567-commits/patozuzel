@@ -3,6 +3,13 @@
    Ekran startowy: klasa postaci, changelog, info o becie
    ------------------------------------------------------------
    Moduł wydzielony z index.html (linie 184-254 oryginału).
+   ------------------------------------------------------------
+   SPRINT 5 (24.08.2026): doszedł TRZECI WYBÓR NA STARCIE KARIERY —
+   czy gra ma w ogóle proponować JAZDĘ NA ŻYWO w najważniejszym meczu
+   sezonu. Wybór ląduje w `G.opts.liveMatches` (engine/03-stan-gry.js)
+   i czyta go bigMatchAsk() w engine/28-wielki-mecz.js. Zmienia się go
+   raz, przy zakładaniu postaci — bo to decyzja o tym, CZYM ta gra dla
+   ciebie jest: symulatorem kariery czy symulatorem kariery z żużlem.
    ============================================================ */
 /* ---- EKRAN: TWORZENIE ---- */
 function scCreate(){
@@ -14,15 +21,34 @@ function scCreate(){
      <input id="pname" maxlength="28" value="${esc(suggestName())}" class="w-full sm:w-96">
      <button onclick="rollName()" class="btn px-3 py-2 text-[11px] font-bold tracking-widest text-orange-500">LOSUJ</button>
    </div>
-   <div class="text-[11px] text-zinc-400 mt-1">Propozycja jest losowana z puli imion i nazwisk. Możesz ją nadpisać własną.</div></div>
+   <div class="hint text-[11px] text-zinc-400 mt-1">Propozycja jest losowana z puli imion i nazwisk. Możesz ją nadpisać własną.</div></div>
    <div><label class="block text-[11px] text-zinc-300 tracking-widest mb-2">KLASA POSTACI</label>
    <div class="grid sm:grid-cols-2 gap-2">
    ${CLASSES.map(c=>`<label class="brut p-3 cursor-pointer hover:border-orange-600 block">
      <div class="flex items-start gap-2"><input type="radio" name="cls" value="${c.id}" ${c.id==='bez'?'checked':''} class="mt-1 accent-orange-500">
      <div><div class="font-bold text-zinc-100">${c.n}</div>
      <div class="text-[11px] text-orange-600 tracking-widest">OVR ${c.ovr[0]}–${c.ovr[1]}</div>
-     <div class="text-[11px] text-zinc-300 mt-1">${c.d}</div></div></div></label>`).join('')}
+     <div class="hint text-[11px] text-zinc-300 mt-1">${c.d}</div></div></div></label>`).join('')}
    </div></div>
+
+   <div><label class="block text-[11px] text-zinc-300 tracking-widest mb-2">CZY CHCESZ SAM JEŹDZIĆ NAJWAŻNIEJSZE MECZE?</label>
+   <div class="grid sm:grid-cols-2 gap-2">
+     <label class="brut p-3 cursor-pointer hover:border-orange-600 block">
+       <div class="flex items-start gap-2"><input type="radio" name="livemode" value="1" checked class="mt-1 accent-orange-500">
+       <div><div class="font-bold text-zinc-100">TAK, SIADAM NA MOTOCYKLU</div>
+       <div class="text-[11px] text-orange-600 tracking-widest">RAZ W SEZONIE GRA SIĘ ZATRZYMUJE</div>
+       <div class="hint text-[11px] text-zinc-300 mt-1">Przed najważniejszym spotkaniem roku dostajesz wybór: przesymulować,
+       pojechać samemu albo rozpłakać się w parku maszyn. Jazda na żywo to park maszyn, warsztat (zębatka, dysza, gaźnik,
+       długość, zapłon), decyzje co łuk, kartki, wywiady i kraksy, które bolą naprawdę.</div></div></div></label>
+     <label class="brut p-3 cursor-pointer hover:border-orange-600 block">
+       <div class="flex items-start gap-2"><input type="radio" name="livemode" value="0" class="mt-1 accent-orange-500">
+       <div><div class="font-bold text-zinc-100">NIE, PRZESYMULUJ MI WSZYSTKO</div>
+       <div class="text-[11px] text-orange-600 tracking-widest">JEDNO KLIKNIĘCIE = JEDEN SEZON</div>
+       <div class="hint text-[11px] text-zinc-300 mt-1">Gra nigdy nie zapyta cię o wielki mecz i nigdy nie pokaże ekranu jazdy.
+       Wszystkie spotkania — z finałem włącznie — liczy silnik, a ty czytasz wyniki w raporcie sezonu.
+       Cała reszta kariery (kontrakty, zdarzenia, trenerzy, zima, karta kariery) działa bez zmian.</div></div></div></label>
+   </div>
+   <div class="hint text-[11px] text-zinc-400 mt-2 border-l-2 border-zinc-700 pl-3">Tego wyboru dokonujesz raz, na starcie kariery.</div></div>
    <div class="text-[11px] text-zinc-400 border-l-2 border-zinc-700 pl-3">
    Startujesz na kontrakcie <b class="text-zinc-300">amatorskim</b>: darmowy sprzęt klubowy, grosze za punkty, zero kasy za podpis.<br>
    Budżet: 0 zł &nbsp;·&nbsp; Sprzęt: 20 &nbsp;·&nbsp; Profesjonalizm i Medialność: ukryte, zależne od klasy.</div>
@@ -67,6 +93,10 @@ function rollName(){
 function doCreate(){
  const n=document.getElementById('pname').value.trim()||'Bezimienny Grajek';
  const c=document.querySelector('input[name=cls]:checked').value;
+ /* SPRINT 5: tryb rozgrywki idzie do G.opts, nie do zawodnika — bo dotyczy
+    całej kariery, także tej po zmianie klubu, kontuzji i przerwie zimowej. */
+ const lm=document.querySelector('input[name=livemode]:checked');
+ if(typeof setGameOpt==='function') setGameOpt('liveMatches', !lm || lm.value==='1');
  G.p=newPlayer(n,c);
  genAllSquads();
  worldInit();                       // reszta świata (cykl IMŚ) rodzi się razem z nową karierą

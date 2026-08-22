@@ -136,7 +136,15 @@ function applyBonus(res){
  res.forEach(x=>{ x.bon=0;
    if(x.out || x.pts===3) return;                       // nie dojechał albo wygrał bieg
    const mate=res.find(y=>y!==x && y.side===x.side);
-   if(!mate || mate.out || mate.pts<=x.pts) return;     // (1) kolega z pary musi być przed nim
+   /* NAPRAWA (24.08.2026): BONUS ZA TRZECIE MIEJSCE „ZZA RYWALA".
+      Warunek brzmiał „kolega ma WIĘCEJ punktów", a nie „kolega jest BEZPOŚREDNIO
+      przede mną". Skutek: para 1-3 (kolega wygrywa, między wami wjeżdża rywal,
+      ty jesteś trzeci) dawała bonus, bo 3 > 1 i z tyłu został czwarty rywal.
+      Regulaminowo bonus należy się WYŁĄCZNIE za dojechanie TUŻ ZA kolegą z pary,
+      bez rywala pomiędzy. Punkty w biegu to 3-2-1-0, więc „tuż za" znaczy
+      dokładnie: kolega ma o JEDEN punkt więcej. To samo domyka warunek (2):
+      skoro nikt nie wjechał między was, a bieg ma czterech, to za tobą stoi rywal. */
+   if(!mate || mate.out || mate.pts !== x.pts+1) return;   // (1) kolega z pary TUŻ przed nim
    const rivalBehind = res.some(y=>y.side!==x.side && (y.out || y.pts<x.pts));
    if(rivalBehind) x.bon=1;                             // (2) co najmniej jeden rywal z tyłu
  });
@@ -247,10 +255,10 @@ function simMeeting(homeName, awayName, ctx, meId, forceSave){
      const side = sideOf[n] || (isHomeNum(n)?'h':'a');
      let r=map[n];
      // brak zawodnika pod numerem albo wyczerpany limit startów → rezerwa zwykła (art. 719 ust. 3)
-     if(!r || st[r.id].starts>=5){
+     if(!r || !canRide(st[r.id])){
        const name = nameOf(side);
        r = reserves(side).concat(availableRiders(name).filter(x=>st[x.id]))
-            .filter(x=>st[x.id].starts<5 && !inHeat().includes(x.id) && plainResOk(st[x.id], x))
+            .filter(x=>canRide(st[x.id]) && !inHeat().includes(x.id) && plainResOk(st[x.id], x))
             .sort((a,b)=>b.ovr-a.ovr)[0];
        if(!r) return;
        st[r.id].res.plain++;                 // Sprint 3: młodzieżowiec ma na to dwa starty
@@ -287,6 +295,15 @@ function simMeeting(homeName, awayName, ctx, meId, forceSave){
  
  for(let h=0; h<13; h++){
    let nums=set[h].slice();
+   /* NAPRAWA (24.08.2026): „-" W KARCIE BEZ ZMIANY.
+      Kod „zmieniony" wpisywaliśmy zdejmowanemu OD RAZU, zanim bieg w ogóle
+      się odbył. Jeżeli potem runHeat() nie wpuściło wchodzącego — bo bieg
+      nie miał obsady (line.length<2) albo ten zawodnik już w nim siedział
+      jako rezerwa zwykła — zmiana nie następowała, a „-" zostawało w karcie.
+      Stąd zawodnicy z „-" przy komplecie normalnych startów. Teraz kod
+      wpisujemy DOPIERO PO biegu i tylko wtedy, gdy wchodzący faktycznie
+      wystartował; inaczej cofamy też zużytą rezerwę taktyczną. */
+   const swaps=[];
    /* --- REZERWA TAKTYCZNA (art. 719 ust. 5) ---
       Biegi III-XIII, strata co najmniej 6 punktów. SPRINT 3: decyduje AI
       trenera, a nie sam OVR — zdejmuje tego, kogo najmniej lubi wśród
@@ -303,23 +320,46 @@ function simMeeting(homeName, awayName, ctx, meId, forceSave){
      if(mine.length<2) return;
      const rel=r=>coachLike(name, r)*0.16;
      const pool=mine.map(n=>map[n]).filter(Boolean);
-     const weak=pool.slice().sort((a,b)=>(a.ovr+rel(a))-(b.ovr+rel(b)))[0];
-     if(!weak) return;
-     const cand=availableRiders(name)
-       .filter(r=>st[r.id] && st[r.id].starts<5 && r.id!==weak.id
-                  && !mine.some(n=>map[n]&&map[n].id===r.id)
-                  && tacticResOk(st[r.id], r) && tacticLegal(weak, r))
-       .sort((a,b)=>(b.ovr+rel(b))-(a.ovr+rel(a)))[0];
-     if(!cand || cand.ovr<=weak.ovr) return;
+     /* ------------------------------------------------------------
+        NAPRAWA (Sprint 5c, 24.08.2026): REZERWA TAKTYCZNA PRAWIE NIGDY
+        NIE WCHODZIŁA — TA SAMA POMYŁKA CO W engine/31.
+        Braliśmy JEDNEGO kandydata do zdjęcia: najsłabszego w biegu. A najsłabszy
+        w biegu to prawie zawsze MŁODZIEŻOWIEC (6-7 / 14-15). Chwilę później
+        tacticLegal() mówił „senior nie przejmuje biegu młodzieżowca" i wycinał
+        WSZYSTKICH kandydatów — a kod robił `return`, czyli rezygnował z całej
+        zmiany, zamiast zdjąć TEGO DRUGIEGO, seniora, za którego wejście jest
+        w pełni legalne. Efekt: opcja istniała, a w tabelach nie było jej widać.
+        Teraz idziemy pool od najsłabszego i bierzemy PIERWSZĄ parę
+        (kto schodzi / kto wchodzi), która przechodzi regulamin.
+        ------------------------------------------------------------ */
+     let weak=null, cand=null;
+     for(const w of pool.slice().sort((a2,b2)=>(a2.ovr+rel(a2))-(b2.ovr+rel(b2)))){
+       const c=availableRiders(name)
+         .filter(r=>st[r.id] && tacticCandOk(st[r.id]) && r.id!==w.id
+                    && !mine.some(n=>map[n]&&map[n].id===r.id)
+                    && tacticResOk(st[r.id], r) && tacticLegal(w, r))
+         .sort((a2,b2)=>(b2.ovr+rel(b2))-(a2.ovr+rel(a2)))[0];
+       if(!c || c.ovr<=w.ovr) continue;
+       weak=w; cand=c; break;
+     }
+     if(!weak || !cand) return;
      tacticUsed[side]=true;
-     st[weak.id].codes.push('-');            // zmieniony — to NIE jest jego start
      st[cand.id].res.tactic++;
+     swaps.push({side, weak, cand});         // „-" dopiszemy po biegu, jeśli zmiana doszła do skutku
      const vkey = -cand.id;                   // wirtualny klucz dla rezerwy taktycznej
      nums=nums.map(n=>map[n]&&map[n].id===weak.id ? vkey : n);
      map[vkey]=cand;
      sideOf[vkey]=side;                       // ← bez tego punkty szły do złej drużyny
    });
    runHeat(nums, h+1);
+   if(swaps.length){
+     const last=heats[heats.length-1];
+     const rode = id => !!(last && last.label===h+1 && last.res.some(x=>x.id===id));
+     swaps.forEach(sw=>{
+       if(rode(sw.cand.id)) st[sw.weak.id].codes.push('-');
+       else { st[sw.cand.id].res.tactic--; tacticUsed[sw.side]=false; }
+     });
+   }
  }
  /* --- Biegi XIV i XV: nominowani, po dwóch z drużyny (art. 721) ---
     SPRINT 3: MŁODZIEŻOWIEC NIE JEST NOMINOWANY Z URZĘDU. Numery 6-7 (14-15)
@@ -328,15 +368,24 @@ function simMeeting(homeName, awayName, ctx, meId, forceSave){
     nie ma dwóch seniorów z wolnym startem. Wcześniej sortowanie po samej
     średniej biegowej potrafiło wstawić do biegu XV dwóch juniorów, bo mieli
     najwyższą średnią z trzech startów w słabych biegach. */
- const nominate=(side,name)=>{
-   const pool=availableRiders(name).filter(r=>st[r.id]&&st[r.id].starts<5);
-   const by=(a,b)=> (st[b.id].pts/Math.max(1,st[b.id].starts)) - (st[a.id].pts/Math.max(1,st[a.id].starts)) || b.ovr-a.ovr;
+ const nominate=(side,name,byPts)=>{
+   /* BIEG XV — DWÓCH NAJLEPSZYCH WEDŁUG PUNKTÓW (poprawka 24.08.2026).
+      W biegu XIV zostaje dobór regulaminowy (senior przed młodzieżowcem, junior
+      tylko jako rezerwa). W BIEGU XV jadą po prostu DWAJ NAJLEPSI PUNKTOWO
+      zawodnicy każdej drużyny — bez bonusów, bo bonus to zasługa pary, nie jego.
+      Wcześniej oba biegi nominowane sortowały po ŚREDNIEJ biegowej, więc do
+      biegu XV potrafił wjechać zawodnik z 2 punktami z jednego startu zamiast
+      lidera z 12 punktami z pięciu. */
+   const pool=availableRiders(name).filter(r=>st[r.id]&&canRide(st[r.id]));
+   const avg=r=>st[r.id].pts/Math.max(1,st[r.id].starts);
+   if(byPts) return pool.slice().sort((a,b)=> st[b.id].pts-st[a.id].pts || avg(b)-avg(a) || b.ovr-a.ovr);
+   const by=(a,b)=> avg(b)-avg(a) || b.ovr-a.ovr;
    const sen=pool.filter(r=>!isJun(r)).sort(by);
    const jun=pool.filter(isJun).filter(r=>plainResOk(st[r.id], r)).sort(by);
-   return sen.concat(jun);      // junior dopiero jako rezerwa, gdy seniorów brakuje
+   return sen.concat(jun);
  };
  for(let extra=0; extra<2; extra++){
-   const H=nominate('h',homeName).slice(0,2), A=nominate('a',awayName).slice(0,2);
+   const H=nominate('h',homeName,extra===1).slice(0,2), A=nominate('a',awayName,extra===1).slice(0,2);
    [...H,...A].forEach(r=>{ if(isJun(r) && st[r.id]) st[r.id].res.plain++; });   // wchodzi jako rezerwa
    const entries=[...H.map(r=>({r,side:'h',home:true,num:st[r.id].num,ref:REF.h,trouble:TRB.h})),
                   ...A.map(r=>({r,side:'a',home:false,num:st[r.id].num,ref:REF.a,trouble:TRB.a}))];

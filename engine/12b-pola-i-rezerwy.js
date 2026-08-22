@@ -122,6 +122,28 @@ function gateAudit(line){
    drużyna przegrywa.
    ------------------------------------------------------------ */
 function resBox(){ return {plain:0, tactic:0}; }
+/* ------------------------------------------------------------
+   ILE BIEGÓW WOLNO PRZEJECHAĆ (naprawa 24.08.2026)
+   ------------------------------------------------------------
+   Cały silnik miał wpisane na sztywno „starts<5" — i to w KAŻDYM miejscu:
+   przy budowaniu pola biegu, przy rezerwie zwykłej, przy rezerwie taktycznej
+   i przy biegach nominowanych. Skutek był taki, że zawodnik z kompletem
+   pięciu startów z PROGRAMU nie mógł już wjechać NIGDZIE — a to właśnie
+   jego trener chce wpuścić rezerwą taktyczną, bo to zwykle najlepszy
+   zawodnik drużyny. Wchodzący był więc albo z góry odfiltrowany, albo
+   (jeśli akurat miał 5 startów) natychmiast wymieniany z powrotem przez
+   buildEntries/runHeat — stąd „-" w karcie przy zmianie, po której nikt
+   nie pojechał.
+   Regulaminowo limit to SZEŚĆ biegów: pięć z programu plus jeden z rezerwy
+   taktycznej. U młodzieżowca te sześć składa się inaczej — trzy z programu,
+   dwa z rezerwy zwykłej i jeden z taktycznej — ale suma jest ta sama.
+   ------------------------------------------------------------ */
+const STARTS_PROG = 5;                                   // biegi z programu
+function startCap(s){ return STARTS_PROG + ((s&&s.res&&s.res.tactic)||0); }
+function canRide(s){ return !!s && (s.starts||0) < startCap(s); }
+/* Do rezerwy TAKTYCZNEJ wolno sięgnąć także po zawodnika z kompletem
+   pięciu startów — to jest dokładnie ten szósty bieg. */
+function tacticCandOk(s){ return !!s && (s.starts||0) < STARTS_PROG+1; }
 function plainResOk(s, r){ return !!s && (!isJun(r) || (s.res.plain||0) < RESB.junPlain); }
 function tacticResOk(s, r){ return !!s && (!isJun(r) || (s.res.tactic||0) < RESB.junTactic); }
 function tacticLegal(weak, cand){

@@ -160,10 +160,10 @@ function* liveMeetingGen(homeName, awayName, ctx, meId, meta){
    nums.forEach(n=>{
      const side = sideOf[n] || (isHomeNum(n)?'h':'a');
      let r=map[n];
-     if(!r || st[r.id].starts>=5 || hurt(r.id) || (r.id===meId && live.outOfMeeting)){
+     if(!r || !canRide(st[r.id]) || hurt(r.id) || (r.id===meId && live.outOfMeeting)){
        const name = nameOf(side);
        const cands = reserves(side).concat(availableRiders(name).filter(x=>st[x.id]))
-            .filter(x=>st[x.id].starts<5 && !inHeat().includes(x.id) && !hurt(x.id)
+            .filter(x=>canRide(st[x.id]) && !inHeat().includes(x.id) && !hurt(x.id)
                        && plainResOk(st[x.id], x)
                        && !(x.id===meId && live.outOfMeeting))
             .sort((a,b)=>b.ovr-a.ovr);
@@ -191,6 +191,24 @@ function* liveMeetingGen(homeName, awayName, ctx, meId, meta){
      res:res.map(x=>({id:x.r.id,name:x.r.name,num:x.num,gate:x.gate||null,helmet:x.helmet||null,
        pts:x.pts,bon:x.bon||0,out:x.out,side:x.side}))});
    live.heatsDone=heats.length;      // Sprint 2: próg 8/12 biegów przy odwołaniu zawodów
+   /* NAPRAWA (24.08.2026): „-" TYLKO ZA REALNĄ ZMIANĘ.
+      Kod „zmieniony" wpisywaliśmy zdejmowanemu w chwili DECYZJI trenera, czyli
+      zanim bieg się odbył. Jeżeli wchodzący ostatecznie nie wystartował — bo
+      pole biegu zbudowało się bez niego (siedział już w stawce jako rezerwa
+      zwykła, miał komplet startów albo zniosła go karetka) — to zmiany po
+      prostu NIE BYŁO, a „-" zostawało w karcie. Zawodnik wyglądał na
+      zmienionego, mimo że nikt za niego nie pojechał.
+      Teraz kod wpisujemy DOPIERO TERAZ, po zapisaniu wyniku biegu, i wyłącznie
+      wtedy, gdy wchodzący faktycznie w nim wystartował. Jeżeli nie — cofamy
+      zużytą rezerwę taktyczną, więc trener może po nią sięgnąć jeszcze raz. */
+   if(live.pendSwap && live.pendSwap.length){
+     const ids=res.map(x=>x.r.id);
+     live.pendSwap.forEach(sw=>{
+       if(ids.includes(sw.cand)){ if(st[sw.weak]) st[sw.weak].codes.push('-'); }
+       else { if(st[sw.cand]) st[sw.cand].res.tactic--; tacticUsed[sw.side]=false; }
+     });
+     live.pendSwap=[];
+   }
  };
  /* Punkt bonusowy (art. 720) — ta sama funkcja co w leagueHeat. NAPRAWA
     (Sprint 1): stała tu druga kopia starej reguły, liczyła bonusy inaczej. */
@@ -232,43 +250,72 @@ function* liveMeetingGen(homeName, awayName, ctx, meId, meta){
      if(mine.length<2) continue;
      const pool=mine.map(n=>map[n]).filter(Boolean);
      const relOf=r=>coachLike(name, r);
-     let weak;
-     if(side===mySide){
-       /* Silnik ligowy bierze po prostu najsłabszego OVR-em — i to zostaje dla
-          drużyny przeciwnej. W TWOJEJ drużynie, w meczu jechanym osobiście,
-          trener patrzy na to, co widzi na torze DZISIAJ, plus na to, kogo lubi.
-          Dzięki temu awantura z trenerem („chcesz mnie zmienić?") jest realną
-          sytuacją meczową, a nie ciekawostką dla zawodnika z najniższym OVR. */
-       const P=pressNow();
-       const meetForm=r=>{
-         const x=st[r.id]; let v=(x&&x.starts) ? x.pts/x.starts : 9;
-         v += relOf(r)*0.012;                                   // sympatia ≈ ±1,2 pkt/bieg
-         if(r.id===meId && P.hot && relOf(r)<0) v-=0.35;        // trener pod presją szuka winnego
-         return v;
-       };
-       weak = pool.slice().sort((a,b)=> meetForm(a)-meetForm(b) || a.ovr-b.ovr)[0];
-     } else {
-       weak = pool.slice().sort((a,b)=> (a.ovr+relOf(a)*0.16)-(b.ovr+relOf(b)*0.16))[0];
+     /* ------------------------------------------------------------
+        NAPRAWA (Sprint 5c, 24.08.2026): TRENER PRAWIE NIGDY NIE ROBIŁ REZERWY.
+        ------------------------------------------------------------
+        Dwa błędy, oba w tym samym miejscu, oba dawały ten sam efekt: „opcja
+        jest, a zmian nie ma".
+
+        1. WYBIERALIŚMY TYLKO JEDNEGO KANDYDATA DO ZDJĘCIA. `weak` to był
+           NAJSŁABSZY zawodnik strony w tym biegu — a najsłabszy w biegu to
+           prawie zawsze MŁODZIEŻOWIEC (6/7, 14/15). Zaraz potem `tacticLegal()`
+           mówił „młodzieżowca nie wolno zdjąć na rzecz seniora" i wycinał
+           WSZYSTKICH kandydatów. Kod robił wtedy `continue` — czyli rezygnował
+           z całej rezerwy taktycznej, zamiast spróbować zdjąć TEGO DRUGIEGO,
+           seniora, za którego wejście jest jak najbardziej legalne.
+           Teraz przechodzimy pool od najsłabszego i bierzemy PIERWSZĄ PARĘ
+           (kto schodzi / kto wchodzi), która przechodzi regulamin.
+
+        2. ZAWODNIK BEZ ANI JEDNEGO STARTU BYŁ NIETYKALNY. `meetForm()`
+           zwracał dla niego sztuczne 9 punktów na bieg („nie wiem, więc nie
+           ruszam"), a próg zdejmowania to 1,05 — więc nikt, kto jeszcze nie
+           jechał, nie mógł zostać zmieniony. W biegach III-V to połowa składu.
+           Teraz brakującą dyspozycję szacujemy z OVR wzgl. poziomu ligi
+           (ten sam wzór co przy formie po meczu), więc trener ocenia go tak,
+           jak ocenia go realnie: po tym, kogo ma pod ręką.
+
+        Co z tego wynika w praktyce: zmiany dzieją się w OBU drużynach, dotyczą
+        zawodników, którymi nie grasz, wchodzą za nich inni zawodnicy, którymi
+        nie grasz — a Gracz jest normalnym elementem tej puli: może wejść za
+        kolegę BEZ pytania go o zdanie (o zgodę pyta się tylko wtedy, gdy to
+        JEGO się zdejmuje, bo tylko wtedy ma czym się postawić).
+        ------------------------------------------------------------ */
+     const P = side===mySide ? pressNow() : null;
+     const meetForm=r=>{
+       const x=st[r.id];
+       /* brak startów = szacunek z OVR wzgl. odniesienia ligi, a nie „nie ruszam" */
+       let v=(x&&x.starts) ? x.pts/x.starts : cl(1.35 + (r.ovr-REF[side])*0.055, 0.15, 2.75);
+       v += relOf(r)*0.012;                                   // sympatia ≈ ±1,2 pkt/bieg
+       if(r.id===meId && P && P.hot && relOf(r)<0) v-=0.35;   // trener pod presją szuka winnego
+       return v;
+     };
+     const order = side===mySide
+       ? pool.slice().sort((a,b)=> meetForm(a)-meetForm(b) || a.ovr-b.ovr)
+       : pool.slice().sort((a,b)=> (a.ovr+relOf(a)*0.16)-(b.ovr+relOf(b)*0.16));
+     let weak=null, cand=null;
+     for(const w of order){
+       const c=availableRiders(name)
+         .filter(r=>st[r.id] && tacticCandOk(st[r.id]) && r.id!==w.id
+                    && !mine.some(n=>map[n]&&map[n].id===r.id)
+                    && tacticResOk(st[r.id], r) && tacticLegal(w, r))
+         .sort((a,b)=>(b.ovr+relOf(b)*0.16)-(a.ovr+relOf(a)*0.16))[0];
+       if(!c) continue;
+       const better = side===mySide
+         ? (c.ovr > w.ovr-8 && meetForm(w) < 1.15)
+         : (c.ovr > w.ovr);
+       if(!better) continue;
+       weak=w; cand=c; break;
      }
-     if(!weak) continue;
-     const cand=availableRiders(name)
-       .filter(r=>st[r.id] && st[r.id].starts<5 && r.id!==weak.id
-                  && !mine.some(n=>map[n]&&map[n].id===r.id)
-                  && tacticResOk(st[r.id], r) && tacticLegal(weak, r))
-       .sort((a,b)=>(b.ovr+relOf(b)*0.16)-(a.ovr+relOf(a)*0.16))[0];
-     if(!cand) continue;
-     const better = side===mySide
-       ? (cand.ovr > weak.ovr-8 && ((st[weak.id]&&st[weak.id].starts)? st[weak.id].pts/st[weak.id].starts : 9)<1.05)
-       : (cand.ovr > weak.ovr);
-     if(!better) continue;
+     if(!weak || !cand) continue;
      /* TO CIEBIE CHCĄ ZDJĄĆ — masz prawo się z tym nie zgodzić. */
      if(weak.id===meId && !live.outOfMeeting){
        const keep = yield* coachFight(cand);
        if(keep) continue;
      }
      tacticUsed[side]=true;
-     if(st[weak.id]) st[weak.id].codes.push('-');
      if(st[cand.id]) st[cand.id].res.tactic++;
+     /* „-" dopisze applyRes(), jeśli zmiana faktycznie doszła do skutku */
+     (live.pendSwap=live.pendSwap||[]).push({side, weak:weak.id, cand:cand.id});
      const vkey=-cand.id;
      nums=nums.map(n=>map[n]&&map[n].id===weak.id ? vkey : n);
      map[vkey]=cand; sideOf[vkey]=side;
@@ -335,7 +382,7 @@ function* liveMeetingGen(homeName, awayName, ctx, meId, meta){
    const s=st[meId];
    if(!s) return {ok:false, why:resRefusal('none')};
    if(live.outOfMeeting) return {ok:false, why:'Twoje zawody są skończone. Nie ma czego wpisywać.'};
-   if(s.starts>=5) return {ok:false, why:resRefusal('starts')};
+   if(!canRide(s)) return {ok:false, why:resRefusal('starts')};
    if(!plainResOk(s, s.r)) return {ok:false, why:resRefusal('junPlain')};
    const mineNums=(nums||[]).filter(n=>(sideOf[n]||(isHomeNum(n)?'h':'a'))===mySide);
    const pool=mineNums.map(n=>map[n]).filter(Boolean).filter(r=>r.id!==meId);
@@ -475,7 +522,7 @@ function* liveMeetingGen(homeName, awayName, ctx, meId, meta){
        S.atm=cl(S.atm-2,0,100);
        return false;
      }
-     const mates=availableRiders(myClub).filter(r=>st[r.id] && r.id!==meId && st[r.id].starts<5)
+     const mates=availableRiders(myClub).filter(r=>st[r.id] && r.id!==meId && canRide(st[r.id]))
        .sort((a2,b2)=>b2.ovr-a2.ovr);
      const REL=relNow();
      const ch=cl(Math.round(livePushChance(live, mates) + REL.rel*0.25), 2, 95);
@@ -515,7 +562,7 @@ function* liveMeetingGen(homeName, awayName, ctx, meId, meta){
    yield* liveSideGen(live, snap, say, 'mid', nextHeat);
    if(live.abandoned) return;
    while(true){
-     const mates=availableRiders(myClub).filter(r=>st[r.id] && r.id!==meId && st[r.id].starts<5)
+     const mates=availableRiders(myClub).filter(r=>st[r.id] && r.id!==meId && canRide(st[r.id]))
        .sort((a2,b2)=>b2.ovr-a2.ovr);
      const legal=pushLegal(nums);
      const REL=relNow();
@@ -589,7 +636,7 @@ function* liveMeetingGen(homeName, awayName, ctx, meId, meta){
      if(st[meId]) st[meId].codes.push('-');
      clearMsg();
      say('Trener dotrzymał słowa: w twoim biegu jedzie kolega z kadry. Ty stoisz przy bandzie w komplecie kevlarów.');
-     const alt=availableRiders(myClub).filter(r=>st[r.id] && r.id!==meId && st[r.id].starts<5
+     const alt=availableRiders(myClub).filter(r=>st[r.id] && r.id!==meId && canRide(st[r.id])
                                                 && tacticLegal(st[meId]?st[meId].r:null, r))
        .sort((a2,b2)=>b2.ovr-a2.ovr)[0];
      let ns=nums.slice();
@@ -727,7 +774,7 @@ function* liveMeetingGen(homeName, awayName, ctx, meId, meta){
    if(live.abandoned) break;                  // Sprint 2: sędzia przerwał zawody
    curH=h;                                    // ← z tego liczy się „pozostałe biegi"
    let nums = yield* tacticNums(h, set[h].slice());
-   if(live.pushIn && !live.outOfMeeting && st[meId] && st[meId].starts<5 &&
+   if(live.pushIn && !live.outOfMeeting && st[meId] && canRide(st[meId]) &&
       !nums.some(n=>map[n]&&map[n].id===meId)){
      /* PRESJA ZADZIAŁAŁA: wchodzisz za kolegę z tego biegu.
         SPRINT 3: nie „za najsłabszego", tylko za tego, za kogo WOLNO —
@@ -746,7 +793,7 @@ function* liveMeetingGen(homeName, awayName, ctx, meId, meta){
        live.refuse={txt:RESB.burdel, why:resRefusal('junTake'), coach:myCoach.name};
      }
    }
-   const mineIn = !live.outOfMeeting && st[meId] && st[meId].starts<5 &&
+   const mineIn = !live.outOfMeeting && st[meId] && canRide(st[meId]) &&
                   nums.some(n=>map[n] && map[n].id===meId);
    if(!mineIn){
      yield* between(h+1, nums);
@@ -758,7 +805,7 @@ function* liveMeetingGen(homeName, awayName, ctx, meId, meta){
        if(live.abandoned || live.pushIn) break;  // trener właśnie cię wpuścił — wracamy do pętli głównej
        curH=h;
        let ns = yield* tacticNums(h, set[h].slice());
-       const mi = !live.outOfMeeting && st[meId] && st[meId].starts<5 &&
+       const mi = !live.outOfMeeting && st[meId] && canRide(st[meId]) &&
                   ns.some(n=>map[n] && map[n].id===meId);
        if(mi) break;
        simHeat(ns, h+1); h++;
@@ -773,17 +820,26 @@ function* liveMeetingGen(homeName, awayName, ctx, meId, meta){
     SPRINT 3: młodzieżowiec nie jest nominowany z urzędu — trafia tu wyłącznie
     jako rezerwa, czyli dopiero wtedy, gdy drużyna nie ma dwóch seniorów
     z wolnym startem. Ta sama zasada co w engine/12-mecz-ligowy.js. */
- const nominate=(side,name)=>{
-   const pool=availableRiders(name).filter(r=>st[r.id]&&st[r.id].starts<5
+ const nominate=(side,name,byPts)=>{
+   /* BIEG XV — DWÓCH NAJLEPSZYCH WEDŁUG PUNKTÓW (poprawka 24.08.2026).
+      W biegu XIV zostaje dobór regulaminowy (senior przed młodzieżowcem, junior
+      tylko jako rezerwa). W BIEGU XV jadą po prostu DWAJ NAJLEPSI PUNKTOWO
+      zawodnicy każdej drużyny — bez bonusów, bo bonus to zasługa pary, nie jego.
+      Wcześniej oba biegi nominowane sortowały po ŚREDNIEJ biegowej, więc do
+      biegu XV potrafił wjechać zawodnik z 2 punktami z jednego startu zamiast
+      lidera z 12 punktami z pięciu. */
+   const pool=availableRiders(name).filter(r=>st[r.id]&&canRide(st[r.id])
       && !(live.hurtOut||[]).includes(r.id) && !(r.id===meId&&live.outOfMeeting));
-   const by=(a,b)=> (st[b.id].pts/Math.max(1,st[b.id].starts)) - (st[a.id].pts/Math.max(1,st[a.id].starts)) || b.ovr-a.ovr;
+   const avg=r=>st[r.id].pts/Math.max(1,st[r.id].starts);
+   if(byPts) return pool.slice().sort((a,b)=> st[b.id].pts-st[a.id].pts || avg(b)-avg(a) || b.ovr-a.ovr);
+   const by=(a,b)=> avg(b)-avg(a) || b.ovr-a.ovr;
    const sen=pool.filter(r=>!isJun(r)).sort(by);
    const jun=pool.filter(isJun).filter(r=>plainResOk(st[r.id], r)).sort(by);
    return sen.concat(jun);
  };
  for(let extra=0; extra<2; extra++){
    if(live.abandoned) break;                    // biegi nominowane też się nie odbędą
-   const H=nominate('h',homeName).slice(0,2), A=nominate('a',awayName).slice(0,2);
+   const H=nominate('h',homeName,extra===1).slice(0,2), A=nominate('a',awayName,extra===1).slice(0,2);
    [...H,...A].forEach(r=>{ if(isJun(r) && st[r.id]) st[r.id].res.plain++; });
    const entries=gateOrder([...H.map(r=>({r,side:'h',home:true,num:st[r.id].num,ref:REF.h,trouble:TRB.h})),
                   ...A.map(r=>({r,side:'a',home:false,num:st[r.id].num,ref:REF.a,trouble:TRB.a}))]);
